@@ -1,5 +1,6 @@
 import { readdir, stat } from "fs/promises";
 import { join, extname } from "path";
+import type { ToolDefinition } from "../types/tool.ts";
 
 interface CsvStructure {
   file: string;
@@ -7,7 +8,7 @@ interface CsvStructure {
   columns: string[];
 }
 
-export async function readCsvStructure({ path }: { path: string }): Promise<CsvStructure[]> {
+async function readCsvStructure({ path }: { path: string }): Promise<CsvStructure[]> {
   const info = await stat(path);
   const files: string[] = [];
 
@@ -39,3 +40,8 @@ export async function readCsvStructure({ path }: { path: string }): Promise<CsvS
 
   return results;
 }
+
+export default {
+  name: "read_csv_structure",
+  handler: readCsvStructure,
+} satisfies ToolDefinition;

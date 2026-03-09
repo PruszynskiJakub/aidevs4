@@ -1,9 +1,7 @@
-import { parse } from "csv-parse/sync";
-import { join } from "path";
-import { mkdir } from "fs/promises";
-import { OUTPUT_DIR } from "../config.ts";
+import type { ToolDefinition } from "../types/tool.ts";
+import { type Row, parseCsv, writeCsv } from "../utils/csv.ts";
+import { ensureOutputDir, outputPath } from "../utils/output.ts";
 
-type Row = Record<string, string>;
 type FilterOp = "eq" | "neq" | "contains" | "startsWith" | "endsWith" | "gt" | "lt" | "gte" | "lte";
 
 interface Filter {
@@ -24,26 +22,14 @@ const matchers: Record<FilterOp, (cell: string, value: string) => boolean> = {
   lte: (c, v) => c <= v,
 };
 
-function toCsvLine(row: Row, columns: string[]): string {
-  return columns
-    .map((col) => {
-      const val = row[col];
-      return val.includes(",") || val.includes('"') || val.includes("\n")
-        ? `"${val.replace(/"/g, '""')}"`
-        : val;
-    })
-    .join(",");
-}
-
-export async function searchCsv({
+async function searchCsv({
   path,
   filters,
 }: {
   path: string;
   filters: Filter[];
 }): Promise<{ matchCount: number; outputPath: string; preview: Row[] }> {
-  const content = await Bun.file(path).text();
-  const rows: Row[] = parse(content, { columns: true, skip_empty_lines: true, trim: true });
+  const rows = await parseCsv(path);
 
   const filtered = rows.filter((row) =>
     filters.every(({ column, op, value }) => {
@@ -55,22 +41,20 @@ export async function searchCsv({
     })
   );
 
-  await mkdir(OUTPUT_DIR, { recursive: true });
+  await ensureOutputDir();
   const filterLabel = filters.map((f) => `${f.column}_${f.op}_${f.value}`).join("__");
-  const outputPath = join(OUTPUT_DIR, `results_${filterLabel}.csv`);
+  const outPath = outputPath(`results_${filterLabel}.csv`);
 
-  if (filtered.length > 0) {
-    const columns = Object.keys(filtered[0]);
-    const header = columns.join(",");
-    const lines = filtered.map((row) => toCsvLine(row, columns));
-    await Bun.write(outputPath, [header, ...lines].join("\n") + "\n");
-  } else {
-    await Bun.write(outputPath, "");
-  }
+  await writeCsv(filtered, outPath);
 
   return {
     matchCount: filtered.length,
-    outputPath,
+    outputPath: outPath,
     preview: filtered.slice(0, 5),
   };
 }
+
+export default {
+  name: "search_csv",
+  handler: searchCsv,
+} satisfies ToolDefinition;

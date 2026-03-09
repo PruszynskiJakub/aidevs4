@@ -1,19 +1,11 @@
-import { parse } from "csv-parse/sync";
-import { join } from "path";
-import { mkdir } from "fs/promises";
-import { OUTPUT_DIR } from "../config.ts";
-
-type Row = Record<string, string>;
+import type { ToolDefinition } from "../types/tool.ts";
+import { parseCsv } from "../utils/csv.ts";
+import { ensureOutputDir, outputPath } from "../utils/output.ts";
 
 interface ColumnMapping {
   from: string;
   to: string;
   type?: "string" | "number" | "json";
-}
-
-interface CsvToJsonArgs {
-  path: string;
-  mapping: ColumnMapping[];
 }
 
 function convertValue(value: string, type: string = "string"): unknown {
@@ -31,12 +23,14 @@ function convertValue(value: string, type: string = "string"): unknown {
   }
 }
 
-export async function csvToJson({
+async function csvToJson({
   path,
   mapping,
-}: CsvToJsonArgs): Promise<{ rowCount: number; outputPath: string; preview: Record<string, unknown>[] }> {
-  const content = await Bun.file(path).text();
-  const rows: Row[] = parse(content, { columns: true, skip_empty_lines: true, trim: true });
+}: {
+  path: string;
+  mapping: ColumnMapping[];
+}): Promise<{ rowCount: number; outputPath: string; preview: Record<string, unknown>[] }> {
+  const rows = await parseCsv(path);
 
   if (rows.length === 0) throw new Error("CSV file is empty");
 
@@ -57,14 +51,19 @@ export async function csvToJson({
     return obj;
   });
 
-  await mkdir(OUTPUT_DIR, { recursive: true });
+  await ensureOutputDir();
   const baseName = path.split("/").pop()?.replace(/\.csv$/i, "") ?? "output";
-  const outputPath = join(OUTPUT_DIR, `${baseName}.json`);
-  await Bun.write(outputPath, JSON.stringify(result, null, 2) + "\n");
+  const outPath = outputPath(`${baseName}.json`);
+  await Bun.write(outPath, JSON.stringify(result, null, 2) + "\n");
 
   return {
     rowCount: result.length,
-    outputPath,
+    outputPath: outPath,
     preview: result.slice(0, 5),
   };
 }
+
+export default {
+  name: "csv_to_json",
+  handler: csvToJson,
+} satisfies ToolDefinition;

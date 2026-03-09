@@ -1,23 +1,26 @@
 import { readdir } from "fs/promises";
 import { join } from "path";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
-import { downloadFile } from "./download_file.ts";
-import { readCsvStructure } from "./read_csv.ts";
-import { searchCsv } from "./search_csv.ts";
-import { transformCsv } from "./transform_csv.ts";
-import { csvToJson } from "./csv_to_json.ts";
-import { verifyAnswer } from "./verify_answer.ts";
+import type { ToolDefinition } from "../types/tool.ts";
 
 const SCHEMAS_DIR = join(import.meta.dir, "..", "schemas");
+const TOOLS_DIR = import.meta.dir;
 
-const handlers: Record<string, (args: any) => Promise<unknown>> = {
-  download_file: downloadFile,
-  read_csv_structure: readCsvStructure,
-  search_csv: searchCsv,
-  transform_csv: transformCsv,
-  csv_to_json: csvToJson,
-  verify_answer: verifyAnswer,
-};
+async function loadToolDefinitions(): Promise<Map<string, ToolDefinition>> {
+  const map = new Map<string, ToolDefinition>();
+  const entries = await readdir(TOOLS_DIR);
+
+  for (const entry of entries) {
+    if (entry === "dispatcher.ts" || !entry.endsWith(".ts")) continue;
+    const mod = await import(join(TOOLS_DIR, entry));
+    const def: ToolDefinition = mod.default;
+    if (def?.name && typeof def?.handler === "function") {
+      map.set(def.name, def);
+    }
+  }
+
+  return map;
+}
 
 async function loadSchemas(): Promise<ChatCompletionTool[]> {
   const entries = await readdir(SCHEMAS_DIR);
@@ -41,6 +44,7 @@ async function loadSchemas(): Promise<ChatCompletionTool[]> {
 }
 
 let cachedTools: ChatCompletionTool[] | null = null;
+let cachedHandlers: Map<string, ToolDefinition> | null = null;
 
 export async function getTools(): Promise<ChatCompletionTool[]> {
   if (!cachedTools) {
@@ -49,15 +53,24 @@ export async function getTools(): Promise<ChatCompletionTool[]> {
   return cachedTools;
 }
 
+async function getHandlers(): Promise<Map<string, ToolDefinition>> {
+  if (!cachedHandlers) {
+    cachedHandlers = await loadToolDefinitions();
+  }
+  return cachedHandlers;
+}
+
 export async function dispatch(name: string, argsJson: string): Promise<string> {
-  const handler = handlers[name];
-  if (!handler) {
+  const handlers = await getHandlers();
+  const tool = handlers.get(name);
+
+  if (!tool) {
     return JSON.stringify({ error: `Unknown tool: ${name}` });
   }
 
   try {
     const args = JSON.parse(argsJson);
-    const result = await handler(args);
+    const result = await tool.handler(args);
     return JSON.stringify(result);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

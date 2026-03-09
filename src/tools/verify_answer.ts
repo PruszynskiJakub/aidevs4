@@ -1,27 +1,27 @@
-const VERIFY_URL = "https://hub.ag3nts.org/verify";
-
-interface VerifyAnswerArgs {
-  task: string;
-  answer_file: string;
-}
+import type { ToolDefinition } from "../types/tool.ts";
+import { getApiKey } from "../utils/hub.ts";
+import { HUB_VERIFY_URL } from "../config.ts";
 
 interface VerifyResult {
   task: string;
   response: unknown;
 }
 
-export async function verifyAnswer({ task, answer_file }: VerifyAnswerArgs): Promise<VerifyResult> {
-  const apiKey = process.env.HUB_API_KEY;
-  if (!apiKey) {
-    throw new Error("HUB_API_KEY environment variable is not set");
-  }
+async function verifyAnswer({
+  task,
+  answer_file,
+}: {
+  task: string;
+  answer_file: string;
+}): Promise<VerifyResult> {
+  const apiKey = getApiKey();
 
   const content = await Bun.file(answer_file).text();
   const answer = JSON.parse(content);
 
   const payload = { apikey: apiKey, task, answer };
 
-  const res = await fetch(VERIFY_URL, {
+  const res = await fetch(HUB_VERIFY_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -34,3 +34,8 @@ export async function verifyAnswer({ task, answer_file }: VerifyAnswerArgs): Pro
   const response = await res.json();
   return { task, response };
 }
+
+export default {
+  name: "verify_answer",
+  handler: verifyAnswer,
+} satisfies ToolDefinition;
