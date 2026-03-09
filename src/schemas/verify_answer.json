@@ -1,0 +1,19 @@
+{
+  "name": "verify_answer",
+  "description": "Submit an answer to the AG3NTS hub for verification. Reads a JSON file and sends its content as the answer for the given task.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "task": {
+        "type": "string",
+        "description": "The task name to verify against (e.g. \"people\")"
+      },
+      "answer_file": {
+        "type": "string",
+        "description": "Absolute path to the JSON file containing the answer data"
+      }
+    },
+    "required": ["task", "answer_file"],
+    "additionalProperties": false
+  }
+}

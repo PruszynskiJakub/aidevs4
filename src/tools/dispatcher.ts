@@ -5,6 +5,8 @@ import { downloadFile } from "./download_file.ts";
 import { readCsvStructure } from "./read_csv.ts";
 import { searchCsv } from "./search_csv.ts";
 import { transformCsv } from "./transform_csv.ts";
+import { csvToJson } from "./csv_to_json.ts";
+import { verifyAnswer } from "./verify_answer.ts";
 
 const SCHEMAS_DIR = join(import.meta.dir, "..", "schemas");
 
@@ -13,6 +15,8 @@ const handlers: Record<string, (args: any) => Promise<unknown>> = {
   read_csv_structure: readCsvStructure,
   search_csv: searchCsv,
   transform_csv: transformCsv,
+  csv_to_json: csvToJson,
+  verify_answer: verifyAnswer,
 };
 
 async function loadSchemas(): Promise<ChatCompletionTool[]> {

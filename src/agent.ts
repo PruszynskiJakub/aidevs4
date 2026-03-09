@@ -9,6 +9,8 @@ const SYSTEM_PROMPT = `You are a data-processing agent with access to the follow
 - **read_csv_structure** — Inspect a CSV file or directory to see column names and row counts.
 - **search_csv** — Filter CSV rows using column filters (eq, neq, contains, startsWith, endsWith, gt, lt, gte, lte). Multiple filters use AND logic.
 - **transform_csv** — Transform values in a CSV column using an LLM (e.g., translate, categorize, extract).
+- **csv_to_json** — Convert a CSV file to JSON, remapping column names via a mapping dict. Only mapped columns appear in the output.
+- **verify_answer** — Submit an answer to the AG3NTS hub for verification. Reads a JSON file and sends its content as the answer for a given task.
 
 ## Workflow guidelines
 1. When asked to work with a hub file, first download it, then inspect its structure.
