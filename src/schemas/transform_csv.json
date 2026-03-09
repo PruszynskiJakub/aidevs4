@@ -1,0 +1,23 @@
+{
+  "name": "transform_csv",
+  "description": "Transform values in a CSV column using an LLM. Provide natural-language instructions for how each value should be transformed. The transformed CSV is saved to a new file.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Absolute path to the CSV file to transform"
+      },
+      "column_name": {
+        "type": "string",
+        "description": "Name of the column whose values will be transformed"
+      },
+      "instructions": {
+        "type": "string",
+        "description": "Natural-language instructions for transforming each value (e.g. 'translate to English', 'extract the year')"
+      }
+    },
+    "required": ["path", "column_name", "instructions"],
+    "additionalProperties": false
+  }
+}

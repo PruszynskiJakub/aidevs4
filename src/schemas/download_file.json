@@ -1,0 +1,15 @@
+{
+  "name": "download_file",
+  "description": "Download a file from hub.ag3nts.org. Provide the full URL including any placeholder API key — the real key is injected automatically. Example: https://hub.ag3nts.org/data/APIKEY/people.csv",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "Full URL to the file on hub.ag3nts.org (e.g. https://hub.ag3nts.org/data/APIKEY/people.csv)"
+      }
+    },
+    "required": ["url"],
+    "additionalProperties": false
+  }
+}
