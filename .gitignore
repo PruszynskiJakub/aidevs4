@@ -174,3 +174,5 @@ dist
 # Finder (MacOS) folder config
 .DS_Store
 /playground/download_file_from_hub/output/
+
+playground/*/output

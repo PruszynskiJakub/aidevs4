@@ -3,12 +3,19 @@
   "module": "index.ts",
   "type": "module",
   "scripts": {
-    "download_file_from_hub": "bun run playground/download_file_from_hub/download_file_from_hub.ts"
+    "download_file_from_hub": "bun run playground/download_file_from_hub/download_file_from_hub.ts",
+    "read_csv_structure": "bun run playground/read_csv_structure/read_csv_structure.ts",
+    "search_csv": "bun run playground/search_csv/search_csv.ts",
+    "transform_csv": "bun run playground/transform_csv/transform_csv.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "csv-parse": "^6.1.0",
+    "openai": "^6.27.0"
   }
 }
