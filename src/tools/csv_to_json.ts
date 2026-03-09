@@ -8,6 +8,7 @@ type Row = Record<string, string>;
 interface ColumnMapping {
   from: string;
   to: string;
+  type?: "string" | "number" | "json";
 }
 
 interface CsvToJsonArgs {
@@ -15,10 +16,25 @@ interface CsvToJsonArgs {
   mapping: ColumnMapping[];
 }
 
+function convertValue(value: string, type: string = "string"): unknown {
+  switch (type) {
+    case "number":
+      return Number(value);
+    case "json":
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    default:
+      return value;
+  }
+}
+
 export async function csvToJson({
   path,
   mapping,
-}: CsvToJsonArgs): Promise<{ rowCount: number; outputPath: string; preview: Record<string, string>[] }> {
+}: CsvToJsonArgs): Promise<{ rowCount: number; outputPath: string; preview: Record<string, unknown>[] }> {
   const content = await Bun.file(path).text();
   const rows: Row[] = parse(content, { columns: true, skip_empty_lines: true, trim: true });
 
@@ -34,9 +50,9 @@ export async function csvToJson({
   }
 
   const result = rows.map((row) => {
-    const obj: Record<string, string> = {};
-    for (const { from, to } of mapping) {
-      obj[to] = row[from];
+    const obj: Record<string, unknown> = {};
+    for (const { from, to, type } of mapping) {
+      obj[to] = convertValue(row[from], type);
     }
     return obj;
   });

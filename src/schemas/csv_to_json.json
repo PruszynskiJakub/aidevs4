@@ -1,6 +1,6 @@
 {
   "name": "csv_to_json",
-  "description": "Convert a CSV file to JSON, remapping column names according to a provided mapping. Only mapped columns are included in the output. Results are saved to a JSON file.",
+  "description": "Convert a CSV file to JSON, remapping column names according to a provided mapping. Only mapped columns are included in the output. Results are saved to a JSON file. Supports type conversion via 'type' field: 'string' (default, keeps as string), 'number' (parse as number), 'json' (parse JSON string into object/array, e.g. for arrays like '[\"a\",\"b\"]').",
   "parameters": {
     "type": "object",
     "properties": {
@@ -21,9 +21,14 @@
             "to": {
               "type": "string",
               "description": "Desired JSON property name"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["string", "number", "json"],
+              "description": "Type conversion: 'string' (default), 'number' (parse as number), 'json' (parse JSON string into object/array)"
             }
           },
-          "required": ["from", "to"],
+          "required": ["from", "to", "type"],
           "additionalProperties": false
         }
       }
