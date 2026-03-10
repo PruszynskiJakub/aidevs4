@@ -3,11 +3,11 @@
   "description": "Interact with the AG3NTS hub.",
   "actions": {
     "download": {
-      "description": "Fetch a file from the hub",
+      "description": "Fetch a file from the hub, API token will automatically injected",
       "parameters": {
         "type": "object",
         "properties": {
-          "filename": { "type": "string", "description": "Name of the file to download (e.g. \"people.csv\")" }
+          "filename": { "type": "string", "description": "Name of the file to download (e.g. \"people.csv\") being the last part of an url" }
         },
         "required": ["filename"],
         "additionalProperties": false
@@ -31,7 +31,7 @@
         "type": "object",
         "properties": {
           "path": { "type": "string", "description": "API path segment after /api/ (e.g. \"location\")" },
-          "body_json": { "type": "string", "description": "JSON-encoded string of the request body (will be parsed before sending)" }
+          "body_json": { "type": "string", "description": "JSON-encoded string of the request body (will be parsed before sending), skip apiKey field, it's gonna be injected automatically" }
         },
         "required": ["path", "body_json"],
         "additionalProperties": false
