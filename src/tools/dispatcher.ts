@@ -1,5 +1,5 @@
-import { readdir } from "fs/promises";
 import { join } from "path";
+import { files } from "../services/file.ts";
 import type { LLMTool } from "../types/llm.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 
@@ -8,7 +8,7 @@ const TOOLS_DIR = import.meta.dir;
 
 async function loadToolDefinitions(): Promise<Map<string, ToolDefinition>> {
   const map = new Map<string, ToolDefinition>();
-  const entries = await readdir(TOOLS_DIR);
+  const entries = await files.readdir(TOOLS_DIR);
 
   for (const entry of entries) {
     if (entry === "dispatcher.ts" || !entry.endsWith(".ts")) continue;
@@ -23,12 +23,12 @@ async function loadToolDefinitions(): Promise<Map<string, ToolDefinition>> {
 }
 
 async function loadSchemas(): Promise<LLMTool[]> {
-  const entries = await readdir(SCHEMAS_DIR);
+  const entries = await files.readdir(SCHEMAS_DIR);
   const tools: LLMTool[] = [];
 
   for (const entry of entries) {
     if (!entry.endsWith(".json")) continue;
-    const schema = await Bun.file(join(SCHEMAS_DIR, entry)).json();
+    const schema = await files.readJson<{ name: string; description: string; parameters: Record<string, unknown> }>(join(SCHEMAS_DIR, entry));
     tools.push({
       type: "function",
       function: {

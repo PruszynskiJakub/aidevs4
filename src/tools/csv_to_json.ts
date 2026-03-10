@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "../types/tool.ts";
+import { files } from "../services/file.ts";
 import { parseCsv } from "../utils/csv.ts";
 import { ensureOutputDir, outputPath } from "../utils/output.ts";
 
@@ -54,7 +55,7 @@ async function csvToJson({
   await ensureOutputDir();
   const baseName = path.split("/").pop()?.replace(/\.csv$/i, "") ?? "output";
   const outPath = outputPath(`${baseName}.json`);
-  await Bun.write(outPath, JSON.stringify(result, null, 2) + "\n");
+  await files.write(outPath, JSON.stringify(result, null, 2) + "\n");
 
   return {
     rowCount: result.length,

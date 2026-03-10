@@ -1,9 +1,9 @@
 import { join } from "path";
-import { mkdir } from "fs/promises";
+import { files } from "../services/file.ts";
 import { OUTPUT_DIR } from "../config.ts";
 
 export async function ensureOutputDir(): Promise<void> {
-  await mkdir(OUTPUT_DIR, { recursive: true });
+  await files.mkdir(OUTPUT_DIR);
 }
 
 export function outputPath(filename: string): string {

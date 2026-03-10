@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "../types/tool.ts";
+import { files } from "../services/file.ts";
 import { getApiKey } from "../utils/hub.ts";
 import { HUB_VERIFY_URL } from "../config.ts";
 
@@ -16,7 +17,7 @@ async function verifyAnswer({
 }): Promise<VerifyResult> {
   const apiKey = getApiKey();
 
-  const content = await Bun.file(answer_file).text();
+  const content = await files.readText(answer_file);
   const answer = JSON.parse(content);
 
   const payload = { apikey: apiKey, task, answer };

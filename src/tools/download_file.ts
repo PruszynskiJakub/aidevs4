@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "../types/tool.ts";
+import { files } from "../services/file.ts";
 import { buildHubUrl, sanitizeUrl } from "../utils/hub.ts";
 import { ensureOutputDir, outputPath } from "../utils/output.ts";
 
@@ -14,7 +15,7 @@ async function downloadFile({ url }: { url: string }): Promise<{ url: string; pa
     throw new Error(`Failed to fetch ${sanitizeUrl(fetchUrl)}: ${response.status}`);
   }
 
-  await Bun.write(path, response);
+  await files.write(path, response);
 
   return { url: sanitizeUrl(fetchUrl), path };
 }

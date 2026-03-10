@@ -1,5 +1,5 @@
-import { readdir, stat } from "fs/promises";
 import { join, extname } from "path";
+import { files } from "../services/file.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 
 interface CsvStructure {
@@ -9,27 +9,27 @@ interface CsvStructure {
 }
 
 async function readCsvStructure({ path }: { path: string }): Promise<CsvStructure[]> {
-  const info = await stat(path);
-  const files: string[] = [];
+  const info = await files.stat(path);
+  const csvFiles: string[] = [];
 
-  if (info.isDirectory()) {
-    const entries = await readdir(path);
+  if (info.isDirectory) {
+    const entries = await files.readdir(path);
     for (const entry of entries) {
       if (extname(entry).toLowerCase() === ".csv") {
-        files.push(join(path, entry));
+        csvFiles.push(join(path, entry));
       }
     }
-    if (files.length === 0) {
+    if (csvFiles.length === 0) {
       throw new Error(`No CSV files found in directory: ${path}`);
     }
   } else {
-    files.push(path);
+    csvFiles.push(path);
   }
 
   const results: CsvStructure[] = [];
 
-  for (const file of files) {
-    const content = await Bun.file(file).text();
+  for (const file of csvFiles) {
+    const content = await files.readText(file);
     const lines = content.trim().split("\n");
     const header = lines[0];
     const columns = header.split(",").map((col) => col.trim().replace(/^"|"$/g, ""));
