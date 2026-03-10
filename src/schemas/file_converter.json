@@ -19,8 +19,8 @@
         "description": "Desired output format"
       },
       "mapping": {
-        "type": ["array", "null"],
-        "description": "Optional column/key mapping. When omitted, all fields pass through unchanged.",
+        "type": "array",
+        "description": "Column/key mapping. Send empty array [] when no mapping is needed (all fields pass through unchanged).",
         "items": {
           "type": "object",
           "properties": {

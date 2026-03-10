@@ -1,21 +1,27 @@
 {
   "name": "csv_processor",
-  "description": "Process CSV files (CSV only — never pass JSON files). Actions: metadata (inspect structure), search (filter rows), transform_column (LLM-powered — only for semantic understanding, never for simple string/date ops). Workflow tip: after transform_column produces JSON arrays in cells (e.g. '[\"transport\"]'), search with 'contains' works on raw cell text — finish all filtering in CSV before converting to JSON with file_converter.",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "action": {
-        "type": "string",
-        "enum": ["metadata", "search", "transform_column"],
-        "description": "Operation to perform"
-      },
-      "payload": {
+  "description": "Process CSV files (CSV only — never pass JSON files). Workflow tip: after transform_column produces JSON arrays in cells (e.g. '[\"transport\"]'), search with 'contains' works on raw cell text — finish all filtering in CSV before converting to JSON with file_converter.",
+  "actions": {
+    "metadata": {
+      "description": "Inspect CSV structure (columns, row count)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to a CSV file or directory (must be .csv — use file_converter first if you have JSON)" }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      }
+    },
+    "search": {
+      "description": "Filter rows matching conditions",
+      "parameters": {
         "type": "object",
         "properties": {
           "path": { "type": "string", "description": "Absolute path to a CSV file or directory (must be .csv — use file_converter first if you have JSON)" },
           "filters": {
             "type": "array",
-            "description": "Filters combined with AND logic (search only). Always combine ALL conditions in a single search call — e.g. gender eq 'M' + city eq 'Warsaw' + birthDate gte '1986-01-01' + birthDate lte '2006-12-31'. All comparisons are string-based: gte/lte work directly on ISO dates without extracting year.",
+            "description": "Filters combined with AND logic. Always combine ALL conditions in a single search call — e.g. gender eq 'M' + city eq 'Warsaw' + birthDate gte '1986-01-01' + birthDate lte '2006-12-31'. All comparisons are string-based: gte/lte work directly on ISO dates without extracting year.",
             "items": {
               "type": "object",
               "properties": {
@@ -30,15 +36,24 @@
               "required": ["column", "op", "value"],
               "additionalProperties": false
             }
-          },
-          "column_name": { "type": "string", "description": "Column to transform (transform_column only)" },
-          "instructions": { "type": "string", "description": "Natural-language transformation instructions (transform_column only). This is a 1:1 map — must produce exactly one output value per input row. Never ask to filter or skip rows here; use search for filtering." }
+          }
         },
-        "required": ["path"],
+        "required": ["path", "filters"],
         "additionalProperties": false
       }
     },
-    "required": ["action", "payload"],
-    "additionalProperties": false
+    "transform_column": {
+      "description": "LLM-powered column transformation — only for semantic understanding, never for simple string/date ops",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to a CSV file (must be .csv — use file_converter first if you have JSON)" },
+          "column_name": { "type": "string", "description": "Column to transform" },
+          "instructions": { "type": "string", "description": "Natural-language transformation instructions. This is a 1:1 map — must produce exactly one output value per input row. Never ask to filter or skip rows here; use search for filtering." }
+        },
+        "required": ["path", "column_name", "instructions"],
+        "additionalProperties": false
+      }
+    }
   }
 }

@@ -99,6 +99,10 @@ async function agentsHub({ action, payload }: { action: string; payload: Record<
       return verify(payload as { task: string; answer_file: string });
     case "api_request":
       return apiRequest(payload as { path: string; body?: Record<string, any>; body_file?: string });
+    case "api_request_body":
+      return apiRequest({ path: payload.path, body: JSON.parse(payload.body_json) });
+    case "api_request_file":
+      return apiRequest({ path: payload.path, body_file: payload.body_file });
     default:
       throw new Error(`Unknown agents_hub action: ${action}`);
   }

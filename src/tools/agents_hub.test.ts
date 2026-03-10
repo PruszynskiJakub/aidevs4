@@ -125,3 +125,64 @@ describe("agents_hub api_request", () => {
     expect(result.response).toBe("plain text response");
   });
 });
+
+describe("agents_hub api_request_body", () => {
+  it("parses body_json string and sends as body with apikey", async () => {
+    let capturedBody: any = null;
+
+    globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+
+    const result = (await handler({
+      action: "api_request_body",
+      payload: { path: "test", body_json: '{"query":"hello","limit":10}' },
+    })) as any;
+
+    expect(capturedBody.query).toBe("hello");
+    expect(capturedBody.limit).toBe(10);
+    expect(capturedBody.apikey).toBe("test-key-123");
+    expect(result.path).toBe("test");
+    expect(result.response).toEqual({ ok: true });
+  });
+
+  it("throws on invalid body_json", async () => {
+    await expect(
+      handler({
+        action: "api_request_body",
+        payload: { path: "test", body_json: "not-json" },
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+describe("agents_hub api_request_file", () => {
+  it("reads body from file with apikey merged", async () => {
+    const bodyFile = join(tmp, "request_file_action.json");
+    await Bun.write(bodyFile, JSON.stringify({ data: "from-file-action" }));
+
+    let capturedBody: any = null;
+
+    globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return new Response(JSON.stringify({ result: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+
+    const result = (await handler({
+      action: "api_request_file",
+      payload: { path: "upload", body_file: bodyFile },
+    })) as any;
+
+    expect(capturedBody.data).toBe("from-file-action");
+    expect(capturedBody.apikey).toBe("test-key-123");
+    expect(result.path).toBe("upload");
+    expect(result.response).toEqual({ result: "ok" });
+  });
+});

@@ -1,46 +1,53 @@
 {
   "name": "agents_hub",
-  "description": "Interact with the AG3NTS hub. Use action to pick an operation: download (fetch a file — requires: filename), verify (submit an answer — requires: task, answer_file), api_request (POST to /api/* — requires: path, optionally body or body_file).",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "action": {
-        "type": "string",
-        "enum": ["download", "verify", "api_request"],
-        "description": "Operation to perform"
-      },
-      "payload": {
+  "description": "Interact with the AG3NTS hub.",
+  "actions": {
+    "download": {
+      "description": "Fetch a file from the hub",
+      "parameters": {
         "type": "object",
         "properties": {
-          "filename": {
-            "type": "string",
-            "description": "Name of the file to download (download only, e.g. \"people.csv\")"
-          },
-          "task": {
-            "type": "string",
-            "description": "The task name to verify against (verify only, e.g. \"people\")"
-          },
-          "answer_file": {
-            "type": "string",
-            "description": "Absolute path to the JSON file containing the answer data (verify only)"
-          },
-          "path": {
-            "type": "string",
-            "description": "API path segment after /api/ (api_request only, e.g. \"location\")"
-          },
-          "body": {
-            "type": "object",
-            "description": "Inline JSON body to send (api_request only, mutually exclusive with body_file)"
-          },
-          "body_file": {
-            "type": "string",
-            "description": "Absolute path to a JSON file for the request body (api_request only, mutually exclusive with body)"
-          }
+          "filename": { "type": "string", "description": "Name of the file to download (e.g. \"people.csv\")" }
         },
+        "required": ["filename"],
         "additionalProperties": false
       }
     },
-    "required": ["action", "payload"],
-    "additionalProperties": false
+    "verify": {
+      "description": "Submit an answer for verification",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task": { "type": "string", "description": "The task name to verify against (e.g. \"people\")" },
+          "answer_file": { "type": "string", "description": "Absolute path to the JSON file containing the answer data" }
+        },
+        "required": ["task", "answer_file"],
+        "additionalProperties": false
+      }
+    },
+    "api_request_body": {
+      "description": "POST to /api/* with an inline JSON body",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "API path segment after /api/ (e.g. \"location\")" },
+          "body_json": { "type": "string", "description": "JSON-encoded string of the request body (will be parsed before sending)" }
+        },
+        "required": ["path", "body_json"],
+        "additionalProperties": false
+      }
+    },
+    "api_request_file": {
+      "description": "POST to /api/* with body loaded from a JSON file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "API path segment after /api/ (e.g. \"location\")" },
+          "body_file": { "type": "string", "description": "Absolute path to a JSON file for the request body" }
+        },
+        "required": ["path", "body_file"],
+        "additionalProperties": false
+      }
+    }
   }
 }

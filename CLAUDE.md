@@ -96,10 +96,16 @@ The agent's toolbox grows with each completed task.
 - **Auto-discovery**: `dispatcher.ts` scans `src/tools/` at runtime — just drop a
   file and it's registered. No manual wiring.
 - **Schemas**: Hand-written JSON in OpenAI function-calling format. Always set
-  `additionalProperties: false` on every object. Dispatcher adds `strict: true`.
+  `additionalProperties: false` on every object, list all properties in `required`.
+  Dispatcher adds `strict: true`. Avoid `oneOf`, `anyOf`, type arrays
+  (`["array", "null"]`), and free-form `"type": "object"` without defined
+  properties — these are not supported by OpenAI strict mode.
 - **Multi-action tools**: Use `{ action: string, payload: Record<string, any> }`
-  shape. Schema uses `oneOf` with `action` as `const` discriminator per variant.
-  Handler switches on `action`. See `csv_processor` as the reference pattern.
+  handler shape. Schema uses a top-level `actions` key (not `oneOf`) — the
+  dispatcher expands each action into a separate OpenAI function named
+  `${tool}__${action}` (double-underscore separator). Each action has its own
+  `description` and `parameters`. Handler switches on `action`.
+  See `csv_processor` as the reference pattern.
 - **File I/O**: Always use `files` service (`src/services/file.ts`), never raw `fs`.
 - **Output files**: Use `ensureOutputDir()` + `outputPath(filename)` from
   `src/utils/output.ts` for any tool-generated files.
