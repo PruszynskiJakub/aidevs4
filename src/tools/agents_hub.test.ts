@@ -19,7 +19,7 @@ beforeAll(async () => {
 afterAll(async () => {
   ALLOWED_READ_PATHS.splice(ALLOWED_READ_PATHS.indexOf(tmp), 1);
   await rm(tmp, { recursive: true, force: true });
-  delete process.env.AGENTS_HUB_API_KEY;
+  delete process.env.HUB_API_KEY;
   globalThis.fetch = originalFetch;
 });
 

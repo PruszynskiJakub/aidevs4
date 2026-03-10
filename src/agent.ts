@@ -31,17 +31,27 @@ export async function runAgent(userPrompt: string, provider: LLMProvider = defau
       return;
     }
 
-    for (const toolCall of response.toolCalls) {
-      if (toolCall.type !== "function") continue;
-      const { name, arguments: argsJson } = toolCall.function;
-      console.log(`→ ${name}(${argsJson})`);
+    const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
 
-      const result = await dispatch(name, argsJson);
-      console.log(`  ✓ done`);
+    for (const tc of functionCalls) {
+      console.log(`→ ${tc.function.name}(${tc.function.arguments})`);
+    }
 
+    const settled = await Promise.allSettled(
+      functionCalls.map(tc => dispatch(tc.function.name, tc.function.arguments))
+    );
+
+    for (let j = 0; j < functionCalls.length; j++) {
+      const tc = functionCalls[j];
+      const outcome = settled[j];
+      const result = outcome.status === "fulfilled"
+        ? outcome.value
+        : JSON.stringify({ error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason) });
+
+      console.log(`  ✓ ${tc.function.name} done`);
       messages.push({
         role: "tool",
-        toolCallId: toolCall.id,
+        toolCallId: tc.id,
         content: result,
       });
     }
@@ -51,10 +61,11 @@ export async function runAgent(userPrompt: string, provider: LLMProvider = defau
 }
 
 // CLI entry point
-const prompt = process.argv[2];
-if (!prompt) {
-  console.error("Usage: bun run src/agent.ts \"your prompt here\"");
-  process.exit(1);
+if (import.meta.main) {
+  const prompt = process.argv[2];
+  if (!prompt) {
+    console.error("Usage: bun run src/agent.ts \"your prompt here\"");
+    process.exit(1);
+  }
+  void runAgent(prompt);
 }
-
-void runAgent(prompt);
