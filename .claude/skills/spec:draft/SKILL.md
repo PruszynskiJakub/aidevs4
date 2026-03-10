@@ -23,6 +23,8 @@ change will touch. Summarise findings for the user before moving on.
 Have a focused discussion to clarify:
 
 - **Scope** — what is in / out of this spec
+- **Out of scope** — what this spec explicitly does NOT cover
+- **Constraints** — hard limits (performance, compatibility, dependencies)
 - **Acceptance criteria** — concrete, verifiable conditions for "done"
 - **Approach** — high-level implementation strategy
 - **Risks / open questions** — anything unresolved
@@ -42,6 +44,8 @@ Once aligned, generate the spec using the template at
 - **Main objective**: one sentence — what and why
 - **Context**: what exists today, why the change is needed (informed by codebase
   exploration)
+- **Out of scope**: explicit boundaries — what will NOT be done
+- **Constraints**: hard limits the implementation must respect
 - **Acceptance criteria**: checkboxes, each verifiable
 - **Implementation plan**: numbered steps agreed during discussion
 - **Testing scenarios**: how to verify each acceptance criterion

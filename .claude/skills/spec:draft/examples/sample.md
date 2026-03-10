@@ -15,6 +15,18 @@ manual reruns and loses accumulated conversation context.
 The tool dispatcher (`src/tools/dispatcher.ts`) catches tool errors but
 re-throws them without retry logic.
 
+## Out of scope
+
+- Circuit-breaker / fallback patterns (future spec)
+- Retry for streaming responses
+- Persisting conversation state to disk for crash recovery
+
+## Constraints
+
+- No new runtime dependencies — use only built-in `setTimeout` / `Bun.sleep`
+- Retry delay must not exceed 30 seconds total per call
+- Must not break existing tool interface (`ToolDefinition`)
+
 ## Acceptance criteria
 
 - [ ] LLM API calls retry up to 3 times on transient errors (429, 5xx, timeout)

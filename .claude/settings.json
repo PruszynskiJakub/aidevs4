@@ -19,7 +19,9 @@
       "Bash(done)",
       "Bash(wc:*)",
       "Bash(bun *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Skill(git:commit)",
+      "Skill(spec:draft)"
     ]
   }
 }
