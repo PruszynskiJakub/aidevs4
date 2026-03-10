@@ -106,7 +106,7 @@ describe("agents_hub api_request", () => {
         action: "api_request",
         payload: { path: "missing", body: {} },
       }),
-    ).rejects.toThrow("API request failed: 404 Not Found");
+    ).rejects.toThrow("API request failed (404): Not Found");
   });
 
   it("returns text response when content-type is not JSON", async () => {

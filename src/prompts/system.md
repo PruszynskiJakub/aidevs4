@@ -37,4 +37,5 @@ For every task, follow this think-then-act cycle:
 
 - The `verify` action requires a JSON file path. Ensure the file exists (produced by `file_converter` or a prior tool) before submitting.
 - Match the task name exactly as given in the task description.
-- If verification fails, review your answer data and reprocess — do not resubmit the same answer.
+- If verification fails, **read the error message carefully** — it usually explains what's wrong (bad format, incorrect data, wrong fields). Use that information to fix the specific issue. Do not blindly reformat or re-convert data without a clear reason derived from the error.
+- Never spend more than 2 iterations reformatting data after a verify failure without re-attempting verify. If your fix doesn't work, change strategy entirely.

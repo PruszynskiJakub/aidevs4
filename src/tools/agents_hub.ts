@@ -35,11 +35,13 @@ async function verify(payload: { task: string; answer_file: string }): Promise<{
     body: JSON.stringify(body),
   });
 
+  const response = await res.json().catch(() => res.text());
+
   if (!res.ok) {
-    throw new Error(`Verify request failed: ${res.status} ${res.statusText}`);
+    const detail = typeof response === "string" ? response : JSON.stringify(response);
+    throw new Error(`Verify failed (${res.status}): ${detail}`);
   }
 
-  const response = await res.json();
   return { task: payload.task, response };
 }
 
@@ -76,14 +78,15 @@ async function apiRequest(payload: {
     body: JSON.stringify(body),
   });
 
-  if (!res.ok) {
-    throw new Error(`API request failed: ${res.status} ${res.statusText}`);
-  }
-
   const contentType = res.headers.get("content-type") || "";
   const response = contentType.includes("application/json")
     ? await res.json()
     : await res.text();
+
+  if (!res.ok) {
+    const detail = typeof response === "string" ? response : JSON.stringify(response);
+    throw new Error(`API request failed (${res.status}): ${detail}`);
+  }
 
   return { path: payload.path, response };
 }
