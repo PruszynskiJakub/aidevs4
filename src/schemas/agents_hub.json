@@ -1,6 +1,6 @@
 {
   "name": "agents_hub",
-  "description": "Interact with the AG3NTS hub. Use action to pick an operation: download (fetch a file from hub.ag3nts.org), verify (submit an answer for verification).",
+  "description": "Interact with the AG3NTS hub. Use action to pick an operation: download (fetch a file by name from hub.ag3nts.org), verify (submit an answer for verification).",
   "parameters": {
     "type": "object",
     "oneOf": [
@@ -10,12 +10,12 @@
           "payload": {
             "type": "object",
             "properties": {
-              "url": {
+              "filename": {
                 "type": "string",
-                "description": "Full URL to the file on hub.ag3nts.org (e.g. https://hub.ag3nts.org/data/APIKEY/people.csv)"
+                "description": "Name of the file to download (e.g. \"people.csv\", \"xyz.json\")"
               }
             },
-            "required": ["url"],
+            "required": ["filename"],
             "additionalProperties": false
           }
         },

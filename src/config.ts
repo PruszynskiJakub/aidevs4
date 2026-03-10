@@ -11,4 +11,5 @@ export const MAX_ITERATIONS = 20;
 export const TRANSFORM_MODEL = "gpt-4.1-mini";
 export const TRANSFORM_BATCH_SIZE = 25;
 
-export const HUB_VERIFY_URL = "https://hub.ag3nts.org/verify";
+export const HUB_BASE_URL = "https://hub.ag3nts.org";
+export const HUB_VERIFY_URL = `${HUB_BASE_URL}/verify`;

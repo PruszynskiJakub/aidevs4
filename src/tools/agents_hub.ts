@@ -1,24 +1,24 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import { files } from "../services/file.ts";
-import { buildHubUrl, getApiKey, sanitizeUrl } from "../utils/hub.ts";
+import { getApiKey } from "../utils/hub.ts";
 import { ensureOutputDir, outputPath } from "../utils/output.ts";
-import { HUB_VERIFY_URL } from "../config.ts";
+import { HUB_BASE_URL, HUB_VERIFY_URL } from "../config.ts";
 
-async function download(payload: { url: string }): Promise<{ url: string; path: string }> {
+async function download(payload: { filename: string }): Promise<{ filename: string; path: string }> {
   await ensureOutputDir();
 
-  const fetchUrl = buildHubUrl(payload.url);
-  const filename = new URL(fetchUrl).pathname.split("/").pop() || "file";
-  const path = outputPath(filename);
+  const apiKey = getApiKey();
+  const url = `${HUB_BASE_URL}/data/${apiKey}/${payload.filename}`;
+  const path = outputPath(payload.filename);
 
-  const response = await fetch(fetchUrl);
+  const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Failed to fetch ${sanitizeUrl(fetchUrl)}: ${response.status}`);
+    throw new Error(`Failed to fetch ${payload.filename}: ${response.status}`);
   }
 
   await files.write(path, response);
 
-  return { url: sanitizeUrl(fetchUrl), path };
+  return { filename: payload.filename, path };
 }
 
 async function verify(payload: { task: string; answer_file: string }): Promise<{ task: string; response: unknown }> {
@@ -46,7 +46,7 @@ async function verify(payload: { task: string; answer_file: string }): Promise<{
 async function agentsHub({ action, payload }: { action: string; payload: Record<string, any> }): Promise<unknown> {
   switch (action) {
     case "download":
-      return download(payload as { url: string });
+      return download(payload as { filename: string });
     case "verify":
       return verify(payload as { task: string; answer_file: string });
     default:
