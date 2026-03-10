@@ -1,0 +1,48 @@
+{
+  "name": "agents_hub",
+  "description": "Interact with the AG3NTS hub. Use action to pick an operation: download (fetch a file from hub.ag3nts.org), verify (submit an answer for verification).",
+  "parameters": {
+    "type": "object",
+    "oneOf": [
+      {
+        "properties": {
+          "action": { "const": "download" },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "Full URL to the file on hub.ag3nts.org (e.g. https://hub.ag3nts.org/data/APIKEY/people.csv)"
+              }
+            },
+            "required": ["url"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["action", "payload"]
+      },
+      {
+        "properties": {
+          "action": { "const": "verify" },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "task": {
+                "type": "string",
+                "description": "The task name to verify against (e.g. \"people\")"
+              },
+              "answer_file": {
+                "type": "string",
+                "description": "Absolute path to the JSON file containing the answer data"
+              }
+            },
+            "required": ["task", "answer_file"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["action", "payload"]
+      }
+    ],
+    "additionalProperties": false
+  }
+}

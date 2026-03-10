@@ -32,7 +32,8 @@ The agent's toolbox grows with each completed task.
   ├── src/                          # Production agent system
   │   ├── agent.ts                  # Agent loop (OpenAI chat + tool calling)
   │   ├── config.ts                 # Constants (models, URLs, batch sizes)
-  │   ├── prompts/system.ts         # Agent system prompt
+  │   ├── prompts/                   # Markdown prompt files (.md + YAML frontmatter)
+  │   │   └── system.md             # Agent system prompt
   │   ├── tools/                    # Tool implementations (auto-registered)
   │   │   ├── dispatcher.ts         # Auto-discovers and dispatches tools
   │   │   └── <tool_name>.ts        # Each exports default ToolDefinition
@@ -67,9 +68,24 @@ The agent's toolbox grows with each completed task.
 
 ## Prompts
 
-- ALL prompts file MUST be markdown with yaml frontmatter with:
-    - model e.g. 'gpt-4.1-mini'
-- Prompts placeholder MUST be wrapped in {{placeholder}}
+- **Format**: Every prompt is a `.md` file in `src/prompts/` with YAML frontmatter.
+- **Frontmatter fields**: `model` (required by convention), `temperature` (optional).
+  ```yaml
+  ---
+  model: gpt-4.1
+  temperature: 0.7
+  ---
+  ```
+- **Placeholders**: Use `{{variable_name}}` — rendered by `promptService.load()`.
+  Missing variables throw; extra variables are silently ignored.
+- **Service**: `promptService` from `src/services/prompt.ts`. Call
+  `promptService.load("name", { key: "value" })` → returns
+  `{ model?, temperature?, content }`.
+- **Consumers wire the result** into the LLM service themselves — the prompt
+  service only loads and renders, it never calls the LLM.
+- **Naming**: Prompt files use kebab-case (`system.md`, `classify-tags.md`).
+- **No hardcoded prompts** — never put prompt text in `.ts` files. Always use a
+  `.md` file + the prompt service.
 
 ## Tools
 
