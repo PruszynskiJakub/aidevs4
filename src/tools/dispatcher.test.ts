@@ -74,29 +74,21 @@ describe("dispatcher", () => {
     });
 
     it("returns all expanded tools", () => {
-      // csv_processor: 3 actions, agents_hub: 4 actions, file_converter: 1, filesystem: 1 = 9
+      // agents_hub: 4 actions + filesystem: 1 action + data_transformer: 4 actions = 9
       expect(tools.length).toBe(9);
     });
 
     it("expands multi-action schemas with __ separator", () => {
       const names = tools.map((t) => t.function.name);
-      expect(names).toContain("csv_processor__metadata");
-      expect(names).toContain("csv_processor__search");
-      expect(names).toContain("csv_processor__transform_column");
       expect(names).toContain("agents_hub__download");
       expect(names).toContain("agents_hub__verify");
       expect(names).toContain("agents_hub__api_request_body");
       expect(names).toContain("agents_hub__api_request_file");
-    });
-
-    it("keeps simple schemas as single functions", () => {
-      const names = tools.map((t) => t.function.name);
-      expect(names).toContain("file_converter");
-    });
-
-    it("expands filesystem multi-action schema", () => {
-      const names = tools.map((t) => t.function.name);
-      expect(names).toContain("filesystem__read_file");
+      expect(names).toContain("filesystem__inspect");
+      expect(names).toContain("data_transformer__filter");
+      expect(names).toContain("data_transformer__sort");
+      expect(names).toContain("data_transformer__add_field");
+      expect(names).toContain("data_transformer__convert");
     });
 
     it("sets strict: true on all tools", () => {
@@ -106,35 +98,33 @@ describe("dispatcher", () => {
     });
 
     it("combines tool + action descriptions for multi-action tools", () => {
-      const metadata = tools.find((t) => t.function.name === "csv_processor__metadata");
-      expect(metadata?.function.description).toContain("Process CSV files");
-      expect(metadata?.function.description).toContain("Inspect CSV structure");
+      const inspect = tools.find((t) => t.function.name === "filesystem__inspect");
+      expect(inspect?.function.description).toContain("Inspect files and directories");
+      expect(inspect?.function.description).toContain("Inspect a file or directory");
     });
 
     it("uses action-specific parameters for expanded tools", () => {
-      const metadata = tools.find((t) => t.function.name === "csv_processor__metadata");
-      const params = metadata?.function.parameters as any;
+      const filter = tools.find((t) => t.function.name === "data_transformer__filter");
+      const params = filter?.function.parameters as any;
       expect(params.properties.path).toBeDefined();
-      // metadata should NOT have filters or column_name
-      expect(params.properties.filters).toBeUndefined();
-      expect(params.properties.column_name).toBeUndefined();
+      expect(params.properties.conditions).toBeDefined();
+      expect(params.properties.logic).toBeDefined();
+      // filter should NOT have sort_by or field_name
+      expect(params.properties.sort_by).toBeUndefined();
+      expect(params.properties.field_name).toBeUndefined();
 
-      const search = tools.find((t) => t.function.name === "csv_processor__search");
-      const searchParams = search?.function.parameters as any;
-      expect(searchParams.properties.path).toBeDefined();
-      expect(searchParams.properties.filters).toBeDefined();
-      expect(searchParams.properties.column_name).toBeUndefined();
+      const sort = tools.find((t) => t.function.name === "data_transformer__sort");
+      const sortParams = sort?.function.parameters as any;
+      expect(sortParams.properties.sort_by).toBeDefined();
+      expect(sortParams.properties.conditions).toBeUndefined();
     });
   });
 
   describe("dispatch routing", () => {
     it("routes multi-action name to handler with { action, payload }", async () => {
-      // Test the routing logic directly: csv_processor handler receives { action, payload }
-      const csvProcessor = (await import("./csv_processor.ts")).default;
-      // Calling with metadata action and a valid-looking but nonexistent path
-      // should produce a file error, proving the routing shape is correct
+      const filesystem = (await import("./filesystem.ts")).default;
       try {
-        await csvProcessor.handler({ action: "metadata", payload: { path: "/nonexistent/file.csv" } });
+        await filesystem.handler({ action: "inspect", payload: { path: "/nonexistent/file.csv" } });
       } catch (e: any) {
         // File access error = handler was called correctly with { action, payload }
         expect(e.message).not.toContain("Unknown action");
@@ -142,9 +132,9 @@ describe("dispatcher", () => {
     });
 
     it("handler rejects unknown actions", async () => {
-      const csvProcessor = (await import("./csv_processor.ts")).default;
+      const filesystem = (await import("./filesystem.ts")).default;
       try {
-        await csvProcessor.handler({ action: "bogus", payload: {} });
+        await filesystem.handler({ action: "bogus", payload: {} });
         expect(true).toBe(false); // should not reach
       } catch (e: any) {
         expect(e.message).toContain('Unknown action "bogus"');
