@@ -1,6 +1,6 @@
 {
   "name": "agents_hub",
-  "description": "Interact with the AG3NTS hub. Use action to pick an operation: download (fetch a file by name from hub.ag3nts.org), verify (submit an answer for verification).",
+  "description": "Interact with the AG3NTS hub. Use action to pick an operation: download (fetch a file by name from hub.ag3nts.org), verify (submit an answer for verification), api_request (POST to any /api/* endpoint).",
   "parameters": {
     "type": "object",
     "oneOf": [
@@ -37,6 +37,31 @@
               }
             },
             "required": ["task", "answer_file"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["action", "payload"]
+      },
+      {
+        "properties": {
+          "action": { "const": "api_request" },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "API path segment after /api/ (e.g. \"location\", \"users/search\")"
+              },
+              "body": {
+                "type": "object",
+                "description": "Inline JSON body to send (mutually exclusive with body_file)"
+              },
+              "body_file": {
+                "type": "string",
+                "description": "Absolute path to a JSON file whose contents will be used as the request body (mutually exclusive with body)"
+              }
+            },
+            "required": ["path"],
             "additionalProperties": false
           }
         },

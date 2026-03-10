@@ -43,12 +43,59 @@ async function verify(payload: { task: string; answer_file: string }): Promise<{
   return { task: payload.task, response };
 }
 
+async function apiRequest(payload: {
+  path: string;
+  body?: Record<string, any>;
+  body_file?: string;
+}): Promise<{ path: string; response: unknown }> {
+  const hasBody = payload.body !== undefined;
+  const hasFile = payload.body_file !== undefined;
+
+  if (hasBody && hasFile) {
+    throw new Error("Provide either body or body_file, not both");
+  }
+  if (!hasBody && !hasFile) {
+    throw new Error("Provide either body or body_file");
+  }
+
+  let body: Record<string, any>;
+  if (hasFile) {
+    const content = await files.readText(payload.body_file!);
+    body = JSON.parse(content);
+  } else {
+    body = { ...payload.body };
+  }
+
+  const apiKey = getApiKey();
+  body.apikey = apiKey;
+
+  const url = `${HUB_BASE_URL}/api/${payload.path}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    throw new Error(`API request failed: ${res.status} ${res.statusText}`);
+  }
+
+  const contentType = res.headers.get("content-type") || "";
+  const response = contentType.includes("application/json")
+    ? await res.json()
+    : await res.text();
+
+  return { path: payload.path, response };
+}
+
 async function agentsHub({ action, payload }: { action: string; payload: Record<string, any> }): Promise<unknown> {
   switch (action) {
     case "download":
       return download(payload as { filename: string });
     case "verify":
       return verify(payload as { task: string; answer_file: string });
+    case "api_request":
+      return apiRequest(payload as { path: string; body?: Record<string, any>; body_file?: string });
     default:
       throw new Error(`Unknown agents_hub action: ${action}`);
   }
