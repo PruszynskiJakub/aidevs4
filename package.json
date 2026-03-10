@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "csv-parse": "^6.1.0",
+    "gray-matter": "^4.0.3",
     "openai": "^6.27.0"
   }
 }

@@ -1,20 +1,21 @@
 import type { LLMProvider, LLMMessage } from "./types/llm.ts";
 import { llm as defaultLLM } from "./services/llm.ts";
-import { AGENT_MODEL, MAX_ITERATIONS } from "./config.ts";
+import { MAX_ITERATIONS } from "./config.ts";
 import { getTools, dispatch } from "./tools/dispatcher.ts";
-import { SYSTEM_PROMPT } from "./prompts/system.ts";
+import { promptService } from "./services/prompt.ts";
 
 export async function runAgent(userPrompt: string, provider: LLMProvider = defaultLLM) {
   const tools = await getTools();
+  const system = await promptService.load("system");
 
   const messages: LLMMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: system.content },
     { role: "user", content: userPrompt },
   ];
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await provider.chatCompletion({
-      model: AGENT_MODEL,
+      model: system.model!,
       messages,
       tools,
     });

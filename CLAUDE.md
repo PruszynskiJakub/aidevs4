@@ -73,5 +73,21 @@ The agent's toolbox grows with each completed task.
 
 ## Tools
 
+- **Interface**: Each tool is a `{ name, handler }` satisfying `ToolDefinition`
+  (src/types/tool.ts). Export as `export default { … } satisfies ToolDefinition`.
+- **File convention**: `src/tools/<tool_name>.ts` + `src/schemas/<tool_name>.json` —
+  dispatcher matches them by filename. Naming is snake_case.
+- **Auto-discovery**: `dispatcher.ts` scans `src/tools/` at runtime — just drop a
+  file and it's registered. No manual wiring.
+- **Schemas**: Hand-written JSON in OpenAI function-calling format. Always set
+  `additionalProperties: false` on every object. Dispatcher adds `strict: true`.
+- **Multi-action tools**: Use `{ action: string, payload: Record<string, any> }`
+  shape. Schema uses `oneOf` with `action` as `const` discriminator per variant.
+  Handler switches on `action`. See `csv_processor` as the reference pattern.
+- **File I/O**: Always use `files` service (`src/services/file.ts`), never raw `fs`.
+- **Output files**: Use `ensureOutputDir()` + `outputPath(filename)` from
+  `src/utils/output.ts` for any tool-generated files.
+- **Errors**: Throw `Error` — dispatcher catches and returns `{ error: message }`.
+
 ## Playground
 
