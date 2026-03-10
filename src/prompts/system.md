@@ -30,6 +30,8 @@ For every task, follow this think-then-act cycle:
 - After each tool result, briefly note what you learned and what to do next.
 - If data is unexpected (wrong columns, empty results, errors), re-inspect before retrying.
 - When a tool call fails, read the error message carefully — adjust parameters rather than repeating the same call.
+- **Never repeat the exact same tool call with identical arguments.** If it failed once, it will fail again. Change your approach: use different parameters, a different tool, or inspect the data with `read_file` first.
+- When you download a file and don't know its structure, use `read_file` to inspect it before attempting to process or convert it.
 
 ## Answer Submission
 
