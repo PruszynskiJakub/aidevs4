@@ -19,7 +19,7 @@
         "description": "Desired output format"
       },
       "mapping": {
-        "type": "array",
+        "type": ["array", "null"],
         "description": "Optional column/key mapping. When omitted, all fields pass through unchanged.",
         "items": {
           "type": "object",
@@ -38,12 +38,12 @@
               "description": "Type coercion (CSV → JSON only, ignored for JSON → CSV): 'string' (default), 'number', 'json'"
             }
           },
-          "required": ["from", "to"],
+          "required": ["from", "to", "type"],
           "additionalProperties": false
         }
       }
     },
-    "required": ["source_path", "from_format", "to_format"],
+    "required": ["source_path", "from_format", "to_format", "mapping"],
     "additionalProperties": false
   }
 }

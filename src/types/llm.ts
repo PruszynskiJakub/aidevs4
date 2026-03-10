@@ -51,6 +51,7 @@ export interface LLMChatResponse {
   content: string | null;
   toolCalls: LLMToolCall[];
   finishReason: string;
+  usage?: { promptTokens: number; completionTokens: number };
 }
 
 export interface ChatCompletionParams {

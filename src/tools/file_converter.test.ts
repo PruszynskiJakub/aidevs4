@@ -39,6 +39,15 @@ beforeAll(async () => {
       { full_name: "Bob", location: "Berlin" },
     ]),
   );
+
+  await Bun.write(
+    join(tmp, "with_arrays.json"),
+    JSON.stringify([
+      { name: "Alice", tags: ["transport", "IT"] },
+      { name: "Bob", tags: ["edukacja"] },
+      { name: "Charlie", tags: [] },
+    ]),
+  );
 });
 
 afterAll(async () => {
@@ -119,6 +128,44 @@ describe("file_converter", () => {
       expect(result.outputPath).toContain("people.csv");
       expect(result.preview).toContain("name,age,city");
       expect(result.preview).toContain("Alice,30,Warsaw");
+    });
+
+    it("properly quotes array values as JSON strings", async () => {
+      const result = (await handler({
+        source_path: join(tmp, "with_arrays.json"),
+        from_format: "json",
+        to_format: "csv",
+      })) as any;
+
+      expect(result.rowCount).toBe(3);
+      // Arrays should be serialized as JSON, not String() which loses brackets
+      expect(result.preview).toContain('"[""transport"",""IT""]"');
+      expect(result.preview).toContain('"[""edukacja""]"');
+      expect(result.preview).toContain("[]");
+    });
+
+    it("roundtrips arrays through CSV→JSON", async () => {
+      // First: JSON → CSV
+      const csvResult = (await handler({
+        source_path: join(tmp, "with_arrays.json"),
+        from_format: "json",
+        to_format: "csv",
+      })) as any;
+
+      // Then: CSV → JSON with json type
+      const jsonResult = (await handler({
+        source_path: csvResult.outputPath,
+        from_format: "csv",
+        to_format: "json",
+        mapping: [
+          { from: "name", to: "name", type: "string" },
+          { from: "tags", to: "tags", type: "json" },
+        ],
+      })) as any;
+
+      expect(jsonResult.preview[0]).toEqual({ name: "Alice", tags: ["transport", "IT"] });
+      expect(jsonResult.preview[1]).toEqual({ name: "Bob", tags: ["edukacja"] });
+      expect(jsonResult.preview[2]).toEqual({ name: "Charlie", tags: [] });
     });
 
     it("converts with mapping (rename keys)", async () => {

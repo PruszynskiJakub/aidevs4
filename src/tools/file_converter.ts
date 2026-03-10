@@ -1,6 +1,6 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import { files } from "../services/file.ts";
-import { parseCsv, writeCsv, type Row } from "../utils/csv.ts";
+import { parseCsv, writeCsv, toCsvLine, type Row } from "../utils/csv.ts";
 import { ensureOutputDir, outputPath } from "../utils/output.ts";
 
 interface ColumnMapping {
@@ -14,6 +14,12 @@ interface ConverterArgs {
   from_format: "csv" | "json";
   to_format: "csv" | "json";
   mapping?: ColumnMapping[];
+}
+
+function stringifyValue(val: unknown): string {
+  if (val == null) return "";
+  if (typeof val === "object") return JSON.stringify(val);
+  return String(val);
 }
 
 function convertValue(value: string, type: string = "string"): unknown {
@@ -87,8 +93,7 @@ async function jsonToCsv(
     rows = data.map((obj) => {
       const row: Row = {};
       for (const { from, to } of mapping) {
-        const val = obj[from];
-        row[to] = val == null ? "" : String(val);
+        row[to] = stringifyValue(obj[from]);
       }
       return row;
     });
@@ -96,7 +101,7 @@ async function jsonToCsv(
     rows = data.map((obj) => {
       const row: Row = {};
       for (const [key, val] of Object.entries(obj)) {
-        row[key] = val == null ? "" : String(val);
+        row[key] = stringifyValue(val);
       }
       return row;
     });
@@ -111,7 +116,7 @@ async function jsonToCsv(
   const columns = Object.keys(rows[0]);
   const previewLines = [
     columns.join(","),
-    ...previewRows.map((r) => columns.map((c) => r[c]).join(",")),
+    ...previewRows.map((r) => toCsvLine(r, columns)),
   ];
 
   return {

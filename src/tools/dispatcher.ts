@@ -11,7 +11,7 @@ async function loadToolDefinitions(): Promise<Map<string, ToolDefinition>> {
   const entries = await files.readdir(TOOLS_DIR);
 
   for (const entry of entries) {
-    if (entry === "dispatcher.ts" || !entry.endsWith(".ts")) continue;
+    if (entry === "dispatcher.ts" || entry.endsWith(".test.ts") || !entry.endsWith(".ts")) continue;
     const mod = await import(join(TOOLS_DIR, entry));
     const def: ToolDefinition = mod.default;
     if (def?.name && typeof def?.handler === "function") {
@@ -35,7 +35,7 @@ async function loadSchemas(): Promise<LLMTool[]> {
         name: schema.name,
         description: schema.description,
         parameters: schema.parameters,
-        strict: true,
+        strict: false,
       },
     });
   }

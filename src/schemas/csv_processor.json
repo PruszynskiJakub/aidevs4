@@ -1,68 +1,44 @@
 {
   "name": "csv_processor",
-  "description": "Process CSV files. Use action to pick an operation: metadata (inspect structure), search (filter rows), transform_column (LLM-powered column transformation).",
+  "description": "Process CSV files (CSV only — never pass JSON files). Actions: metadata (inspect structure), search (filter rows), transform_column (LLM-powered — only for semantic understanding, never for simple string/date ops). Workflow tip: after transform_column produces JSON arrays in cells (e.g. '[\"transport\"]'), search with 'contains' works on raw cell text — finish all filtering in CSV before converting to JSON with file_converter.",
   "parameters": {
     "type": "object",
-    "oneOf": [
-      {
-        "properties": {
-          "action": { "const": "metadata" },
-          "payload": {
-            "type": "object",
-            "properties": {
-              "path": { "type": "string", "description": "Absolute path to a CSV file or directory" }
-            },
-            "required": ["path"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["action", "payload"]
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["metadata", "search", "transform_column"],
+        "description": "Operation to perform"
       },
-      {
+      "payload": {
+        "type": "object",
         "properties": {
-          "action": { "const": "search" },
-          "payload": {
-            "type": "object",
-            "properties": {
-              "path": { "type": "string", "description": "Absolute path to the CSV file" },
-              "filters": {
-                "type": "array",
-                "description": "Filters combined with AND logic",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "column": { "type": "string" },
-                    "op": { "type": "string", "enum": ["eq", "neq", "contains", "startsWith", "endsWith", "gt", "lt", "gte", "lte"] },
-                    "value": { "type": "string" }
-                  },
-                  "required": ["column", "op", "value"],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "required": ["path", "filters"],
-            "additionalProperties": false
-          }
+          "path": { "type": "string", "description": "Absolute path to a CSV file or directory (must be .csv — use file_converter first if you have JSON)" },
+          "filters": {
+            "type": "array",
+            "description": "Filters combined with AND logic (search only). Always combine ALL conditions in a single search call — e.g. gender eq 'M' + city eq 'Warsaw' + birthDate gte '1986-01-01' + birthDate lte '2006-12-31'. All comparisons are string-based: gte/lte work directly on ISO dates without extracting year.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "column": { "type": "string" },
+                "op": {
+                  "type": "string",
+                  "enum": ["eq", "neq", "contains", "startsWith", "endsWith", "gt", "lt", "gte", "lte"],
+                  "description": "String comparison. 'contains' is substring match on raw cell text — works on JSON-array strings too (e.g. contains 'transport' matches '[\"transport\"]'). gte/lte use lexicographic order (works on ISO dates)."
+                },
+                "value": { "type": "string" }
+              },
+              "required": ["column", "op", "value"],
+              "additionalProperties": false
+            }
+          },
+          "column_name": { "type": "string", "description": "Column to transform (transform_column only)" },
+          "instructions": { "type": "string", "description": "Natural-language transformation instructions (transform_column only). This is a 1:1 map — must produce exactly one output value per input row. Never ask to filter or skip rows here; use search for filtering." }
         },
-        "required": ["action", "payload"]
-      },
-      {
-        "properties": {
-          "action": { "const": "transform_column" },
-          "payload": {
-            "type": "object",
-            "properties": {
-              "path": { "type": "string", "description": "Absolute path to the CSV file" },
-              "column_name": { "type": "string", "description": "Column to transform" },
-              "instructions": { "type": "string", "description": "Natural-language transformation instructions" }
-            },
-            "required": ["path", "column_name", "instructions"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["action", "payload"]
+        "required": ["path"],
+        "additionalProperties": false
       }
-    ],
+    },
+    "required": ["action", "payload"],
     "additionalProperties": false
   }
 }

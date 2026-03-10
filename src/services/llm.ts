@@ -54,7 +54,10 @@ function toOpenAITools(tools: LLMTool[]): ChatCompletionTool[] {
   }));
 }
 
-function toResponse(choice: OpenAI.Chat.Completions.ChatCompletion.Choice): LLMChatResponse {
+function toResponse(
+  choice: OpenAI.Chat.Completions.ChatCompletion.Choice,
+  usage?: OpenAI.Chat.Completions.ChatCompletion["usage"],
+): LLMChatResponse {
   const msg = choice.message;
   const toolCalls: LLMToolCall[] = (msg.tool_calls ?? [])
     .filter((tc) => tc.type === "function")
@@ -68,6 +71,12 @@ function toResponse(choice: OpenAI.Chat.Completions.ChatCompletion.Choice): LLMC
     content: msg.content,
     toolCalls,
     finishReason: choice.finish_reason ?? "stop",
+    ...(usage && {
+      usage: {
+        promptTokens: usage.prompt_tokens,
+        completionTokens: usage.completion_tokens,
+      },
+    }),
   };
 }
 
@@ -83,7 +92,7 @@ export function createOpenAIProvider(client?: OpenAI): LLMProvider {
         ...(params.temperature !== undefined && { temperature: params.temperature }),
       });
 
-      return toResponse(response.choices[0]);
+      return toResponse(response.choices[0], response.usage);
     },
 
     async completion(params: CompletionParams): Promise<string> {
