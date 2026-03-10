@@ -4,36 +4,74 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Devs 4 course project — a collection of TypeScript scripts for interacting with the AG3NTS hub platform (hub.ag3nts.org). 
-Each task/exercise is first  as a standalone script under `playground/`.
+AI Devs 4 course project — an evolving agentic system for solving tasks from
+the AG3NTS hub platform (hub.ag3nts.org).
+
+Workflow per task:
+1. Read the AI Devs 4 task description
+2. Decompose it into small, quasi-tool scripts — each prototyped in playground/
+3. Once a script works, promote it to a generic, reusable tool in src/tools/
+   (or extend an existing one). Tools must not be task-specific — they should be
+   broadly applicable across many tasks
+4. Pass the original task to the agent, which can use the new tool alongside
+   all tools accumulated from previous tasks
+
+The agent's toolbox grows with each completed task.
 
 ## Tech Stack
 
-- **Runtime:** Bun (not Node.js)
-- **Language:** TypeScript (strict mode, ESNext target, bundler module resolution)
-- **No build step:** Bun runs `.ts` files directly (`bun run <file>`)
+- Runtime: Bun (not Node.js)
+- Language: TypeScript (strict mode, ESNext target, bundler module resolution)
+
+## Project Structure
+
+```
+  ├── playground/<task_name>/       # Prototyping area — one dir per task        
+  │   ├── <task_name>.ts            # Standalone script
+  │   └── output/                   # Generated artifacts (gitignored)
+  ├── src/                          # Production agent system
+  │   ├── agent.ts                  # Agent loop (OpenAI chat + tool calling)
+  │   ├── config.ts                 # Constants (models, URLs, batch sizes)
+  │   ├── prompts/system.ts         # Agent system prompt
+  │   ├── tools/                    # Tool implementations (auto-registered)
+  │   │   ├── dispatcher.ts         # Auto-discovers and dispatches tools
+  │   │   └── <tool_name>.ts        # Each exports default ToolDefinition
+  │   ├── schemas/                  # OpenAI function calling schemas (JSON)
+  │   │   └── <tool_name>.json      # Matched to tools by filename
+  │   ├── types/tool.ts             # ToolDefinition interface
+  │   ├── utils/                    # Shared helpers (csv, hub, llm, output)
+  │   └── output/                   # Agent output (gitignored)
+  ├── _specs/                       # Task specifications & backlog
+  ├── .env                          # API keys (gitignored)
+  └── index.ts                      # Entry point (placeholder)
+```
+
+## Testing
+
+- Runner: bun test
+- Convention: Test files live next to the source file — xyz.ts → xyz.test.ts
+- Scope: Test src/ code (tools, utils). Playground scripts don't need tests.
 
 ## Commands
 
 ```bash
-bun install                          # Install dependencies
-bun run <path/to/script.ts>          # Run any script directly
-bun run download_file_from_hub       # Run via package.json script alias
+  bun install                          # Install dependencies                    
+  bun test                             # Run all tests
+  bun run <path/to/script.ts>          # Run any script directly
+  bun run agent "your prompt"          # Run the agent with a task
 ```
 
-## Project Structure
+## Code Style
 
-- `playground/<task_name>/` — each task gets its own directory with a main `.ts` file and an `output/` folder (gitignored) for downloaded/generated artifacts
-- `src/` — final complex solution (currently empty; place reusable helpers here)
-- `index.ts` — project entry point (placeholder)
+## Architecture
 
-## Environment
+## Prompts
 
-- Copy `.env.example` to `.env` and set `HUB_API_KEY` to your AG3NTS hub API key
-- The hub URL pattern is `https://hub.ag3nts.org/data/{api-key}/filename.ext` — scripts inject the API key from env automatically
+- ALL prompts file MUST be markdown with yaml frontmatter with:
+    - model e.g. 'gpt-4.1-mini'
+- Prompts placeholder MUST be wrapped in {{placeholder}}
 
-## Conventions
+## Tools
 
-- Scripts use Bun-specific APIs (e.g., `Bun.write`, `import.meta.dir`)
-- Output files go in each task's `output/` directory (gitignored via `.gitignore`)
-- API keys are sanitized from all logged/returned URLs using `sanitizeUrl` patterns
+## Playground
+
