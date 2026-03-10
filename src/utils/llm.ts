@@ -1,7 +1,5 @@
-import OpenAI from "openai";
 import { TRANSFORM_MODEL, TRANSFORM_BATCH_SIZE } from "../config.ts";
-
-const openai = new OpenAI();
+import { llm } from "../services/llm.ts";
 
 export async function batchTransform(
   values: string[],
@@ -16,19 +14,13 @@ export async function batchTransform(
     const batch = values.slice(i, i + batchSize);
     const numbered = batch.map((v, idx) => `${i + idx + 1}. ${v}`).join("\n");
 
-    const response = await openai.chat.completions.create({
+    const text = await llm.completion({
       model,
       temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content: `For each numbered text below, apply the following instructions and return the result. Return ONLY the numbered results, one per line, in the format: NUMBER. RESULT\n\nInstructions: ${instructions}`,
-        },
-        { role: "user", content: numbered },
-      ],
+      systemPrompt: `For each numbered text below, apply the following instructions and return the result. Return ONLY the numbered results, one per line, in the format: NUMBER. RESULT\n\nInstructions: ${instructions}`,
+      userPrompt: numbered,
     });
 
-    const text = response.choices[0].message.content ?? "";
     const tags = text
       .trim()
       .split("\n")

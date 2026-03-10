@@ -1,6 +1,6 @@
 import { readdir } from "fs/promises";
 import { join } from "path";
-import type { ChatCompletionTool } from "openai/resources/chat/completions";
+import type { LLMTool } from "../types/llm.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 
 const SCHEMAS_DIR = join(import.meta.dir, "..", "schemas");
@@ -22,9 +22,9 @@ async function loadToolDefinitions(): Promise<Map<string, ToolDefinition>> {
   return map;
 }
 
-async function loadSchemas(): Promise<ChatCompletionTool[]> {
+async function loadSchemas(): Promise<LLMTool[]> {
   const entries = await readdir(SCHEMAS_DIR);
-  const tools: ChatCompletionTool[] = [];
+  const tools: LLMTool[] = [];
 
   for (const entry of entries) {
     if (!entry.endsWith(".json")) continue;
@@ -43,10 +43,10 @@ async function loadSchemas(): Promise<ChatCompletionTool[]> {
   return tools;
 }
 
-let cachedTools: ChatCompletionTool[] | null = null;
+let cachedTools: LLMTool[] | null = null;
 let cachedHandlers: Map<string, ToolDefinition> | null = null;
 
-export async function getTools(): Promise<ChatCompletionTool[]> {
+export async function getTools(): Promise<LLMTool[]> {
   if (!cachedTools) {
     cachedTools = await loadSchemas();
   }

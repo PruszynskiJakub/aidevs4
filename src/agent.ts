@@ -1,34 +1,36 @@
-import OpenAI from "openai";
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import type { LLMProvider, LLMMessage } from "./types/llm.ts";
+import { llm as defaultLLM } from "./services/llm.ts";
 import { AGENT_MODEL, MAX_ITERATIONS } from "./config.ts";
 import { getTools, dispatch } from "./tools/dispatcher.ts";
 import { SYSTEM_PROMPT } from "./prompts/system.ts";
 
-export async function runAgent(userPrompt: string, openai: OpenAI = new OpenAI()) {
+export async function runAgent(userPrompt: string, provider: LLMProvider = defaultLLM) {
   const tools = await getTools();
 
-  const messages: ChatCompletionMessageParam[] = [
+  const messages: LLMMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: userPrompt },
   ];
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const response = await openai.chat.completions.create({
+    const response = await provider.chatCompletion({
       model: AGENT_MODEL,
       messages,
       tools,
     });
 
-    const choice = response.choices[0];
-    const assistantMessage = choice.message;
-    messages.push(assistantMessage);
+    messages.push({
+      role: "assistant",
+      content: response.content,
+      ...(response.toolCalls.length && { toolCalls: response.toolCalls }),
+    });
 
-    if (choice.finish_reason === "stop" || !assistantMessage.tool_calls?.length) {
-      console.log("\n" + (assistantMessage.content ?? "(no response)"));
+    if (response.finishReason === "stop" || !response.toolCalls.length) {
+      console.log("\n" + (response.content ?? "(no response)"));
       return;
     }
 
-    for (const toolCall of assistantMessage.tool_calls) {
+    for (const toolCall of response.toolCalls) {
       if (toolCall.type !== "function") continue;
       const { name, arguments: argsJson } = toolCall.function;
       console.log(`→ ${name}(${argsJson})`);
@@ -38,7 +40,7 @@ export async function runAgent(userPrompt: string, openai: OpenAI = new OpenAI()
 
       messages.push({
         role: "tool",
-        tool_call_id: toolCall.id,
+        toolCallId: toolCall.id,
         content: result,
       });
     }
