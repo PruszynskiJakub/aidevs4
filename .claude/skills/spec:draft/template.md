@@ -23,5 +23,3 @@
 ## Testing scenarios
 
 <!-- How we verify each acceptance criterion -->
-
--
