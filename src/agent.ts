@@ -3,9 +3,14 @@ import { llm as defaultLLM } from "./services/llm.ts";
 import { MAX_ITERATIONS } from "./config.ts";
 import { getTools, dispatch } from "./tools/dispatcher.ts";
 import { promptService } from "./services/prompt.ts";
-import { log, duration } from "./services/logger.ts";
+import { createLogger, duration } from "./services/logger.ts";
+import { MarkdownLogger } from "./services/markdown-logger.ts";
 
 export async function runAgent(userPrompt: string, provider: LLMProvider = defaultLLM) {
+  const md = new MarkdownLogger();
+  md.init(userPrompt);
+  const log = createLogger(md);
+
   const tools = await getTools();
   const system = await promptService.load("system");
 
@@ -15,7 +20,7 @@ export async function runAgent(userPrompt: string, provider: LLMProvider = defau
   ];
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
-    log.info(`[iter ${i + 1}/${MAX_ITERATIONS}]`);
+    log.step(i + 1, MAX_ITERATIONS, system.model!, messages.length);
 
     const llmStart = performance.now();
     const response = await provider.chatCompletion({
@@ -25,10 +30,11 @@ export async function runAgent(userPrompt: string, provider: LLMProvider = defau
     });
     const llmTime = duration(llmStart);
 
-    log.debug(`LLM ← ${system.model} | ${messages.length} msgs | ${llmTime}`);
-    if (response.usage) {
-      log.debug(`tokens: ${response.usage.promptTokens} in / ${response.usage.completionTokens} out`);
-    }
+    log.llm(
+      llmTime,
+      response.usage?.promptTokens,
+      response.usage?.completionTokens,
+    );
 
     messages.push({
       role: "assistant",
@@ -37,16 +43,20 @@ export async function runAgent(userPrompt: string, provider: LLMProvider = defau
     });
 
     if (response.finishReason === "stop" || !response.toolCalls.length) {
-      log.success(`Agent response:\n${response.content ?? "(no response)"}`);
+      log.answer(response.content);
+      await md.flush();
       return;
     }
 
     const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
 
+    // Announce all tool calls upfront
+    log.toolHeader(functionCalls.length);
     for (const tc of functionCalls) {
-      log.info(`→ ${tc.function.name}(${tc.function.arguments})`);
+      log.toolCall(tc.function.name, tc.function.arguments);
     }
 
+    // Execute tools
     const batchStart = performance.now();
 
     const settled = await Promise.allSettled(
@@ -57,14 +67,14 @@ export async function runAgent(userPrompt: string, provider: LLMProvider = defau
       })
     );
 
+    // Report results
     for (let j = 0; j < functionCalls.length; j++) {
       const tc = functionCalls[j];
       const outcome = settled[j];
 
       if (outcome.status === "fulfilled") {
         const { result, elapsed } = outcome.value;
-        log.debug(`← ${tc.function.name}: ${result}`);
-        log.success(`${tc.function.name} done ${elapsed}`);
+        log.toolOk(tc.function.name, elapsed, result);
         messages.push({
           role: "tool",
           toolCallId: tc.id,
@@ -73,7 +83,7 @@ export async function runAgent(userPrompt: string, provider: LLMProvider = defau
       } else {
         const errorMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
         const errorResult = JSON.stringify({ error: errorMsg });
-        log.error(`${tc.function.name}: ${errorMsg}`);
+        log.toolErr(tc.function.name, errorMsg);
         messages.push({
           role: "tool",
           toolCallId: tc.id,
@@ -83,11 +93,12 @@ export async function runAgent(userPrompt: string, provider: LLMProvider = defau
     }
 
     if (functionCalls.length > 1) {
-      log.info(`Batch: ${functionCalls.length} tools ${duration(batchStart)}`);
+      log.batchDone(functionCalls.length, duration(batchStart));
     }
   }
 
-  log.error(`Agent reached maximum iterations (${MAX_ITERATIONS}).`);
+  log.maxIter(MAX_ITERATIONS);
+  await md.flush();
 }
 
 // CLI entry point
