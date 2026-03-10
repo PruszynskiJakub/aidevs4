@@ -29,7 +29,7 @@
                 "op": {
                   "type": "string",
                   "enum": ["eq", "neq", "contains", "startsWith", "endsWith", "gt", "lt", "gte", "lte"],
-                  "description": "String comparison. 'contains' is substring match on raw cell text — works on JSON-array strings too (e.g. contains 'transport' matches '[\"transport\"]'). gte/lte use lexicographic order (works on ISO dates)."
+                  "description": "eq/neq are exact (case-sensitive). contains/startsWith/endsWith are CASE-INSENSITIVE — never repeat a search with different casing. gte/lte use lexicographic order (works on ISO dates like '1986-01-01')."
                 },
                 "value": { "type": "string" }
               },
