@@ -1,0 +1,68 @@
+{
+  "name": "csv_processor",
+  "description": "Process CSV files. Use action to pick an operation: metadata (inspect structure), search (filter rows), transform_column (LLM-powered column transformation).",
+  "parameters": {
+    "type": "object",
+    "oneOf": [
+      {
+        "properties": {
+          "action": { "const": "metadata" },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "path": { "type": "string", "description": "Absolute path to a CSV file or directory" }
+            },
+            "required": ["path"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["action", "payload"]
+      },
+      {
+        "properties": {
+          "action": { "const": "search" },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "path": { "type": "string", "description": "Absolute path to the CSV file" },
+              "filters": {
+                "type": "array",
+                "description": "Filters combined with AND logic",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "column": { "type": "string" },
+                    "op": { "type": "string", "enum": ["eq", "neq", "contains", "startsWith", "endsWith", "gt", "lt", "gte", "lte"] },
+                    "value": { "type": "string" }
+                  },
+                  "required": ["column", "op", "value"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["path", "filters"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["action", "payload"]
+      },
+      {
+        "properties": {
+          "action": { "const": "transform_column" },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "path": { "type": "string", "description": "Absolute path to the CSV file" },
+              "column_name": { "type": "string", "description": "Column to transform" },
+              "instructions": { "type": "string", "description": "Natural-language transformation instructions" }
+            },
+            "required": ["path", "column_name", "instructions"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["action", "payload"]
+      }
+    ],
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/git-auto-add.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(gh auth status:*)",
+      "Bash(gh repo create:*)",
+      "Bash(done)",
+      "Bash(wc:*)",
+      "Bash(bun *)",
+      "Bash(git *)"
+    ]
+  }
+}
