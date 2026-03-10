@@ -5,7 +5,7 @@ import { files } from "../services/file.ts";
 
 async function readFile(payload: { path: string; max_lines?: number }) {
   const raw = await files.readText(payload.path);
-  if (payload.max_lines == null) {
+  if (!payload.max_lines) {
     return { path: payload.path, content: raw };
   }
   const allLines = raw.split("\n");

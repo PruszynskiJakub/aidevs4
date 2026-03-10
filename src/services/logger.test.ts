@@ -56,9 +56,9 @@ describe("duration", () => {
   it("returns formatted elapsed time", () => {
     const start = performance.now() - 1500; // simulate 1.5s ago
     const result = duration(start);
-    expect(result).toMatch(/^\[\d+\.\d{2}s\]$/);
+    expect(result).toMatch(/^\d+\.\d{2}s$/);
     // Should be approximately 1.50s
-    const seconds = parseFloat(result.slice(1, -2));
+    const seconds = parseFloat(result);
     expect(seconds).toBeGreaterThan(1.0);
     expect(seconds).toBeLessThan(3.0);
   });

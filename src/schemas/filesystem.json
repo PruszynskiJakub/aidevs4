@@ -13,10 +13,10 @@
           },
           "max_lines": {
             "type": "integer",
-            "description": "Optional limit — return only the first N lines. Omit to read the entire file."
+            "description": "Limit — return only the first N lines. Pass 0 to read the entire file."
           }
         },
-        "required": ["path"],
+        "required": ["path", "max_lines"],
         "additionalProperties": false
       }
     }
