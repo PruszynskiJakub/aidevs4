@@ -1,6 +1,10 @@
-import { join } from "path";
+import { join, resolve } from "path";
 
+export const PROJECT_ROOT = resolve(import.meta.dir, "..");
 export const OUTPUT_DIR = join(import.meta.dir, "output");
+
+export const ALLOWED_READ_PATHS: string[] = [PROJECT_ROOT];
+export const ALLOWED_WRITE_PATHS: string[] = [OUTPUT_DIR];
 export const AGENT_MODEL = "gpt-4.1";
 export const MAX_ITERATIONS = 20;
 

@@ -3,6 +3,7 @@ import { mkdtemp, rm, mkdir } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import csvProcessor from "./csv_processor.ts";
+import { ALLOWED_READ_PATHS, ALLOWED_WRITE_PATHS } from "../config.ts";
 
 const handler = csvProcessor.handler;
 
@@ -10,6 +11,8 @@ let tmp: string;
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "csv-processor-test-"));
+  ALLOWED_READ_PATHS.push(tmp);
+  ALLOWED_WRITE_PATHS.push(tmp);
 
   await Bun.write(
     join(tmp, "people.csv"),
@@ -29,6 +32,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  ALLOWED_READ_PATHS.splice(ALLOWED_READ_PATHS.indexOf(tmp), 1);
+  ALLOWED_WRITE_PATHS.splice(ALLOWED_WRITE_PATHS.indexOf(tmp), 1);
   await rm(tmp, { recursive: true, force: true });
 });
 
