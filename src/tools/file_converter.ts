@@ -88,7 +88,7 @@ async function jsonToCsv(
     const keys = typeof data === "object" && data !== null ? Object.keys(data).slice(0, 10) : [];
     throw new Error(
       `JSON file must contain an array of objects, but got ${typeof data}` +
-      (keys.length ? ` with top-level keys: ${keys.join(", ")}. Use read_file to inspect the structure first.` : ""),
+      (keys.length ? ` with top-level keys: ${keys.join(", ")}. Use filesystem__read_file to inspect the structure first.` : ""),
     );
   }
   if (data.length === 0) throw new Error("JSON array is empty");

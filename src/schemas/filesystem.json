@@ -1,0 +1,24 @@
+{
+  "name": "filesystem",
+  "description": "File-system operations. Use this to read files, inspect data, or check downloaded content.",
+  "actions": {
+    "read_file": {
+      "description": "Read a file and return its full text content",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path to the file to read"
+          },
+          "max_lines": {
+            "type": "integer",
+            "description": "Optional limit — return only the first N lines. Omit to read the entire file."
+          }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

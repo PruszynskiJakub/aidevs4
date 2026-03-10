@@ -74,7 +74,7 @@ describe("dispatcher", () => {
     });
 
     it("returns all expanded tools", () => {
-      // csv_processor: 3 actions, agents_hub: 4 actions, file_converter: 1, read_file: 1 = 9
+      // csv_processor: 3 actions, agents_hub: 4 actions, file_converter: 1, filesystem: 1 = 9
       expect(tools.length).toBe(9);
     });
 
@@ -92,7 +92,11 @@ describe("dispatcher", () => {
     it("keeps simple schemas as single functions", () => {
       const names = tools.map((t) => t.function.name);
       expect(names).toContain("file_converter");
-      expect(names).toContain("read_file");
+    });
+
+    it("expands filesystem multi-action schema", () => {
+      const names = tools.map((t) => t.function.name);
+      expect(names).toContain("filesystem__read_file");
     });
 
     it("sets strict: true on all tools", () => {
