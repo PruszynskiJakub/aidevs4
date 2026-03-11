@@ -26,7 +26,7 @@
       }
     },
     "api_request_body": {
-      "description": "POST to /api/* with an inline JSON body",
+      "description": "POST to /api/* with an inline JSON body. For a single call only — if calling the same endpoint for each item in a dataset, use api_batch instead.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -50,7 +50,7 @@
       }
     },
     "api_batch": {
-      "description": "POST to /api/* for each row in a CSV/JSON array file. Apikey auto-injected. Calls made sequentially.",
+      "description": "POST to /api/* for each row in a CSV/JSON array file. Preferred over multiple api_request_body calls — use whenever a dataset needs the same endpoint called per item. Apikey auto-injected. Calls made sequentially.",
       "parameters": {
         "type": "object",
         "properties": {

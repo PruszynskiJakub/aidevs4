@@ -3,7 +3,7 @@
   "description": "Compute geographic distances using the haversine formula.",
   "actions": {
     "find_nearby": {
-      "description": "Read two JSON files (references + queries) and return all pairs within a given radius in km, sorted by distance ascending.",
+      "description": "Match two sets of locations in bulk. Reads two JSON files (references + queries) and returns all pairs within a given radius in km, sorted by distance ascending. Preferred over looping with distance — prepare the two files first, then match in one call.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -16,7 +16,7 @@
       }
     },
     "distance": {
-      "description": "Compute haversine distance between two geographic points. Returns distance in km.",
+      "description": "Compute haversine distance between a single pair of points. Returns distance in km. For comparing multiple points against multiple references, use find_nearby instead.",
       "parameters": {
         "type": "object",
         "properties": {

@@ -129,7 +129,7 @@ const SUPPORTED_EXTENSIONS = new Set([".csv", ".json", ".md"]);
 
 type InspectResult = CsvInspectResult | JsonInspectResult | MarkdownInspectResult;
 
-async function inspectFile(path: string): Promise<InspectResult> {
+export async function inspectFile(path: string): Promise<InspectResult> {
   const ext = extname(path).toLowerCase();
   switch (ext) {
     case ".csv":

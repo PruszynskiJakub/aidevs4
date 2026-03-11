@@ -3,7 +3,7 @@
   "description": "Transform CSV and JSON data: filter, sort, add fields (LLM-powered), and convert between formats.",
   "actions": {
     "filter": {
-      "description": "Filter rows matching conditions with AND/OR logic. Supports: eq, neq, contains, startsWith, endsWith (case-insensitive), gt, lt, gte, lte (lexicographic).",
+      "description": "Reduce a dataset to rows matching conditions (AND/OR logic). Use to narrow data before downstream processing — not for extracting a single known record. Operators: eq, neq, contains, startsWith, endsWith (case-insensitive), gt, lt, gte, lte (lexicographic).",
       "parameters": {
         "type": "object",
         "properties": {
