@@ -1,0 +1,19 @@
+{
+  "name": "think",
+  "description": "Internal reasoning tool. Use this to think through a problem before acting — plan next steps, analyze gathered data, weigh alternatives, or synthesize information from multiple sources. Returns a reasoning string.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "question": {
+        "type": "string",
+        "description": "What you need to think about. Be specific — e.g. 'Which of these 3 API endpoints should I call next given the task requirements?'"
+      },
+      "context": {
+        "type": "string",
+        "description": "Relevant information gathered so far — tool results, task description, constraints, partial answers. Include everything the reasoning needs."
+      }
+    },
+    "required": ["question", "context"],
+    "additionalProperties": false
+  }
+}

@@ -137,7 +137,12 @@ console.log(JSON.stringify(answer, null, 2));
 const verifyRes = await fetch(`${BASE}/verify`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ apikey: HUB_API_KEY, task: "findhim", answer }),
+  body: JSON.stringify({ apikey: HUB_API_KEY, task: "findhim", answer: {
+      "name": "Wojciech",
+      "surname": "Bielik",
+      "accessLevel": 7,
+      "powerPlant": "PWR2758PL"
+    } }),
 });
 
 const verifyData = await verifyRes.json();
