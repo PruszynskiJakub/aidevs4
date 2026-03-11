@@ -1,0 +1,33 @@
+{
+  "name": "geo_distance",
+  "description": "Compute geographic distances using the haversine formula.",
+  "actions": {
+    "find_nearby": {
+      "description": "Read two JSON files (references + queries) and return all pairs within a given radius in km, sorted by distance ascending.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "references_file": { "type": "string", "description": "Absolute path to a JSON array of reference points. Each item must have latitude and longitude (numbers). All other fields are passed through as metadata." },
+          "queries_file": { "type": "string", "description": "Absolute path to a JSON array of query points. Each item must have latitude and longitude (numbers). All other fields are passed through as metadata." },
+          "radius_km": { "type": "number", "description": "Maximum distance in kilometers. Only pairs within this radius are returned." }
+        },
+        "required": ["references_file", "queries_file", "radius_km"],
+        "additionalProperties": false
+      }
+    },
+    "distance": {
+      "description": "Compute haversine distance between two geographic points. Returns distance in km.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lat1": { "type": "number", "description": "Latitude of the first point" },
+          "lon1": { "type": "number", "description": "Longitude of the first point" },
+          "lat2": { "type": "number", "description": "Latitude of the second point" },
+          "lon2": { "type": "number", "description": "Longitude of the second point" }
+        },
+        "required": ["lat1", "lon1", "lat2", "lon2"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

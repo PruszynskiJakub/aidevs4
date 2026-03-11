@@ -56,11 +56,22 @@ The agent's toolbox grows with each completed task.
 ## Commands
 
 ```bash
-  bun install                          # Install dependencies                    
+  bun install                          # Install dependencies
   bun test                             # Run all tests
   bun run <path/to/script.ts>          # Run any script directly
   bun run agent "your prompt"          # Run the agent with a task
 ```
+
+## Agent Testing
+
+- **CLI**: Run `bun run agent "your prompt"` to test the agent end-to-end from
+  the terminal. This is the primary way to verify that new tools work correctly
+  within the full agent loop.
+- **Logging**: Every agent run writes a detailed Markdown log to `logs/`
+  (`logs/log_<timestamp>.md`). Logs capture each step, tool calls with arguments,
+  tool results, LLM token usage, and the final answer. **Always check the latest
+  log file after a run** to debug issues or verify tool behavior — it's more
+  complete than console output.
 
 ## Code Style
 

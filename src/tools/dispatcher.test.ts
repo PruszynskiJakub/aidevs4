@@ -74,8 +74,8 @@ describe("dispatcher", () => {
     });
 
     it("returns all expanded tools", () => {
-      // agents_hub: 4 actions + filesystem: 1 action + data_transformer: 4 actions = 9
-      expect(tools.length).toBe(9);
+      // agents_hub: 5 actions + filesystem: 1 action + data_transformer: 4 actions + geo_distance: 2 actions = 12
+      expect(tools.length).toBe(12);
     });
 
     it("expands multi-action schemas with __ separator", () => {
@@ -84,11 +84,14 @@ describe("dispatcher", () => {
       expect(names).toContain("agents_hub__verify");
       expect(names).toContain("agents_hub__api_request_body");
       expect(names).toContain("agents_hub__api_request_file");
+      expect(names).toContain("agents_hub__api_batch");
       expect(names).toContain("filesystem__inspect");
       expect(names).toContain("data_transformer__filter");
       expect(names).toContain("data_transformer__sort");
       expect(names).toContain("data_transformer__add_field");
       expect(names).toContain("data_transformer__convert");
+      expect(names).toContain("geo_distance__find_nearby");
+      expect(names).toContain("geo_distance__distance");
     });
 
     it("sets strict: true on all tools", () => {
