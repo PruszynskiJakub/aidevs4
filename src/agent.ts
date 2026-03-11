@@ -6,18 +6,17 @@ import { promptService } from "./services/prompt.ts";
 import { createLogger, duration } from "./services/logger.ts";
 import { MarkdownLogger } from "./services/markdown-logger.ts";
 
-export async function runAgent(userPrompt: string, provider: LLMProvider = defaultLLM) {
+export async function runAgent(
+  messages: LLMMessage[],
+  provider: LLMProvider = defaultLLM,
+): Promise<string> {
+  const userPrompt = messages.find((m) => m.role === "user")?.content ?? "";
   const md = new MarkdownLogger();
-  md.init(userPrompt);
+  md.init(typeof userPrompt === "string" ? userPrompt : "(structured)");
   const log = createLogger(md);
 
   const tools = await getTools();
   const system = await promptService.load("system");
-
-  const messages: LLMMessage[] = [
-    { role: "system", content: system.content },
-    { role: "user", content: userPrompt },
-  ];
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     log.step(i + 1, MAX_ITERATIONS, system.model!, messages.length);
@@ -45,7 +44,7 @@ export async function runAgent(userPrompt: string, provider: LLMProvider = defau
     if (response.finishReason === "stop" || !response.toolCalls.length) {
       log.answer(response.content);
       await md.flush();
-      return;
+      return response.content ?? "";
     }
 
     const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
@@ -99,6 +98,7 @@ export async function runAgent(userPrompt: string, provider: LLMProvider = defau
 
   log.maxIter(MAX_ITERATIONS);
   await md.flush();
+  return "";
 }
 
 // CLI entry point
@@ -108,5 +108,12 @@ if (import.meta.main) {
     console.error("Usage: bun run src/agent.ts \"your prompt here\"");
     process.exit(1);
   }
-  void runAgent(prompt);
+
+  const system = await promptService.load("system");
+  const messages: LLMMessage[] = [
+    { role: "system", content: system.content },
+    { role: "user", content: prompt },
+  ];
+
+  void runAgent(messages);
 }

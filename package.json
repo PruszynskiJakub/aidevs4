@@ -7,7 +7,8 @@
     "read_csv_structure": "bun run playground/read_csv_structure/read_csv_structure.ts",
     "search_csv": "bun run playground/search_csv/search_csv.ts",
     "transform_csv": "bun run playground/transform_csv/transform_csv.ts",
-    "agent": "bun run src/agent.ts"
+    "agent": "bun run src/agent.ts",
+    "server": "bun run src/server.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
@@ -18,6 +19,7 @@
   "dependencies": {
     "csv-parse": "^6.1.0",
     "gray-matter": "^4.0.3",
+    "hono": "^4.12.7",
     "openai": "^6.27.0"
   }
 }

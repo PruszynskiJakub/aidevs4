@@ -30,6 +30,13 @@ function makeLLMProvider(responses: LLMChatResponse[]): LLMProvider {
   };
 }
 
+function makeMessages(prompt: string): LLMMessage[] {
+  return [
+    { role: "system", content: "You are an agent." },
+    { role: "user", content: prompt },
+  ];
+}
+
 beforeEach(() => {
   dispatchResults = {};
 });
@@ -65,7 +72,7 @@ describe("agent parallel tool calling", () => {
       { content: "Done", finishReason: "stop", toolCalls: [] },
     ]);
 
-    await runAgent("test", provider);
+    await runAgent(makeMessages("test"), provider);
 
     // Both should start before either finishes (parallel, not sequential)
     expect(order.indexOf("b_start")).toBeLessThan(order.indexOf("a_end"));
@@ -104,7 +111,7 @@ describe("agent parallel tool calling", () => {
       completion: async () => "",
     };
 
-    await runAgent("test", provider);
+    await runAgent(makeMessages("test"), provider);
 
     const toolMessages = capturedMessages.filter(m => m.role === "tool");
     expect(toolMessages).toHaveLength(2);
@@ -140,7 +147,7 @@ describe("agent parallel tool calling", () => {
       completion: async () => "",
     };
 
-    await runAgent("test", provider);
+    await runAgent(makeMessages("test"), provider);
 
     const toolMessages = capturedMessages.filter(m => m.role === "tool");
     expect(toolMessages).toHaveLength(2);
@@ -180,7 +187,7 @@ describe("agent parallel tool calling", () => {
       completion: async () => "",
     };
 
-    await runAgent("test", provider);
+    await runAgent(makeMessages("test"), provider);
 
     const toolMessages = capturedMessages.filter(m => m.role === "tool");
     expect(toolMessages).toHaveLength(1);
@@ -192,7 +199,7 @@ describe("agent parallel tool calling", () => {
       { content: "Hello!", finishReason: "stop", toolCalls: [] },
     ]);
 
-    await runAgent("test", provider);
+    await runAgent(makeMessages("test"), provider);
     // No assertions beyond not throwing — the agent should simply print and return
   });
 });
