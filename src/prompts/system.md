@@ -34,6 +34,12 @@ Follow this strict order. Do not skip ahead, do not loop back without reason.
 - **Sequential when dependent.** If call B needs the output of call A, wait for A to finish. Never guess at intermediate values.
 - **Filter before processing.** Reduce data volume before expensive operations — fewer items = faster + cheaper.
 
+## Never Invent — Always Verify":
+
+- Tool results exist ONLY in the conversation context, not as files (unless the
+  tool explicitly says it wrote a file and gives you the path)
+- Never assume field names, data types, or nesting — read first, process second
+
 ## Error Recovery
 
 - **Never repeat an identical call.** If it failed, it will fail again. Change parameters, tool, or approach.
