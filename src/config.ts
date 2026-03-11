@@ -13,3 +13,7 @@ export const TRANSFORM_BATCH_SIZE = 25;
 
 export const HUB_BASE_URL = "https://hub.ag3nts.org";
 export const HUB_VERIFY_URL = `${HUB_BASE_URL}/verify`;
+
+export const FETCH_TIMEOUT = 30_000;
+export const MAX_BATCH_ROWS = 1000;
+export const MAX_FILE_SIZE = 10 * 1024 * 1024;

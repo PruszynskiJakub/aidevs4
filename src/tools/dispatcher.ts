@@ -2,6 +2,7 @@ import { join } from "path";
 import { files } from "../services/file.ts";
 import type { LLMTool } from "../types/llm.ts";
 import type { ToolDefinition } from "../types/tool.ts";
+import { safeParse } from "../utils/parse.ts";
 
 const SCHEMAS_DIR = join(import.meta.dir, "..", "schemas");
 const TOOLS_DIR = import.meta.dir;
@@ -102,7 +103,7 @@ export async function dispatch(name: string, argsJson: string): Promise<string> 
 
   if (tool) {
     try {
-      const args = JSON.parse(argsJson);
+      const args = safeParse(argsJson, name);
       const result = await tool.handler(args);
       return JSON.stringify(result);
     } catch (err: unknown) {
@@ -120,7 +121,7 @@ export async function dispatch(name: string, argsJson: string): Promise<string> 
 
     if (tool) {
       try {
-        const payload = JSON.parse(argsJson);
+        const payload = safeParse(argsJson, name);
         const result = await tool.handler({ action: actionName, payload });
         return JSON.stringify(result);
       } catch (err: unknown) {

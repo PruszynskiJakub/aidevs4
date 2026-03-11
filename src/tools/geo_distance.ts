@@ -1,5 +1,7 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import { files } from "../services/file.ts";
+import { MAX_FILE_SIZE } from "../config.ts";
+import { safeParse, assertMaxLength, assertNumericBounds, checkFileSize } from "../utils/parse.ts";
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -40,16 +42,28 @@ function validatePoints(data: unknown, label: string): GeoPoint[] {
   return data as GeoPoint[];
 }
 
+function validateCoord(lat: number, lon: number, prefix: string): void {
+  assertNumericBounds(lat, `${prefix}lat`, -90, 90);
+  assertNumericBounds(lon, `${prefix}lon`, -180, 180);
+}
+
 async function findNearby(payload: {
   references_file: string;
   queries_file: string;
   radius_km: number;
 }): Promise<{ count: number; matches: { reference: GeoPoint; query: GeoPoint; distance_km: number }[] }> {
+  assertMaxLength(payload.references_file, "references_file", 500);
+  assertMaxLength(payload.queries_file, "queries_file", 500);
+  assertNumericBounds(payload.radius_km, "radius_km", 0.001, 40_075);
+
+  await checkFileSize(payload.references_file, MAX_FILE_SIZE);
+  await checkFileSize(payload.queries_file, MAX_FILE_SIZE);
+
   const refsRaw = await files.readText(payload.references_file);
   const queriesRaw = await files.readText(payload.queries_file);
 
-  const references = validatePoints(JSON.parse(refsRaw), "references");
-  const queries = validatePoints(JSON.parse(queriesRaw), "queries");
+  const references = validatePoints(safeParse(refsRaw, "references"), "references");
+  const queries = validatePoints(safeParse(queriesRaw, "queries"), "queries");
 
   const matches: { reference: GeoPoint; query: GeoPoint; distance_km: number }[] = [];
 
@@ -77,6 +91,8 @@ function distance(payload: {
   lat2: number;
   lon2: number;
 }): { distance_km: number } {
+  validateCoord(payload.lat1, payload.lon1, "");
+  validateCoord(payload.lat2, payload.lon2, "");
   return { distance_km: roundTo3(haversine(payload.lat1, payload.lon1, payload.lat2, payload.lon2)) };
 }
 
