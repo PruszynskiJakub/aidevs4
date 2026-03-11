@@ -20,8 +20,11 @@
       "Bash(wc:*)",
       "Bash(bun *)",
       "Bash(git *)",
+      "Bash(git -C *)",
       "Skill(git:commit)",
-      "Skill(spec:draft)"
+      "Skill(spec:draft)",
+      "Bash(mkdir *)",
+      "Bash(grep:*)"
     ]
   }
 }
