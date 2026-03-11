@@ -9,12 +9,13 @@ mock.module("./services/prompt.ts", () => ({
 }));
 
 // Stub dispatcher — we control dispatch results per test
+// Post SP-17: dispatch always returns ToolResponse shape { status, data, hints? }
 let dispatchResults: Record<string, () => Promise<string>> = {};
 mock.module("./tools/dispatcher.ts", () => ({
   getTools: async () => [],
   dispatch: async (name: string, _argsJson: string) => {
     const fn = dispatchResults[name];
-    if (!fn) return JSON.stringify({ error: `Unknown tool: ${name}` });
+    if (!fn) return JSON.stringify({ status: "error", data: { error: `Unknown tool: ${name}` } });
     return fn();
   },
 }));
@@ -50,13 +51,13 @@ describe("agent parallel tool calling", () => {
         order.push("a_start");
         await Bun.sleep(50);
         order.push("a_end");
-        return JSON.stringify({ result: "A" });
+        return JSON.stringify({ status: "ok", data: { result: "A" } });
       },
       tool_b: async () => {
         order.push("b_start");
         await Bun.sleep(10);
         order.push("b_end");
-        return JSON.stringify({ result: "B" });
+        return JSON.stringify({ status: "ok", data: { result: "B" } });
       },
     };
 
@@ -82,10 +83,10 @@ describe("agent parallel tool calling", () => {
     dispatchResults = {
       slow: async () => {
         await Bun.sleep(40);
-        return JSON.stringify({ result: "slow" });
+        return JSON.stringify({ status: "ok", data: { result: "slow" } });
       },
       fast: async () => {
-        return JSON.stringify({ result: "fast" });
+        return JSON.stringify({ status: "ok", data: { result: "fast" } });
       },
     };
 
@@ -121,7 +122,7 @@ describe("agent parallel tool calling", () => {
 
   it("handles mixed success and failure", async () => {
     dispatchResults = {
-      good: async () => JSON.stringify({ result: "ok" }),
+      good: async () => JSON.stringify({ status: "ok", data: { result: "ok" } }),
       bad: async () => { throw new Error("boom"); },
     };
 
@@ -152,18 +153,17 @@ describe("agent parallel tool calling", () => {
     const toolMessages = capturedMessages.filter(m => m.role === "tool");
     expect(toolMessages).toHaveLength(2);
 
-    // First tool succeeded
+    // First tool succeeded — agent extracts data from ToolResponse
     expect(JSON.parse((toolMessages[0] as any).content)).toEqual({ result: "ok" });
 
-    // Second tool failed — error handled by dispatcher mock (which re-throws),
-    // caught by Promise.allSettled in agent
+    // Second tool failed — Promise.allSettled catches the thrown error
     const secondResult = JSON.parse((toolMessages[1] as any).content);
     expect(secondResult.error).toBeDefined();
   });
 
   it("handles single tool call unchanged", async () => {
     dispatchResults = {
-      solo: async () => JSON.stringify({ result: "solo" }),
+      solo: async () => JSON.stringify({ status: "ok", data: { result: "solo" } }),
     };
 
     let capturedMessages: LLMMessage[] = [];

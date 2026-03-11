@@ -2,11 +2,13 @@ import { resolve } from "path";
 import { $ } from "bun";
 import { OUTPUT_DIR } from "../config.ts";
 import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolResponse } from "../types/tool.ts";
+import { toolOk } from "../utils/tool-response.ts";
 
 const MAX_OUTPUT = 20_000;
 const cwd = resolve(OUTPUT_DIR);
 
-async function bash(args: { command: string }): Promise<string> {
+async function bash(args: { command: string }): Promise<string | ToolResponse> {
   const result = await $`bash -c ${args.command}`.cwd(cwd).quiet().nothrow();
 
   const stdout = result.stdout.toString().trim();
@@ -20,7 +22,10 @@ async function bash(args: { command: string }): Promise<string> {
   if (!output) return "(no output)";
 
   if (output.length > MAX_OUTPUT) {
-    return output.slice(0, MAX_OUTPUT) + "\n...(truncated)";
+    return toolOk(
+      output.slice(0, MAX_OUTPUT) + "\n...(truncated)",
+      ["Output truncated to 20 KB. Full output not available."],
+    );
   }
 
   return output;

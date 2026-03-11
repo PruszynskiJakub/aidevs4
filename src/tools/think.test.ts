@@ -21,14 +21,14 @@ describe("think tool", () => {
     expect(thinkTool.name).toBe("think");
   });
 
-  it("returns a string from LLM completion", async () => {
-    const result = await thinkTool.handler({
+  it("returns ToolResponse with reasoning from LLM completion", async () => {
+    const result = (await thinkTool.handler({
       question: "Which API endpoint should I call?",
       context: "Task requires fetching user data. Available endpoints: /users, /profiles.",
-    });
+    })) as any;
 
-    expect(typeof result).toBe("string");
-    expect(result).toBe("The best approach is to call the API endpoint first.");
+    expect(result.status).toBe("ok");
+    expect(result.data.reasoning).toBe("The best approach is to call the API endpoint first.");
   });
 
   it("passes question and context to LLM", async () => {

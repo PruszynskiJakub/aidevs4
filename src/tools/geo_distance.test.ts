@@ -76,14 +76,16 @@ describe("geo_distance find_nearby", () => {
       payload: { references_file: refsFile, queries_file: queriesFile, radius_km: 10 },
     })) as any;
 
-    expect(result.count).toBe(2);
+    expect(result.status).toBe("ok");
+    expect(result.data.count).toBe(2);
+    expect(result.hints).toContain("2 matches found within 10 km.");
     // Sorted ascending by distance — closest first
-    expect(result.matches[0].query.person).toBe("Bob");
-    expect(result.matches[0].reference.name).toBe("Kraków");
-    expect(result.matches[1].query.person).toBe("Alice");
-    expect(result.matches[1].reference.name).toBe("Warsaw");
+    expect(result.data.matches[0].query.person).toBe("Bob");
+    expect(result.data.matches[0].reference.name).toBe("Kraków");
+    expect(result.data.matches[1].query.person).toBe("Alice");
+    expect(result.data.matches[1].reference.name).toBe("Warsaw");
     // Charlie should not appear
-    expect(result.matches.every((m: any) => m.query.person !== "Charlie")).toBe(true);
+    expect(result.data.matches.every((m: any) => m.query.person !== "Charlie")).toBe(true);
   });
 
   it("returns empty matches when nothing is within radius", async () => {
@@ -100,8 +102,9 @@ describe("geo_distance find_nearby", () => {
       payload: { references_file: refsFile, queries_file: queriesFile, radius_km: 1 },
     })) as any;
 
-    expect(result.count).toBe(0);
-    expect(result.matches).toEqual([]);
+    expect(result.status).toBe("ok");
+    expect(result.data.count).toBe(0);
+    expect(result.data.matches).toEqual([]);
   });
 
   it("preserves metadata fields in output", async () => {
@@ -118,11 +121,11 @@ describe("geo_distance find_nearby", () => {
       payload: { references_file: refsFile, queries_file: queriesFile, radius_km: 1 },
     })) as any;
 
-    expect(result.count).toBe(1);
-    expect(result.matches[0].reference.code).toBe("PL-01");
-    expect(result.matches[0].reference.type).toBe("plant");
-    expect(result.matches[0].query.name).toBe("John");
-    expect(result.matches[0].query.surname).toBe("Doe");
+    expect(result.data.count).toBe(1);
+    expect(result.data.matches[0].reference.code).toBe("PL-01");
+    expect(result.data.matches[0].reference.type).toBe("plant");
+    expect(result.data.matches[0].query.name).toBe("John");
+    expect(result.data.matches[0].query.surname).toBe("Doe");
   });
 
   it("throws when item lacks latitude/longitude", async () => {

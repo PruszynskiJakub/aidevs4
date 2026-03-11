@@ -1,7 +1,9 @@
 import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolResponse } from "../types/tool.ts";
 import { files } from "../services/file.ts";
 import { MAX_FILE_SIZE } from "../config.ts";
 import { safeParse, assertMaxLength, assertNumericBounds, checkFileSize } from "../utils/parse.ts";
+import { toolOk } from "../utils/tool-response.ts";
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -51,7 +53,7 @@ async function findNearby(payload: {
   references_file: string;
   queries_file: string;
   radius_km: number;
-}): Promise<{ count: number; matches: { reference: GeoPoint; query: GeoPoint; distance_km: number }[] }> {
+}): Promise<ToolResponse> {
   assertMaxLength(payload.references_file, "references_file", 500);
   assertMaxLength(payload.queries_file, "queries_file", 500);
   assertNumericBounds(payload.radius_km, "radius_km", 0.001, 40_075);
@@ -82,7 +84,14 @@ async function findNearby(payload: {
 
   matches.sort((a, b) => a.distance_km - b.distance_km);
 
-  return { count: matches.length, matches };
+  const hints: string[] = [
+    `${matches.length} matches found within ${payload.radius_km} km.`,
+  ];
+  if (matches.length > 50) {
+    hints.push("Many matches returned. Consider narrowing the radius.");
+  }
+
+  return toolOk({ count: matches.length, matches }, hints);
 }
 
 function distance(payload: {

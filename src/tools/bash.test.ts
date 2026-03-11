@@ -14,10 +14,12 @@ describe("bash tool", () => {
     expect(result).toContain("[exit code 42]");
   });
 
-  it("truncates output longer than 20,000 characters", async () => {
-    const result = await bash.handler({ command: "seq 1 100000" });
-    expect(result.length).toBeLessThanOrEqual(20_000 + "\n...(truncated)".length);
-    expect(result).toEndWith("...(truncated)");
+  it("truncates output longer than 20,000 characters with ToolResponse hint", async () => {
+    const result = (await bash.handler({ command: "seq 1 100000" })) as any;
+    // When truncated, bash returns a ToolResponse with hint
+    expect(result.status).toBe("ok");
+    expect(result.data).toEndWith("...(truncated)");
+    expect(result.hints).toContain("Output truncated to 20 KB. Full output not available.");
   });
 
   it("runs with CWD set to output directory", async () => {

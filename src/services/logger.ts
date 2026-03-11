@@ -98,13 +98,18 @@ export function createLogger(md?: import("./markdown-logger.ts").MarkdownLogger)
       md?.toolCall(name, rawArgs);
     },
 
-    toolOk(name: string, elapsed: string, rawResult: string) {
+    toolOk(name: string, elapsed: string, rawResult: string, hints?: string[]) {
       console.log(`  ${GREEN}✔ ${name}${RESET} ${DIM}${elapsed}${RESET}`);
       const summary = summarizeResult(rawResult);
       if (summary) {
         console.log(`     ${DIM}${summary}${RESET}`);
       }
-      md?.toolOk(name, elapsed, rawResult);
+      if (hints?.length) {
+        for (const hint of hints) {
+          console.log(`     ${YELLOW}💡 ${hint}${RESET}`);
+        }
+      }
+      md?.toolOk(name, elapsed, rawResult, hints);
     },
 
     toolErr(name: string, errorMsg: string) {

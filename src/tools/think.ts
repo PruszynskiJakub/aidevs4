@@ -1,9 +1,11 @@
 import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolResponse } from "../types/tool.ts";
 import { llm } from "../services/llm.ts";
 import { promptService } from "../services/prompt.ts";
 import { assertMaxLength } from "../utils/parse.ts";
+import { toolOk } from "../utils/tool-response.ts";
 
-async function think(args: { question: string; context: string }): Promise<string> {
+async function think(args: { question: string; context: string }): Promise<ToolResponse> {
   assertMaxLength(args.question, "question", 5_000);
   assertMaxLength(args.context, "context", 50_000);
 
@@ -16,7 +18,7 @@ async function think(args: { question: string; context: string }): Promise<strin
     ...(prompt.temperature !== undefined && { temperature: prompt.temperature }),
   });
 
-  return result;
+  return toolOk({ reasoning: result });
 }
 
 export default {

@@ -6,6 +6,22 @@ import { promptService } from "./services/prompt.ts";
 import { createLogger, duration } from "./services/logger.ts";
 import { MarkdownLogger } from "./services/markdown-logger.ts";
 
+function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "status" in parsed &&
+      "data" in parsed &&
+      (parsed.status === "ok" || parsed.status === "error")
+    ) {
+      return { data: parsed.data, hints: parsed.hints };
+    }
+  } catch { /* not JSON — return raw */ }
+  return { data: raw };
+}
+
 export async function runAgent(
   messages: LLMMessage[],
   provider: LLMProvider = defaultLLM,
@@ -66,18 +82,20 @@ export async function runAgent(
       })
     );
 
-    // Report results
+    // Report results — parse ToolResponse, extract data for LLM, surface hints in log
     for (let j = 0; j < functionCalls.length; j++) {
       const tc = functionCalls[j];
       const outcome = settled[j];
 
       if (outcome.status === "fulfilled") {
         const { result, elapsed } = outcome.value;
-        log.toolOk(tc.function.name, elapsed, result);
+        const parsed = parseToolResponse(result);
+        const llmContent = JSON.stringify(parsed.data);
+        log.toolOk(tc.function.name, elapsed, llmContent, parsed.hints);
         messages.push({
           role: "tool",
           toolCallId: tc.id,
-          content: result,
+          content: llmContent,
         });
       } else {
         const errorMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);

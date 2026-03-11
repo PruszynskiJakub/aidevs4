@@ -1,12 +1,14 @@
 import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolResponse } from "../types/tool.ts";
 import { files } from "../services/file.ts";
 import { getApiKey } from "../utils/hub.ts";
 import { ensureOutputDir, outputPath } from "../utils/output.ts";
 import { HUB_BASE_URL, HUB_VERIFY_URL, FETCH_TIMEOUT, MAX_BATCH_ROWS, MAX_FILE_SIZE } from "../config.ts";
 import { parseCsv } from "../utils/csv.ts";
 import { safeParse, safeFilename, validateKeys, assertMaxLength, checkFileSize } from "../utils/parse.ts";
+import { toolOk } from "../utils/tool-response.ts";
 
-async function download(payload: { filename: string }): Promise<{ filename: string; path: string }> {
+async function download(payload: { filename: string }): Promise<ToolResponse> {
   assertMaxLength(payload.filename, "filename", 255);
   safeFilename(payload.filename);
 
@@ -23,10 +25,13 @@ async function download(payload: { filename: string }): Promise<{ filename: stri
 
   await files.write(path, response);
 
-  return { filename: payload.filename, path };
+  return toolOk(
+    { filename: payload.filename, path },
+    [`File saved to ${path}. Inspect with bash: head -5 ${path}`],
+  );
 }
 
-async function verify(payload: { task: string; answer_file: string }): Promise<{ task: string; response: unknown }> {
+async function verify(payload: { task: string; answer_file: string }): Promise<ToolResponse> {
   assertMaxLength(payload.task, "task", 100);
   assertMaxLength(payload.answer_file, "answer_file", 500);
 
@@ -52,14 +57,17 @@ async function verify(payload: { task: string; answer_file: string }): Promise<{
     throw new Error(`Verify failed (${res.status}): ${detail}`);
   }
 
-  return { task: payload.task, response };
+  return toolOk(
+    { task: payload.task, response },
+    [`Verification submitted for task '${payload.task}'.`],
+  );
 }
 
 async function apiRequest(payload: {
   path: string;
   body?: Record<string, any>;
   body_file?: string;
-}): Promise<{ path: string; response: unknown }> {
+}): Promise<ToolResponse> {
   assertMaxLength(payload.path, "path", 200);
 
   const hasBody = payload.body !== undefined;
@@ -103,7 +111,10 @@ async function apiRequest(payload: {
     throw new Error(`API request failed (${res.status}): ${detail}`);
   }
 
-  return { path: payload.path, response };
+  return toolOk(
+    { path: payload.path, response },
+    [`Response from /api/${payload.path} received.`],
+  );
 }
 
 async function apiBatch(payload: {
@@ -111,7 +122,7 @@ async function apiBatch(payload: {
   data_file: string;
   field_map_json: string;
   output_file: string;
-}): Promise<{ path: string; count: number; output_file: string }> {
+}): Promise<ToolResponse> {
   assertMaxLength(payload.path, "path", 200);
   assertMaxLength(payload.data_file, "data_file", 500);
   assertMaxLength(payload.field_map_json, "field_map_json", 100_000);
@@ -174,7 +185,10 @@ async function apiBatch(payload: {
 
   await files.write(payload.output_file, JSON.stringify(results, null, 2));
 
-  return { path: payload.path, count: results.length, output_file: payload.output_file };
+  return toolOk(
+    { path: payload.path, count: results.length, output_file: payload.output_file },
+    [`Processed ${results.length} rows. Results written to ${payload.output_file}.`],
+  );
 }
 
 async function agentsHub({ action, payload }: { action: string; payload: Record<string, any> }): Promise<unknown> {

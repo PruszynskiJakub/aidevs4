@@ -56,7 +56,7 @@
         "properties": {
           "path": { "type": "string", "description": "API path segment after /api/ (e.g. \"location\")" },
           "data_file": { "type": "string", "description": "Absolute path to a CSV or JSON array file. Each row/item becomes one API call." },
-          "field_map_json": { "type": "string", "description": "JSON object mapping source field names to target field names, e.g. {\"born\":\"birthYear\"}. Unmapped fields pass through. Use \"{}\" for no renaming." },
+          "field_map_json": { "type": "string", "description": "JSON object mapping source field names to target field names, e.g. {\"born\":\"birthYear\"}. Unmapped fields pass through. Default: \"{}\" (no renaming)." },
           "output_file": { "type": "string", "description": "Absolute path to write the results JSON array" }
         },
         "required": ["path", "data_file", "field_map_json", "output_file"],

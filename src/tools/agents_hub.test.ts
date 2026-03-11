@@ -51,8 +51,10 @@ describe("agents_hub api_request", () => {
     expect(capturedUrl).toBe("https://hub.ag3nts.org/api/location");
     expect(capturedBody.query).toBe("test");
     expect(capturedBody.apikey).toBe("test-key-123");
-    expect(result.path).toBe("location");
-    expect(result.response).toEqual({ message: "ok" });
+    expect(result.status).toBe("ok");
+    expect(result.data.path).toBe("location");
+    expect(result.data.response).toEqual({ message: "ok" });
+    expect(result.hints).toContain("Response from /api/location received.");
   });
 
   it("reads body from file with apikey merged", async () => {
@@ -77,7 +79,8 @@ describe("agents_hub api_request", () => {
     expect(capturedBody.query).toBe("from-file");
     expect(capturedBody.limit).toBe(5);
     expect(capturedBody.apikey).toBe("test-key-123");
-    expect(result.response).toEqual({ data: [1, 2] });
+    expect(result.status).toBe("ok");
+    expect(result.data.response).toEqual({ data: [1, 2] });
   });
 
   it("throws when both body and body_file are provided", async () => {
@@ -124,7 +127,7 @@ describe("agents_hub api_request", () => {
       payload: { path: "echo", body: { msg: "hi" } },
     })) as any;
 
-    expect(result.response).toBe("plain text response");
+    expect(result.data.response).toBe("plain text response");
   });
 });
 
@@ -148,8 +151,9 @@ describe("agents_hub api_request_body", () => {
     expect(capturedBody.query).toBe("hello");
     expect(capturedBody.limit).toBe(10);
     expect(capturedBody.apikey).toBe("test-key-123");
-    expect(result.path).toBe("test");
-    expect(result.response).toEqual({ ok: true });
+    expect(result.status).toBe("ok");
+    expect(result.data.path).toBe("test");
+    expect(result.data.response).toEqual({ ok: true });
   });
 
   it("throws on invalid body_json", async () => {
@@ -184,8 +188,9 @@ describe("agents_hub api_request_file", () => {
 
     expect(capturedBody.data).toBe("from-file-action");
     expect(capturedBody.apikey).toBe("test-key-123");
-    expect(result.path).toBe("upload");
-    expect(result.response).toEqual({ result: "ok" });
+    expect(result.status).toBe("ok");
+    expect(result.data.path).toBe("upload");
+    expect(result.data.response).toEqual({ result: "ok" });
   });
 });
 
@@ -223,9 +228,11 @@ describe("agents_hub api_batch", () => {
       },
     })) as any;
 
-    expect(result.path).toBe("location");
-    expect(result.count).toBe(3);
-    expect(result.output_file).toBe(outputFile);
+    expect(result.status).toBe("ok");
+    expect(result.data.path).toBe("location");
+    expect(result.data.count).toBe(3);
+    expect(result.data.output_file).toBe(outputFile);
+    expect(result.hints).toContain(`Processed 3 rows. Results written to ${outputFile}.`);
 
     // Check field mapping: born → birthYear
     expect(capturedBodies[0].birthYear).toBe("1990");
@@ -284,7 +291,7 @@ describe("agents_hub api_batch", () => {
       payload: { path: "people", data_file: dataFile, field_map_json: "{}", output_file: outputFile },
     })) as any;
 
-    expect(result.count).toBe(2);
+    expect(result.data.count).toBe(2);
     expect(capturedBodies[0].name).toBe("Alice");
     expect(capturedBodies[0].age).toBe("30");
     expect(capturedBodies[0].apikey).toBe("test-key-123");

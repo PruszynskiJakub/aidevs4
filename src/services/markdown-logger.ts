@@ -73,11 +73,18 @@ export class MarkdownLogger {
     );
   }
 
-  toolOk(name: string, elapsed: string, rawResult: string): void {
-    this.append(
+  toolOk(name: string, elapsed: string, rawResult: string, hints?: string[]): void {
+    let text =
       `**Result** (${elapsed}) — OK\n\n` +
-      `\`\`\`json\n${formatJson(rawResult)}\n\`\`\`\n\n`,
-    );
+      `\`\`\`json\n${formatJson(rawResult)}\n\`\`\`\n\n`;
+    if (hints?.length) {
+      text += `> **Hints:**\n`;
+      for (const hint of hints) {
+        text += `> - ${hint}\n`;
+      }
+      text += `\n`;
+    }
+    this.append(text);
   }
 
   toolErr(name: string, errorMsg: string): void {
