@@ -8,3 +8,11 @@ US-2: Support multiple providers not only OPEN_AI
 US-3: Support error recovery 
 US-4: Support tool_search capability
 US-5: Store prompts as markdown files
+
+
+
+---
+### Problems
+Operujemy na różnego rodzaju plikach.
+Operujemy na różnych strukturach - niektóre są płaskie inne nie.
+Agent ma problem z obsługą tego

@@ -1,0 +1,15 @@
+{
+  "name": "bash",
+  "description": "Execute a shell command in the output directory. Replaces all file inspection and data transformation needs.\n\nUse for: reading/writing files (cat, echo >), inspecting structure (head, wc, ls), JSON processing (jq — filter, reshape, flatten nested objects, extract fields, convert formats), CSV handling (awk, cut, csvtool), text search (grep), sorting (sort), building answer payloads, and creating intermediate files for multi-step pipelines.\n\nExamples: `jq '.[] | {name, age}' data.json`, `jq -r '.results[] | [.lat, .lon] | @csv' api_output.json > coords.csv`, `cat file.json | jq length`, `head -5 data.csv`, `echo '{\"answer\":42}' > answer.json`.\n\nCWD is the output directory. Use absolute paths to read files outside it. Output is truncated at 20 KB.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Bash command to execute (supports pipes, redirects, jq, awk, grep, sort, and all standard Unix tools)"
+      }
+    },
+    "required": ["command"],
+    "additionalProperties": false
+  }
+}

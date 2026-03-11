@@ -4,9 +4,8 @@ import { getApiKey } from "../utils/hub.ts";
 import { ensureOutputDir, outputPath } from "../utils/output.ts";
 import { HUB_BASE_URL, HUB_VERIFY_URL } from "../config.ts";
 import { parseCsv } from "../utils/csv.ts";
-import { inspectFile } from "./filesystem.ts";
 
-async function download(payload: { filename: string }): Promise<{ filename: string; path: string; inspection: unknown }> {
+async function download(payload: { filename: string }): Promise<{ filename: string; path: string }> {
   await ensureOutputDir();
 
   const apiKey = getApiKey();
@@ -20,14 +19,7 @@ async function download(payload: { filename: string }): Promise<{ filename: stri
 
   await files.write(path, response);
 
-  let inspection: unknown = null;
-  try {
-    inspection = await inspectFile(path);
-  } catch {
-    // Unsupported format or inspection failure — leave as null
-  }
-
-  return { filename: payload.filename, path, inspection };
+  return { filename: payload.filename, path };
 }
 
 async function verify(payload: { task: string; answer_file: string }): Promise<{ task: string; response: unknown }> {

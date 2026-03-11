@@ -1,0 +1,9 @@
+id,name,surname,age,city,active
+1,Jan,Kowalski,34,Warszawa,true
+2,Anna,Nowak,28,Kraków,false
+3,Piotr,Wiśniewski,45,Gdańsk,true
+4,Maria,Zielińska,31,Wrocław,true
+5,Tomek,Lewandowski,22,Poznań,false
+6,Kasia,Wójcik,39,Warszawa,true
+7,Marek,Kamiński,51,Kraków,true
+8,Ola,Szymańska,27,Gdańsk,false
