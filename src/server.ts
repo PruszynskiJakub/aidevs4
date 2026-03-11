@@ -7,6 +7,13 @@ import type { LLMMessage } from "./types/llm.ts";
 
 const app = new Hono();
 
+app.use("*", async (c, next) => {
+  const start = performance.now();
+  await next();
+  const ms = (performance.now() - start).toFixed(0);
+  log.info(`${c.req.method} ${c.req.path} → ${c.res.status} (${ms}ms)`);
+});
+
 app.get("/health", (c) => c.json({ status: "ok" }));
 
 app.post("/chat", async (c) => {
