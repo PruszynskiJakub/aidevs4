@@ -5,6 +5,7 @@ import { getTools, dispatch } from "./tools/dispatcher.ts";
 import { promptService } from "./services/prompt.ts";
 import { createLogger, duration } from "./services/logger.ts";
 import { MarkdownLogger } from "./services/markdown-logger.ts";
+import { getPersona } from "./config/personas.ts";
 
 function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
   try {
@@ -25,6 +26,7 @@ function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
 export async function runAgent(
   messages: LLMMessage[],
   provider: LLMProvider = defaultLLM,
+  options?: { model?: string },
 ): Promise<string> {
   const userPrompt = messages.find((m) => m.role === "user")?.content ?? "";
   const md = new MarkdownLogger();
@@ -32,14 +34,25 @@ export async function runAgent(
   const log = createLogger(md);
 
   const tools = await getTools();
-  const system = await promptService.load("system");
+
+  let model: string;
+  if (options?.model) {
+    model = options.model;
+  } else {
+    const persona = getPersona();
+    const system = await promptService.load("system", {
+      objective: persona.objective,
+      tone: persona.tone,
+    });
+    model = system.model!;
+  }
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
-    log.step(i + 1, MAX_ITERATIONS, system.model!, messages.length);
+    log.step(i + 1, MAX_ITERATIONS, model, messages.length);
 
     const llmStart = performance.now();
     const response = await provider.chatCompletion({
-      model: system.model!,
+      model,
       messages,
       tools,
     });
@@ -127,11 +140,16 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  const system = await promptService.load("system");
+  const persona = getPersona(process.env.PERSONA);
+  const system = await promptService.load("system", {
+    objective: persona.objective,
+    tone: persona.tone,
+  });
+  const agentModel = persona.model ?? system.model!;
   const messages: LLMMessage[] = [
     { role: "system", content: system.content },
     { role: "user", content: prompt },
   ];
 
-  void runAgent(messages);
+  void runAgent(messages, undefined, { model: agentModel });
 }

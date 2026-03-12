@@ -203,3 +203,33 @@ describe("agent parallel tool calling", () => {
     // No assertions beyond not throwing — the agent should simply print and return
   });
 });
+
+describe("agent model override", () => {
+  it("uses model from options when provided", async () => {
+    let capturedModel = "";
+    const provider: LLMProvider = {
+      chatCompletion: async ({ model }) => {
+        capturedModel = model;
+        return { content: "ok", finishReason: "stop", toolCalls: [] };
+      },
+      completion: async () => "",
+    };
+
+    await runAgent(makeMessages("test"), provider, { model: "gpt-4.1-mini" });
+    expect(capturedModel).toBe("gpt-4.1-mini");
+  });
+
+  it("falls back to prompt frontmatter model when no override", async () => {
+    let capturedModel = "";
+    const provider: LLMProvider = {
+      chatCompletion: async ({ model }) => {
+        capturedModel = model;
+        return { content: "ok", finishReason: "stop", toolCalls: [] };
+      },
+      completion: async () => "",
+    };
+
+    await runAgent(makeMessages("test"), provider);
+    expect(capturedModel).toBe("gpt-4.1"); // from mocked promptService
+  });
+});

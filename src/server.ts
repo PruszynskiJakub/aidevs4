@@ -3,7 +3,15 @@ import { runAgent } from "./agent.ts";
 import { sessionService } from "./services/session.ts";
 import { promptService } from "./services/prompt.ts";
 import { log } from "./services/logger.ts";
+import { getPersona } from "./config/personas.ts";
 import type { LLMMessage } from "./types/llm.ts";
+
+const persona = getPersona(process.env.PERSONA);
+const systemPrompt = await promptService.load("system", {
+  objective: persona.objective,
+  tone: persona.tone,
+});
+const agentModel = persona.model ?? systemPrompt.model!;
 
 const app = new Hono();
 
@@ -38,10 +46,9 @@ app.post("/chat", async (c) => {
 
       // First interaction — prepend system prompt
       if (session.messages.length === 0) {
-        const system = await promptService.load("system");
         sessionService.appendMessage(sessionId, {
           role: "system",
-          content: system.content,
+          content: systemPrompt.content,
         });
       }
 
@@ -49,7 +56,7 @@ app.post("/chat", async (c) => {
 
       // Pass a copy so runAgent's pushes don't double-add to session
       const messages: LLMMessage[] = [...session.messages];
-      const result = await runAgent(messages);
+      const result = await runAgent(messages, undefined, { model: agentModel });
 
       // Persist the messages that runAgent appended (assistant + tool messages)
       const newMessages = messages.slice(session.messages.length);
