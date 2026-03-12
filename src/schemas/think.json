@@ -1,19 +1,14 @@
 {
   "name": "think",
-  "description": "Internal reasoning tool. Use this to think through a problem before acting — plan next steps, analyze gathered data, weigh alternatives, or synthesize information from multiple sources. Returns a reasoning string.",
-  "parameters": {
+  "description": "Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use it when complex reasoning or some cache memory is needed.",
+  "input_schema": {
     "type": "object",
     "properties": {
-      "question": {
+      "thought": {
         "type": "string",
-        "description": "What you need to think about. Be specific — e.g. 'Which of these 3 API endpoints should I call next given the task requirements?'"
-      },
-      "context": {
-        "type": "string",
-        "description": "Relevant information gathered so far — tool results, task description, constraints, partial answers. Include everything the reasoning needs."
+        "description": "A thought to think about."
       }
     },
-    "required": ["question", "context"],
-    "additionalProperties": false
+    "required": ["thought"]
   }
 }
