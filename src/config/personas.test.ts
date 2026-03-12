@@ -72,7 +72,7 @@ describe("persona + prompt integration", () => {
       tone: persona.tone,
     });
     // Persona-specific content injected
-    expect(result.content).toContain("logistics system assistant");
+    expect(result.content).toContain("logistics department");
     expect(result.content).toContain("colleague");
     // Universal sections still present (from template, not persona)
     expect(result.content).toContain("Reasoning Protocol");

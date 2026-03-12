@@ -74,8 +74,8 @@ describe("dispatcher", () => {
     });
 
     it("returns all expanded tools", () => {
-      // agents_hub: 5 actions + geo_distance: 2 actions + think: 1 + bash: 1 = 9
-      expect(tools.length).toBe(9);
+      // agents_hub: 5 actions + geo_distance: 2 actions + shipping: 2 actions + think: 1 + bash: 1 = 11
+      expect(tools.length).toBe(11);
     });
 
     it("expands multi-action schemas with __ separator", () => {

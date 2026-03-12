@@ -27,9 +27,11 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 app.post("/chat", async (c) => {
   const body = await c.req.json().catch(() => null);
 
+  body.sessionId = body.sessionID;
   if (
     !body ||
     typeof body.sessionId !== "string" ||
+    typeof body.sessionID !== "string" ||
     typeof body.msg !== "string"
   ) {
     return c.json(

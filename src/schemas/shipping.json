@@ -1,0 +1,42 @@
+{
+  "name": "shipping",
+  "description": "Check package status and redirect packages via the logistics system.",
+  "actions": {
+    "check": {
+      "description": "Check the current status and location of a package. Use when the operator asks about a package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packageid": {
+            "type": "string",
+            "description": "Package identifier (e.g. PKG12345678)"
+          }
+        },
+        "required": ["packageid"],
+        "additionalProperties": false
+      }
+    },
+    "redirect": {
+      "description": "Redirect a package to a new destination. Requires the package ID, destination code, and the security code provided by the operator.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packageid": {
+            "type": "string",
+            "description": "Package identifier (e.g. PKG12345678)"
+          },
+          "destination": {
+            "type": "string",
+            "description": "Target destination code (e.g. PWR3847PL)"
+          },
+          "code": {
+            "type": "string",
+            "description": "Security code provided by the operator for authorization"
+          }
+        },
+        "required": ["packageid", "destination", "code"],
+        "additionalProperties": false
+      }
+    }
+  }
+}
