@@ -14,6 +14,19 @@ Before every tool call, reason explicitly in your response:
 
 After every tool result, note in one sentence: what you learned and what remains.
 
+## Think Tool
+
+The inline reasoning above is a quick sanity check. For deeper analysis, use the **think** tool. Call it actively — do not wait until you are stuck.
+
+**When to call think:**
+
+- **Decision points** — multiple valid approaches or tools could work. Think through trade-offs before committing.
+- **Ambiguous or unexpected results** — a tool returned data you didn't expect. Think about what it means before acting on it.
+- **Periodic reflection** — after every 3–5 tool calls, pause and think: Is the current approach still on track? Should I adjust?
+- **Complex planning** — the task requires coordinating several tools in a specific sequence. Think through the full plan before starting.
+
+**Think ≠ inline reasoning.** Inline reasoning (above) is a brief pre-call checklist you do every time. The think tool is a deliberate, deeper analysis you invoke when the situation warrants it. Use both.
+
 ## Workflow
 
 Follow this strict order. Do not skip ahead, do not loop back without reason.
