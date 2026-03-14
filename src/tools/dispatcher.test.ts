@@ -74,17 +74,19 @@ describe("dispatcher", () => {
     });
 
     it("returns all expanded tools", () => {
-      // agents_hub: 5 actions + geo_distance: 2 actions + shipping: 2 actions + think: 1 + bash: 1 = 11
-      expect(tools.length).toBe(11);
+      // agents_hub: 4 + geo_distance: 2 + shipping: 2 + web: 1
+      // + document_processor: 1 + think: 1 + bash: 1 = 12
+      expect(tools.length).toBe(12);
     });
 
     it("expands multi-action schemas with __ separator", () => {
       const names = tools.map((t) => t.function.name);
-      expect(names).toContain("agents_hub__download");
       expect(names).toContain("agents_hub__verify");
       expect(names).toContain("agents_hub__api_request_body");
       expect(names).toContain("agents_hub__api_request_file");
       expect(names).toContain("agents_hub__api_batch");
+      expect(names).toContain("web__download");
+      expect(names).toContain("document_processor__ask");
       expect(names).toContain("geo_distance__find_nearby");
       expect(names).toContain("geo_distance__distance");
     });

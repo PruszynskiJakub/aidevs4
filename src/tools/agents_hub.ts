@@ -2,34 +2,10 @@ import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResponse } from "../types/tool.ts";
 import { files } from "../services/file.ts";
 import { getApiKey } from "../utils/hub.ts";
-import { ensureOutputDir, outputPath } from "../utils/output.ts";
 import { HUB_BASE_URL, HUB_VERIFY_URL, FETCH_TIMEOUT, MAX_BATCH_ROWS, MAX_FILE_SIZE } from "../config.ts";
 import { parseCsv } from "../utils/csv.ts";
-import { safeParse, safeFilename, validateKeys, assertMaxLength, checkFileSize } from "../utils/parse.ts";
+import { safeParse, validateKeys, assertMaxLength, checkFileSize } from "../utils/parse.ts";
 import { toolOk } from "../utils/tool-response.ts";
-
-async function download(payload: { filename: string }): Promise<ToolResponse> {
-  assertMaxLength(payload.filename, "filename", 255);
-  safeFilename(payload.filename);
-
-  await ensureOutputDir();
-
-  const apiKey = getApiKey();
-  const url = `${HUB_BASE_URL}/data/${apiKey}/${payload.filename}`;
-  const path = outputPath(payload.filename);
-
-  const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT) });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${payload.filename}: ${response.status}`);
-  }
-
-  await files.write(path, response);
-
-  return toolOk(
-    { filename: payload.filename, path },
-    [`File saved to ${path}. Inspect with bash: head -5 ${path}`],
-  );
-}
 
 async function verify(payload: { task: string; answer_file: string }): Promise<ToolResponse> {
   assertMaxLength(payload.task, "task", 100);
@@ -193,8 +169,6 @@ async function apiBatch(payload: {
 
 async function agentsHub({ action, payload }: { action: string; payload: Record<string, any> }): Promise<unknown> {
   switch (action) {
-    case "download":
-      return download(payload as { filename: string });
     case "verify":
       return verify(payload as { task: string; answer_file: string });
     case "api_request":

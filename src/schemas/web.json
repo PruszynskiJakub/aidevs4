@@ -1,0 +1,18 @@
+{
+  "name": "web",
+  "description": "Interact with allowed web resources.",
+  "actions": {
+    "download": {
+      "description": "Download a file from a URL. Supports {{placeholder}} template variables resolved from environment (available: hub_api_key). Host must be on the allowlist (*.ag3nts.org).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "description": "Full URL to download from. May contain {{placeholder}} variables (e.g. https://hub.ag3nts.org/data/{{hub_api_key}}/file.txt)" },
+          "filename": { "type": "string", "description": "Output filename to save the downloaded content as" }
+        },
+        "required": ["url", "filename"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

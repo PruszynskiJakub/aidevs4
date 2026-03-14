@@ -2,17 +2,6 @@
   "name": "agents_hub",
   "description": "Interact with the AG3NTS hub.",
   "actions": {
-    "download": {
-      "description": "Fetch a file from the hub, API token will automatically injected",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "filename": { "type": "string", "description": "Name of the file to download (e.g. \"people.csv\") being the last part of an url" }
-        },
-        "required": ["filename"],
-        "additionalProperties": false
-      }
-    },
     "verify": {
       "description": "Submit an answer for verification",
       "parameters": {

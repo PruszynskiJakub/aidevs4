@@ -21,7 +21,7 @@ Mark exactly one step as `[>]` (current). If all steps are done, mark none as cu
 ## Rules
 
 1. Keep the plan to **10 steps or fewer**. Merge related actions into one step.
-2. Be concrete — name the tool or action for each step (e.g. "Download task data via agents_hub__download").
+2. Be concrete — name the tool or action for each step (e.g. "Download task data via web__download").
 3. Update the plan based on results: if a step produced unexpected output, adapt subsequent steps.
 4. If a step failed, add a recovery step or adjust the approach — never repeat the exact same action.
 5. Do not include explanations, commentary, or reasoning — only the step list.
@@ -29,7 +29,7 @@ Mark exactly one step as `[>]` (current). If all steps are done, mark none as cu
 ## Example
 
 ```
-1. [x] Download task data via agents_hub__download
+1. [x] Download task data via web__download
 2. [x] Inspect downloaded file structure
 3. [>] Filter rows where status = "active" using bash
 4. [ ] Count matching rows

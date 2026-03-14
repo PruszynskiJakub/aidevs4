@@ -17,6 +17,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@google/genai": "^1.45.0",
     "csv-parse": "^6.1.0",
     "gray-matter": "^4.0.3",
     "hono": "^4.12.7",

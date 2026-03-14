@@ -30,6 +30,12 @@ export function createBunFileService(
       return Bun.file(path).text();
     },
 
+    async readBinary(path: string): Promise<Buffer> {
+      assertPathAllowed(path, readPaths, "read");
+      const arrayBuf = await Bun.file(path).arrayBuffer();
+      return Buffer.from(arrayBuf);
+    },
+
     async readJson<T = unknown>(path: string): Promise<T> {
       assertPathAllowed(path, readPaths, "read");
       return Bun.file(path).json() as Promise<T>;

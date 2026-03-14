@@ -1,0 +1,25 @@
+{
+  "name": "document_processor",
+  "description": "Analyze local documents (text files, images) using AI vision models. Supports cross-referencing multiple files to answer questions. Use after downloading files with web__download.",
+  "actions": {
+    "ask": {
+      "description": "Ask a question about one or more local files. Supports text (.md, .txt, .csv, .json, .xml, .html) and image (.png, .jpg, .jpeg, .gif, .webp) files. Returns a text answer based on document content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Local file paths to analyze (max 10). Use output paths from web__download."
+          },
+          "question": {
+            "type": "string",
+            "description": "Question to answer based on the documents. Be specific about what information you need."
+          }
+        },
+        "required": ["paths", "question"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

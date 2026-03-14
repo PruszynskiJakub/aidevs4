@@ -17,3 +17,17 @@ export const HUB_VERIFY_URL = `${HUB_BASE_URL}/verify`;
 export const FETCH_TIMEOUT = 30_000;
 export const MAX_BATCH_ROWS = 1000;
 export const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+export const WEB_ALLOWED_HOSTS: string[] = [".ag3nts.org"];
+
+export const WEB_PLACEHOLDER_MAP: Record<string, () => string> = {
+  hub_api_key: () => {
+    const key = process.env.HUB_API_KEY;
+    if (!key) throw new Error("HUB_API_KEY environment variable is not set");
+    return key;
+  },
+};
+
+export const GEMINI_MODEL = "gemini-2.5-flash";
+export const GEMINI_TIMEOUT = 60_000;
+export const DOC_MAX_FILES = 10;
