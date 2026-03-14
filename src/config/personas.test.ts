@@ -33,7 +33,7 @@ describe("getPersona", () => {
 
 describe("persona + prompt integration", () => {
   // Read the raw prompt file directly to avoid mock.module leakage from agent.test.ts
-  const systemPath = join(import.meta.dir, "..", "prompts", "system.md");
+  const systemPath = join(import.meta.dir, "..", "prompts", "act.md");
 
   async function renderPrompt(vars: Record<string, string>) {
     const raw = await Bun.file(systemPath).text();

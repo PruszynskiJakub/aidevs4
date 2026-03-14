@@ -7,11 +7,11 @@ import { getPersona } from "./config/personas.ts";
 import type { LLMMessage } from "./types/llm.ts";
 
 const persona = getPersona(process.env.PERSONA);
-const systemPrompt = await promptService.load("system", {
+const actPrompt = await promptService.load("act", {
   objective: persona.objective,
   tone: persona.tone,
 });
-const agentModel = persona.model ?? systemPrompt.model!;
+const agentModel = persona.model ?? actPrompt.model!;
 
 const app = new Hono();
 
@@ -50,7 +50,7 @@ app.post("/chat", async (c) => {
       if (session.messages.length === 0) {
         sessionService.appendMessage(sessionId, {
           role: "system",
-          content: systemPrompt.content,
+          content: actPrompt.content,
         });
       }
 

@@ -87,6 +87,26 @@ export function createLogger(md?: import("./markdown-logger.ts").MarkdownLogger)
       md?.llm(elapsed, tokensIn, tokensOut);
     },
 
+    plan(planText: string, model: string, elapsed: string, tokensIn?: number, tokensOut?: number) {
+      const tokenStr = tokensIn != null
+        ? `  ${DIM}(${tokensIn} → ${tokensOut} tokens)${RESET}`
+        : "";
+      console.log(`  ${CYAN}📋${RESET} Plan updated ${DIM}(${model}, ${elapsed})${RESET}${tokenStr}`);
+      // Show each step with color coding
+      for (const line of planText.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.includes("[x]")) {
+          console.log(`     ${DIM}${trimmed}${RESET}`);
+        } else if (trimmed.includes("[>]")) {
+          console.log(`     ${BOLD}${YELLOW}${trimmed}${RESET}`);
+        } else if (trimmed.includes("[ ]")) {
+          console.log(`     ${WHITE}${trimmed}${RESET}`);
+        }
+      }
+      md?.plan(planText, model, elapsed, tokensIn, tokensOut);
+    },
+
     toolHeader(count: number) {
       const parallel = count > 1 ? ` in parallel` : "";
       console.log(`  ${YELLOW}🔧 Calling ${count} tool${count > 1 ? "s" : ""}${parallel}:${RESET}`);

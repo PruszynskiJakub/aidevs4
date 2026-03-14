@@ -35,31 +35,69 @@ export async function runAgent(
 
   const tools = await getTools();
 
-  let model: string;
+  // Load plan prompt (independent of persona)
+  const planPrompt = await promptService.load("plan");
+  const planModel = planPrompt.model!;
+
+  // Resolve act model
+  let actModel: string;
   if (options?.model) {
-    model = options.model;
+    actModel = options.model;
   } else {
     const persona = getPersona();
-    const system = await promptService.load("system", {
+    const act = await promptService.load("act", {
       objective: persona.objective,
       tone: persona.tone,
     });
-    model = system.model!;
+    actModel = act.model!;
   }
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
-    log.step(i + 1, MAX_ITERATIONS, model, messages.length);
+    log.step(i + 1, MAX_ITERATIONS, actModel, messages.length);
 
-    const llmStart = performance.now();
+    // --- PLAN PHASE ---
+    // Build plan messages: plan system prompt + conversation history (without act system prompt)
+    const planMessages: LLMMessage[] = [
+      { role: "system", content: planPrompt.content },
+      ...messages.filter((m) => m.role !== "system"),
+    ];
+
+    const planStart = performance.now();
+    const planResponse = await provider.chatCompletion({
+      model: planModel,
+      messages: planMessages,
+      ...(planPrompt.temperature !== undefined && {
+        temperature: planPrompt.temperature,
+      }),
+    });
+    const planTime = duration(planStart);
+    const planText = planResponse.content ?? "";
+
+    log.plan(
+      planText,
+      planModel,
+      planTime,
+      planResponse.usage?.promptTokens,
+      planResponse.usage?.completionTokens,
+    );
+
+    // --- ACT PHASE ---
+    // Inject plan as assistant message — only for the act call, not persisted in main history
+    const actMessages: LLMMessage[] = [
+      ...messages,
+      { role: "assistant", content: `## Current Plan\n\n${planText}` },
+    ];
+
+    const actStart = performance.now();
     const response = await provider.chatCompletion({
-      model,
-      messages,
+      model: actModel,
+      messages: actMessages,
       tools,
     });
-    const llmTime = duration(llmStart);
+    const actTime = duration(actStart);
 
     log.llm(
-      llmTime,
+      actTime,
       response.usage?.promptTokens,
       response.usage?.completionTokens,
     );
@@ -141,13 +179,13 @@ if (import.meta.main) {
   }
 
   const persona = getPersona(process.env.PERSONA);
-  const system = await promptService.load("system", {
+  const act = await promptService.load("act", {
     objective: persona.objective,
     tone: persona.tone,
   });
-  const agentModel = persona.model ?? system.model!;
+  const agentModel = persona.model ?? act.model!;
   const messages: LLMMessage[] = [
-    { role: "system", content: system.content },
+    { role: "system", content: act.content },
     { role: "user", content: prompt },
   ];
 

@@ -61,6 +61,15 @@ export class MarkdownLogger {
     this.append(`**LLM responded** in ${elapsed}${tokenStr}\n\n`);
   }
 
+  plan(planText: string, model: string, elapsed: string, tokensIn?: number, tokensOut?: number): void {
+    const tokenStr = tokensIn != null ? ` | ${tokensIn} → ${tokensOut} tokens` : "";
+    this.append(
+      `### Plan\n\n` +
+      `*Model: ${model} · ${elapsed}${tokenStr}*\n\n` +
+      `${planText}\n\n`,
+    );
+  }
+
   toolHeader(count: number): void {
     const parallel = count > 1 ? ", parallel" : "";
     this.append(`### Tool Calls (${count}${parallel})\n\n`);
