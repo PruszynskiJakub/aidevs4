@@ -5,7 +5,7 @@ import { files } from "../services/file.ts";
 import { llm } from "../services/llm.ts";
 import { assertMaxLength, checkFileSize } from "../utils/parse.ts";
 import { toolOk } from "../utils/tool-response.ts";
-import { config } from "../config/index.ts";
+import { config } from "../config";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 const TEXT_EXTENSIONS = new Set([".md", ".txt", ".csv", ".json", ".xml", ".html"]);

@@ -1,20 +1,10 @@
 import { Hono } from "hono";
 import { runAgent } from "./agent.ts";
 import { sessionService } from "./services/session.ts";
-import { promptService } from "./services/prompt.ts";
+import { resolveAssistant } from "./services/assistant-resolver.ts";
 import { log } from "./services/logger.ts";
-import { assistants } from "./services/assistants.ts";
 import { config } from "./config/index.ts";
 import type { LLMMessage } from "./types/llm.ts";
-
-const assistantName = config.assistant ?? "default";
-const assistant = await assistants.get(assistantName);
-const actPrompt = await promptService.load("act", {
-  objective: assistant.objective,
-  tone: assistant.tone,
-});
-const agentModel = assistant.model ?? actPrompt.model!;
-const toolFilter = assistant.tools;
 
 const app = new Hono();
 
@@ -48,17 +38,51 @@ app.post("/chat", async (c) => {
     );
   }
 
+  // Resolve assistant name — from body, existing session, or default
+  const requestedAssistant = typeof body.assistant === "string" && body.assistant !== ""
+    ? body.assistant
+    : undefined;
+
   const { msg } = body as { msg: string };
 
   try {
     const answer = await sessionService.enqueue(sessionId, async () => {
       const session = sessionService.getOrCreate(sessionId);
 
+      // Determine assistant: session-pinned > request > "default"
+      let assistantName: string;
+      if (session.assistant) {
+        assistantName = session.assistant;
+        if (requestedAssistant && requestedAssistant !== session.assistant) {
+          log.info(
+            `/chat [${sessionId}]: ignoring assistant="${requestedAssistant}", session pinned to "${session.assistant}"`,
+          );
+        }
+      } else {
+        assistantName = requestedAssistant ?? "default";
+      }
+
+      // Resolve assistant — assistants.get() throws with available names if unknown
+      let resolved;
+      try {
+        resolved = await resolveAssistant(assistantName);
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("Unknown assistant")) {
+          throw Object.assign(new Error(err.message), { statusCode: 400 });
+        }
+        throw err;
+      }
+
+      // Pin assistant to session on first interaction
+      if (!session.assistant) {
+        session.assistant = assistantName;
+      }
+
       // First interaction — prepend system prompt
       if (session.messages.length === 0) {
         sessionService.appendMessage(sessionId, {
           role: "system",
-          content: actPrompt.content,
+          content: resolved.prompt,
         });
       }
 
@@ -67,9 +91,9 @@ app.post("/chat", async (c) => {
       // Pass a copy so runAgent's pushes don't double-add to session
       const messages: LLMMessage[] = [...session.messages];
       const result = await runAgent(messages, undefined, {
-        model: agentModel,
+        model: resolved.model,
         sessionId,
-        toolFilter,
+        toolFilter: resolved.toolFilter,
       });
 
       // Persist the messages that runAgent appended (assistant + tool messages)
@@ -83,7 +107,11 @@ app.post("/chat", async (c) => {
 
     return c.json({ msg: answer });
   } catch (err) {
+    const statusCode = (err as { statusCode?: number }).statusCode;
     const message = err instanceof Error ? err.message : String(err);
+    if (statusCode === 400) {
+      return c.json({ error: message }, 400);
+    }
     log.error(`/chat error [${sessionId}]: ${message}`);
     return c.json({ error: message }, 500);
   }

@@ -66,6 +66,105 @@ describe("POST /chat", () => {
     expect(json.msg).toBe("mock answer");
   });
 
+  it("uses specified assistant from body", async () => {
+    const res = await request("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: "s-proxy", msg: "hello", assistant: "proxy" }),
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.msg).toBe("mock answer");
+
+    // Session should be pinned to "proxy"
+    const session = sessionService.getOrCreate("s-proxy");
+    expect(session.assistant).toBe("proxy");
+  });
+
+  it("returns 400 for unknown assistant with available names", async () => {
+    const res = await request("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: "s-bad", msg: "hi", assistant: "nonexistent" }),
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain("Unknown assistant");
+    expect(json.error).toContain("nonexistent");
+    expect(json.error).toContain("default");
+  });
+
+  it("pins assistant to session on first request", async () => {
+    // First request with "proxy"
+    await request("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: "s-pin", msg: "first", assistant: "proxy" }),
+    });
+
+    // Second request with different assistant — should be ignored
+    await request("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: "s-pin", msg: "second", assistant: "default" }),
+    });
+
+    const session = sessionService.getOrCreate("s-pin");
+    expect(session.assistant).toBe("proxy");
+  });
+
+  it("falls back to default assistant when not specified", async () => {
+    await request("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: "s-default", msg: "hi" }),
+    });
+
+    const session = sessionService.getOrCreate("s-default");
+    expect(session.assistant).toBe("default");
+  });
+
+  it("reuses session assistant when assistant field is omitted on subsequent requests", async () => {
+    await request("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: "s-reuse", msg: "first", assistant: "proxy" }),
+    });
+
+    await request("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: "s-reuse", msg: "second" }),
+    });
+
+    const session = sessionService.getOrCreate("s-reuse");
+    expect(session.assistant).toBe("proxy");
+    // system + user + assistant + user + assistant = 5
+    expect(session.messages.length).toBe(5);
+  });
+
+  it("ignores non-string assistant and falls back to default", async () => {
+    const res = await request("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: "s-nonstr", msg: "hi", assistant: 123 }),
+    });
+    expect(res.status).toBe(200);
+    const session = sessionService.getOrCreate("s-nonstr");
+    expect(session.assistant).toBe("default");
+  });
+
+  it("treats empty string assistant as unset and falls back to default", async () => {
+    const res = await request("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: "s-empty", msg: "hi", assistant: "" }),
+    });
+    expect(res.status).toBe(200);
+    const session = sessionService.getOrCreate("s-empty");
+    expect(session.assistant).toBe("default");
+  });
+
   it("maintains session across requests", async () => {
     await request("/chat", {
       method: "POST",
