@@ -1,7 +1,11 @@
 import { readdir, stat, mkdir, appendFile } from "fs/promises";
 import { resolve } from "path";
 import type { FileProvider, FileStat } from "../types/file.ts";
-import { ALLOWED_READ_PATHS, ALLOWED_WRITE_PATHS } from "../config.ts";
+import { config } from "../config/index.ts";
+
+// Mutable copies of config paths — tests push/splice these for temp dir access
+export const _testReadPaths: string[] = [...config.sandbox.allowedReadPaths];
+export const _testWritePaths: string[] = [...config.sandbox.allowedWritePaths];
 
 function assertPathAllowed(
   targetPath: string,
@@ -21,8 +25,8 @@ function assertPathAllowed(
 }
 
 export function createBunFileService(
-  readPaths: string[] = ALLOWED_READ_PATHS,
-  writePaths: string[] = ALLOWED_WRITE_PATHS,
+  readPaths: string[] = _testReadPaths,
+  writePaths: string[] = _testWritePaths,
 ): FileProvider {
   return {
     async readText(path: string): Promise<string> {
