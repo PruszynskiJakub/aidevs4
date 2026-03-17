@@ -130,9 +130,9 @@ describe("MarkdownLogger", () => {
     expect(parts[2]).toMatch(/^log_\d{2}-\d{2}-\d{2}\.md$/); // time-only filename
   });
 
-  it("generates a random 8-char hex session ID when none provided", async () => {
+  it("generates a UUID v4 session ID when none provided", async () => {
     const md = makeLogger(dir);
-    expect(md.sessionId).toMatch(/^[0-9a-f]{8}$/);
+    expect(md.sessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 
     md.init("test");
     await md.flush();
@@ -180,10 +180,10 @@ describe("MarkdownLogger", () => {
 });
 
 describe("randomSessionId", () => {
-  it("returns 8-char hex string", () => {
+  it("returns a valid UUID v4 string", () => {
     const id = randomSessionId();
-    expect(id).toHaveLength(8);
-    expect(id).toMatch(/^[0-9a-f]{8}$/);
+    expect(id).toHaveLength(36);
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 
   it("returns unique values", () => {

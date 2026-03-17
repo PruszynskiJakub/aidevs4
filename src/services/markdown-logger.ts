@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { randomBytes } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { FileProvider } from "../types/file.ts";
 import { createBunFileService } from "./file.ts";
 import { config } from "../config/index.ts";
@@ -22,9 +22,9 @@ function formatDate(): string {
   return new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, "");
 }
 
-/** Generate a random 8-char hex string for anonymous sessions */
+/** Generate a UUID v4 string for anonymous sessions */
 export function randomSessionId(): string {
-  return randomBytes(4).toString("hex");
+  return randomUUID();
 }
 
 /** Pretty-print JSON with 2-space indent; fall back to raw string on parse failure */
