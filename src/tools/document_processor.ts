@@ -1,10 +1,11 @@
 import { basename, extname } from "path";
-import { GoogleGenAI } from "@google/genai";
 import type { ToolDefinition, ToolResponse } from "../types/tool.ts";
+import type { ContentPart } from "../types/llm.ts";
 import { files } from "../services/file.ts";
+import { llm } from "../services/llm.ts";
 import { assertMaxLength, checkFileSize } from "../utils/parse.ts";
 import { toolOk } from "../utils/tool-response.ts";
-import { GEMINI_MODEL, GEMINI_TIMEOUT, DOC_MAX_FILES, MAX_FILE_SIZE } from "../config.ts";
+import { GEMINI_MODEL, DOC_MAX_FILES, MAX_FILE_SIZE } from "../config.ts";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 const TEXT_EXTENSIONS = new Set([".md", ".txt", ".csv", ".json", ".xml", ".html"]);
@@ -17,11 +18,6 @@ const MIME_TYPES: Record<string, string> = {
   ".gif": "image/gif",
   ".webp": "image/webp",
 };
-
-interface ContentPart {
-  text?: string;
-  inlineData?: { data: string; mimeType: string };
-}
 
 function validatePath(path: string): void {
   if (typeof path !== "string" || path.length === 0) {
@@ -55,11 +51,14 @@ async function buildContentParts(paths: string[]): Promise<ContentPart[]> {
       const buffer = await files.readBinary(path);
       const base64 = buffer.toString("base64");
       parts.push({
-        inlineData: { data: base64, mimeType: MIME_TYPES[ext] },
+        type: "image",
+        data: base64,
+        mimeType: MIME_TYPES[ext],
       });
     } else {
       const content = await files.readText(path);
       parts.push({
+        type: "text",
         text: `--- FILE: ${basename(path)} ---\n${content}`,
       });
     }
@@ -85,24 +84,15 @@ async function ask(payload: {
   }
   assertMaxLength(question, "question", 2000);
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Set GEMINI_API_KEY env var to use document_processor.");
-  }
-
   const contentParts = await buildContentParts(paths);
-  contentParts.push({ text: question });
+  contentParts.push({ type: "text", text: question });
 
-  const ai = new GoogleGenAI({ apiKey });
-  const response = await ai.models.generateContent({
+  const response = await llm.chatCompletion({
     model: GEMINI_MODEL,
-    contents: [{ role: "user", parts: contentParts }],
-    config: {
-      abortSignal: AbortSignal.timeout(GEMINI_TIMEOUT),
-    },
+    messages: [{ role: "user", content: contentParts }],
   });
 
-  const answer = response.text ?? "";
+  const answer = response.content ?? "";
 
   return toolOk(
     { answer },

@@ -1,15 +1,22 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, mock, spyOn } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, mock } from "bun:test";
 import { join } from "path";
 import { mkdirSync, writeFileSync, rmSync } from "fs";
+import type { ChatCompletionParams, LLMChatResponse } from "../types/llm.ts";
 
-// We need to mock @google/genai before importing the tool
-const mockGenerateContent = mock(() =>
-  Promise.resolve({ text: "Mocked answer from Gemini" }),
+// Mock llm service before importing the tool
+const mockChatCompletion = mock(
+  (_params: ChatCompletionParams): Promise<LLMChatResponse> =>
+    Promise.resolve({
+      content: "Mocked answer from Gemini",
+      toolCalls: [],
+      finishReason: "stop",
+    }),
 );
 
-mock.module("@google/genai", () => ({
-  GoogleGenAI: class {
-    models = { generateContent: mockGenerateContent };
+mock.module("../services/llm.ts", () => ({
+  llm: {
+    chatCompletion: mockChatCompletion,
+    completion: mock(() => Promise.resolve("")),
   },
 }));
 
@@ -37,19 +44,21 @@ beforeAll(() => {
   );
   writeFileSync(IMAGE_FILE, pngBuf);
   writeFileSync(UNSUPPORTED_FILE, "binary content");
-
-  process.env.GEMINI_API_KEY = "test-gemini-key";
 });
 
 afterAll(() => {
-  delete process.env.GEMINI_API_KEY;
   rmSync(TEST_DIR, { recursive: true, force: true });
 });
 
 beforeEach(() => {
-  mockGenerateContent.mockClear();
-  mockGenerateContent.mockImplementation(() =>
-    Promise.resolve({ text: "Mocked answer from Gemini" }),
+  mockChatCompletion.mockClear();
+  mockChatCompletion.mockImplementation(
+    () =>
+      Promise.resolve({
+        content: "Mocked answer from Gemini",
+        toolCalls: [],
+        finishReason: "stop",
+      }),
   );
 });
 
@@ -64,15 +73,22 @@ describe("document_processor ask — text files", () => {
     expect(result.data.answer).toBe("Mocked answer from Gemini");
     expect(result.hints[0]).toContain("1 document(s)");
 
-    // Verify Gemini was called with correct content parts
-    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
-    const callArgs = mockGenerateContent.mock.calls[0][0] as any;
+    // Verify llm.chatCompletion was called with correct params
+    expect(mockChatCompletion).toHaveBeenCalledTimes(1);
+    const callArgs = mockChatCompletion.mock.calls[0][0] as ChatCompletionParams;
     expect(callArgs.model).toBe("gemini-2.5-flash");
-    const parts = callArgs.contents[0].parts;
-    expect(parts).toHaveLength(2); // 1 text file + 1 question
-    expect(parts[0].text).toContain("--- FILE: sample.md ---");
-    expect(parts[0].text).toContain("# Hello");
-    expect(parts[1].text).toBe("What is this about?");
+
+    // Content should be ContentPart[]
+    const msg = callArgs.messages[0];
+    expect(msg.role).toBe("user");
+    const content = msg.content as any[];
+    expect(Array.isArray(content)).toBe(true);
+    expect(content).toHaveLength(2); // 1 text file + 1 question
+    expect(content[0].type).toBe("text");
+    expect(content[0].text).toContain("--- FILE: sample.md ---");
+    expect(content[0].text).toContain("# Hello");
+    expect(content[1].type).toBe("text");
+    expect(content[1].text).toBe("What is this about?");
   });
 
   it("processes multiple text files", async () => {
@@ -87,17 +103,17 @@ describe("document_processor ask — text files", () => {
     expect(result.status).toBe("ok");
     expect(result.hints[0]).toContain("3 document(s)");
 
-    const callArgs = mockGenerateContent.mock.calls[0][0] as any;
-    const parts = callArgs.contents[0].parts;
-    expect(parts).toHaveLength(4); // 3 files + 1 question
-    expect(parts[0].text).toContain("sample.md");
-    expect(parts[1].text).toContain("notes.txt");
-    expect(parts[2].text).toContain("data.csv");
+    const callArgs = mockChatCompletion.mock.calls[0][0] as ChatCompletionParams;
+    const content = callArgs.messages[0].content as any[];
+    expect(content).toHaveLength(4); // 3 files + 1 question
+    expect(content[0].text).toContain("sample.md");
+    expect(content[1].text).toContain("notes.txt");
+    expect(content[2].text).toContain("data.csv");
   });
 });
 
 describe("document_processor ask — image files", () => {
-  it("sends image as base64 inlineData with correct mimeType", async () => {
+  it("sends image as base64 ImagePart with correct mimeType", async () => {
     const result = (await handler({
       action: "ask",
       payload: { paths: [IMAGE_FILE], question: "Describe this image" },
@@ -105,14 +121,14 @@ describe("document_processor ask — image files", () => {
 
     expect(result.status).toBe("ok");
 
-    const callArgs = mockGenerateContent.mock.calls[0][0] as any;
-    const parts = callArgs.contents[0].parts;
-    expect(parts).toHaveLength(2); // 1 image + 1 question
-    expect(parts[0].inlineData).toBeDefined();
-    expect(parts[0].inlineData.mimeType).toBe("image/png");
-    expect(typeof parts[0].inlineData.data).toBe("string");
+    const callArgs = mockChatCompletion.mock.calls[0][0] as ChatCompletionParams;
+    const content = callArgs.messages[0].content as any[];
+    expect(content).toHaveLength(2); // 1 image + 1 question
+    expect(content[0].type).toBe("image");
+    expect(content[0].mimeType).toBe("image/png");
+    expect(typeof content[0].data).toBe("string");
     // Verify it's valid base64
-    expect(() => Buffer.from(parts[0].inlineData.data, "base64")).not.toThrow();
+    expect(() => Buffer.from(content[0].data, "base64")).not.toThrow();
   });
 });
 
@@ -129,12 +145,14 @@ describe("document_processor ask — mixed files", () => {
     expect(result.status).toBe("ok");
     expect(result.hints[0]).toContain("2 document(s)");
 
-    const callArgs = mockGenerateContent.mock.calls[0][0] as any;
-    const parts = callArgs.contents[0].parts;
-    expect(parts).toHaveLength(3); // 1 text + 1 image + 1 question
-    expect(parts[0].text).toContain("sample.md");
-    expect(parts[1].inlineData).toBeDefined();
-    expect(parts[2].text).toBe("Cross-reference text and image");
+    const callArgs = mockChatCompletion.mock.calls[0][0] as ChatCompletionParams;
+    const content = callArgs.messages[0].content as any[];
+    expect(content).toHaveLength(3); // 1 text + 1 image + 1 question
+    expect(content[0].type).toBe("text");
+    expect(content[0].text).toContain("sample.md");
+    expect(content[1].type).toBe("image");
+    expect(content[2].type).toBe("text");
+    expect(content[2].text).toBe("Cross-reference text and image");
   });
 });
 
@@ -223,24 +241,6 @@ describe("document_processor ask — validation errors", () => {
         payload: { paths: [join(TEST_DIR, "nonexistent.txt")], question: "Read" },
       }),
     ).rejects.toThrow();
-  });
-});
-
-describe("document_processor ask — missing API key", () => {
-  it("throws actionable error when GEMINI_API_KEY is not set", async () => {
-    const saved = process.env.GEMINI_API_KEY;
-    delete process.env.GEMINI_API_KEY;
-
-    try {
-      await expect(
-        handler({
-          action: "ask",
-          payload: { paths: [TEXT_FILE], question: "What is this?" },
-        }),
-      ).rejects.toThrow("Set GEMINI_API_KEY env var");
-    } finally {
-      process.env.GEMINI_API_KEY = saved;
-    }
   });
 });
 

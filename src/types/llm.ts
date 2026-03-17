@@ -1,5 +1,18 @@
 // Provider-agnostic LLM types — no SDK imports allowed here
 
+export interface TextPart {
+  type: "text";
+  text: string;
+}
+
+export interface ImagePart {
+  type: "image";
+  data: string; // base64-encoded
+  mimeType: string;
+}
+
+export type ContentPart = TextPart | ImagePart;
+
 export interface LLMSystemMessage {
   role: "system";
   content: string;
@@ -7,7 +20,7 @@ export interface LLMSystemMessage {
 
 export interface LLMUserMessage {
   role: "user";
-  content: string;
+  content: string | ContentPart[];
 }
 
 export interface LLMAssistantMessage {
