@@ -13,7 +13,8 @@ function mockLogger(): Logger & { calls: Record<string, unknown[][]> } {
       };
     },
   };
-  return new Proxy({} as Logger & { calls: Record<string, unknown[][]> }, handler);
+  // @ts-expect-error Proxy implements Logger at runtime via get trap
+  return new Proxy({ calls }, handler);
 }
 
 const ALL_METHODS: Array<{ method: keyof Logger; args: unknown[] }> = [
