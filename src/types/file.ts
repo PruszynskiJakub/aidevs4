@@ -12,6 +12,7 @@ export interface FileProvider {
   readBinary(path: string): Promise<Buffer>;
   readJson<T = unknown>(path: string): Promise<T>;
   write(path: string, data: WritableData): Promise<void>;
+  append(path: string, data: string): Promise<void>;
   readdir(path: string): Promise<string[]>;
   stat(path: string): Promise<FileStat>;
   mkdir(path: string): Promise<void>; // always recursive

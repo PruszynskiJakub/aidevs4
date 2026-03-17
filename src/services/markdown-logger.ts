@@ -1,15 +1,30 @@
-import { mkdir } from "node:fs/promises";
-import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import type { FileProvider } from "../types/file.ts";
+import { createBunFileService } from "./file.ts";
+import { LOGS_DIR } from "../config.ts";
 
-function timestamp(): string {
+const SAFE_ID = /^[a-zA-Z0-9_\-]+$/;
+
+function dateFolder(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function timeStamp(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
 }
 
 function formatDate(): string {
   return new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, "");
+}
+
+/** Generate a random 8-char hex string for anonymous sessions */
+export function randomSessionId(): string {
+  return randomBytes(4).toString("hex");
 }
 
 /** Pretty-print JSON with 2-space indent; fall back to raw string on parse failure */
@@ -23,17 +38,28 @@ export function formatJson(raw: string): string {
 
 export class MarkdownLogger {
   readonly filePath: string;
+  readonly sessionId: string;
   private chain: Promise<void> = Promise.resolve();
+  private fs: FileProvider;
 
-  constructor(logsDir?: string) {
-    const dir = logsDir ?? join(import.meta.dir, "..", "..", "logs");
-    this.filePath = join(dir, `log_${timestamp()}.md`);
+  constructor(options?: { logsDir?: string; sessionId?: string; fs?: FileProvider }) {
+    const logsDir = options?.logsDir ?? LOGS_DIR;
+    const sid = options?.sessionId ?? randomSessionId();
+
+    if (!SAFE_ID.test(sid)) {
+      throw new Error("Invalid session ID: must match /^[a-zA-Z0-9_\\-]+$/");
+    }
+
+    this.fs = options?.fs ?? createBunFileService([], [logsDir]);
+    this.sessionId = sid;
+    const dir = join(logsDir, dateFolder(), sid);
+    this.filePath = join(dir, `log_${timeStamp()}.md`);
     // Kick off directory creation — subsequent appends chain after it
-    this.chain = mkdir(dir, { recursive: true }).then(() => {});
+    this.chain = this.fs.mkdir(dir);
   }
 
   private append(text: string): void {
-    this.chain = this.chain.then(() => appendFile(this.filePath, text));
+    this.chain = this.chain.then(() => this.fs.append(this.filePath, text));
   }
 
   /** Wait for all pending writes to complete */

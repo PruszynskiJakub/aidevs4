@@ -58,7 +58,7 @@ app.post("/chat", async (c) => {
 
       // Pass a copy so runAgent's pushes don't double-add to session
       const messages: LLMMessage[] = [...session.messages];
-      const result = await runAgent(messages, undefined, { model: agentModel });
+      const result = await runAgent(messages, undefined, { model: agentModel, sessionId });
 
       // Persist the messages that runAgent appended (assistant + tool messages)
       const newMessages = messages.slice(session.messages.length);

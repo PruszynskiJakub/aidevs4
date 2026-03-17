@@ -1,4 +1,4 @@
-import { readdir, stat, mkdir } from "fs/promises";
+import { readdir, stat, mkdir, appendFile } from "fs/promises";
 import { resolve } from "path";
 import type { FileProvider, FileStat } from "../types/file.ts";
 import { ALLOWED_READ_PATHS, ALLOWED_WRITE_PATHS } from "../config.ts";
@@ -48,6 +48,11 @@ export function createBunFileService(
       } else {
         await Bun.write(path, data);
       }
+    },
+
+    async append(path: string, data: string): Promise<void> {
+      assertPathAllowed(path, writePaths, "write");
+      await appendFile(path, data);
     },
 
     async readdir(path: string): Promise<string[]> {

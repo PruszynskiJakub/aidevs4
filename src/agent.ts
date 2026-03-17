@@ -26,12 +26,15 @@ function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
 export async function runAgent(
   messages: LLMMessage[],
   provider: LLMProvider = defaultLLM,
-  options?: { model?: string },
+  options?: { model?: string; sessionId?: string },
 ): Promise<string> {
   const userPrompt = messages.find((m) => m.role === "user")?.content ?? "";
-  const md = new MarkdownLogger();
+  const md = new MarkdownLogger({ sessionId: options?.sessionId });
   md.init(typeof userPrompt === "string" ? userPrompt : "(structured)");
   const log = createLogger(md);
+
+  log.info(`Session: ${md.sessionId}`);
+  log.info(`Log: ${md.filePath}`);
 
   const tools = await getTools();
 
@@ -172,9 +175,23 @@ export async function runAgent(
 
 // CLI entry point
 if (import.meta.main) {
-  const prompt = process.argv[2];
+  const args = process.argv.slice(2);
+  let sessionId: string | undefined;
+
+  // Extract --session flag
+  const sessionIdx = args.indexOf("--session");
+  if (sessionIdx !== -1) {
+    sessionId = args[sessionIdx + 1];
+    if (!sessionId) {
+      console.error("--session requires a value");
+      process.exit(1);
+    }
+    args.splice(sessionIdx, 2);
+  }
+
+  const prompt = args[0];
   if (!prompt) {
-    console.error("Usage: bun run src/agent.ts \"your prompt here\"");
+    console.error('Usage: bun run agent "your prompt" [--session <id>]');
     process.exit(1);
   }
 
@@ -189,5 +206,5 @@ if (import.meta.main) {
     { role: "user", content: prompt },
   ];
 
-  void runAgent(messages, undefined, { model: agentModel });
+  void runAgent(messages, undefined, { model: agentModel, sessionId });
 }
