@@ -2,7 +2,7 @@ import { join, resolve } from "path";
 
 // src/config/index.ts lives in src/config/ — project root is two levels up
 const PROJECT_ROOT = resolve(import.meta.dir, "../..");
-const OUTPUT_DIR = join(PROJECT_ROOT, "src/output");
+const OUTPUT_DIR = join(PROJECT_ROOT, "output");
 const LOGS_DIR = join(PROJECT_ROOT, "logs");
 
 function requireEnv(name: string): string {

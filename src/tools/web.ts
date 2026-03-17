@@ -1,8 +1,8 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResponse } from "../types/tool.ts";
 import { files } from "../services/file.ts";
-import { ensureOutputDir, outputPath } from "../utils/output.ts";
-import { config } from "../config/index.ts";
+import { outputPath } from "../utils/output.ts";
+import { config } from "../config";
 import { safeFilename, assertMaxLength } from "../utils/parse.ts";
 import { toolOk } from "../utils/tool-response.ts";
 
@@ -44,14 +44,12 @@ async function download(payload: { url: string; filename: string }): Promise<Too
 
   assertHostAllowed(parsed.hostname);
 
-  await ensureOutputDir();
-
   const response = await fetch(resolvedUrl, { signal: AbortSignal.timeout(config.limits.fetchTimeout) });
   if (!response.ok) {
     throw new Error(`Download failed (${response.status}): ${payload.filename}`);
   }
 
-  const path = outputPath(payload.filename);
+  const path = await outputPath(payload.filename);
   await files.write(path, response);
 
   return toolOk(

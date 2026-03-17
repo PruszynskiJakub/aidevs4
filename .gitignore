@@ -176,5 +176,5 @@ dist
 /playground/download_file_from_hub/output/
 
 playground/*/output
-src/output
+/output
 braindump.md
