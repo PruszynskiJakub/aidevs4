@@ -45,13 +45,48 @@ The agent always emits events through the Logger interface. Three renderers cons
 
 The `AgentEventEmitter` buffers all events per session. SSE clients that connect late get the full replay. Future consumers (webhooks, test harnesses, Langfuse) subscribe the same way.
 
-### Approval gating
+### Agent integration
 
-Approval is the one operation that doesn't fit the Logger interface — it's flow control, not logging. The agent calls `emitter.waitForApproval(requestId)` directly, which returns a Promise that resolves when the user clicks Approve/Reject in the UI (or times out). This is the only place `agent.ts` touches the emitter directly.
+`runAgent()` receives the `AgentEventEmitter` instance as a new parameter:
+
+```ts
+export async function runAgent(
+  messages: LLMMessage[],
+  options: {
+    tools: Tool[];
+    model: string;
+    emitter: AgentEventEmitter;
+    logger: Logger; // CompositeLogger with EventEmittingLogger inside
+  }
+): Promise<string | null>
+```
+
+The agent interacts with the emitter directly in exactly two places:
+1. **Session lifecycle** — `agent.ts` emits `session_start` and `session_end` events directly on the emitter (these bookend the entire run and don't map to Logger methods)
+2. **Approval gating** — before executing tool calls, agent emits `approval_request` and calls `emitter.waitForApproval(requestId)`, which blocks until the user responds or timeout expires
+
+All other events flow through the Logger interface via `EventEmittingLogger`.
+
+### Approval flow
+
+Sequence:
+1. Agent determines tool calls from LLM response
+2. Agent emits `ApprovalRequestEvent` directly on emitter (with `requestId`, tool call details)
+3. Agent calls `await emitter.waitForApproval(requestId)` — blocks here
+4. UI shows Approve/Reject buttons in the event stream
+5. User clicks → UI sends `POST /approve/:sessionId { requestId, approved }`
+6. Server handler calls `emitter.resolveApproval(requestId, approved)`
+7. Emitter emits `ApprovalResponseEvent` and resolves the Promise
+8. Agent proceeds based on result:
+   - **Approved** — executes tool calls normally
+   - **Rejected** — synthesizes error tool results (`"User rejected this tool call."`) for each tool call, continues loop so the LLM can re-plan
+   - **Timeout** (default 1 hour) — same as rejection, with reason `"timeout"`
+
+The emitter itself emits the `ApprovalResponseEvent` when `resolveApproval()` is called or on timeout, ensuring the SSE stream always reflects the outcome.
 
 ## Event types
 
-Promoted from `playground/semantic_events/types.ts` with one addition (`assistant` field on `SessionStartEvent`):
+Promoted from `playground/semantic_events/types.ts`. Changes from prototype noted inline:
 
 ```typescript
 interface BaseEvent {
@@ -59,35 +94,62 @@ interface BaseEvent {
   timestamp: number; // Date.now()
 }
 
-SessionStartEvent   { type: "session_start", sessionId, prompt, assistant }
+SessionStartEvent   { type: "session_start", sessionId, prompt, assistant?: string }
+                    // assistant is optional — CLI runs may not specify one
 PlanStartEvent      { type: "plan_start", iteration, model }
 PlanUpdateEvent     { type: "plan_update", iteration, steps: PlanStep[], durationMs }
-ToolCallEvent       { type: "tool_call", iteration, toolName, arguments, batchIndex, batchSize }
-ToolResultEvent     { type: "tool_result", iteration, toolName, status, data, hints?, durationMs }
+ToolCallEvent       { type: "tool_call", iteration, toolName, arguments: string, batchIndex, batchSize }
+                    // arguments is JSON-stringified (matches OpenAI tc.function.arguments)
+ToolResultEvent     { type: "tool_result", iteration, toolName, status, data: string, hints?, durationMs }
+                    // data is JSON-stringified, durationMs is raw milliseconds (number)
 ThinkingEvent       { type: "thinking", iteration, content }
 MessageEvent        { type: "message", content }
 ErrorEvent          { type: "error", message }
 TokenUsageEvent     { type: "token_usage", iteration, phase, model, tokens, cumulative }
 SessionEndEvent     { type: "session_end", sessionId, totalDurationMs, totalTokens }
 ApprovalRequestEvent  { type: "approval_request", iteration, requestId, toolCalls[] }
-ApprovalResponseEvent { type: "approval_response", requestId, approved, reason? }
+ApprovalResponseEvent { type: "approval_response", requestId, approved, reason?: "user" | "timeout" }
 ```
 
-### Logger method to event mapping
+Also promoted from playground: `parsePlanSteps(planText: string): PlanStep[]` helper (parses numbered steps with `[x]/[>]/[ ]` markers). Used by `EventEmittingLogger` to convert raw plan text into structured step arrays.
 
-| SP-33 Logger method          | AgentEvent type               |
-|------------------------------|-------------------------------|
-| `step(iteration)`            | `plan_start`                  |
-| `plan(iteration, text)`      | `plan_update`                 |
-| `toolHeader(count)`          | _(absorbed into tool_call batch fields)_ |
-| `toolCall(name, args, i, n)` | `tool_call`                   |
-| `toolOk(name, result, dur)`  | `tool_result` (status: ok)    |
-| `toolErr(name, error, dur)`  | `tool_result` (status: error) |
-| `batchDone(duration)`        | _(derivable from tool_results, no separate event)_ |
-| `answer(text)`               | `message`                     |
-| `llm(model, usage)`          | `token_usage`                 |
-| `maxIter()`                  | `error` (max iterations)      |
-| `info/success/error/debug`   | _(no-op in EventEmittingLogger — operational, not lifecycle)_ |
+### Events emitted directly by agent (not through Logger)
+
+These lifecycle and flow-control events don't map to Logger methods — `agent.ts` emits them directly on the `AgentEventEmitter`:
+
+| Event | When |
+|-------|------|
+| `session_start` | At the beginning of `runAgent()`, before the loop |
+| `session_end` | After the loop completes (or on error), with totals |
+| `thinking` | When LLM returns text alongside tool calls (assistant reasoning) |
+| `approval_request` | Before tool execution, when approval gating is enabled |
+| `approval_response` | Emitted by the emitter itself when approval is resolved/timed out |
+
+### Events emitted through Logger → EventEmittingLogger
+
+The `EventEmittingLogger` maps SP-33 Logger method calls to `AgentEvent` emissions. Because the current Logger method signatures don't carry all fields needed by events (e.g., `iteration`, `model`, `phase`), the `EventEmittingLogger` maintains internal mutable state:
+
+- `currentIteration: number` — set when `step()` is called
+- `currentModel: string` — set when `step()` is called (from its `model` parameter)
+- `batchSize: number` — set when `toolHeader()` is called
+- `batchIndex: number` — incremented on each `toolCall()`, reset on `toolHeader()`
+- `cumulativeTokens: { prompt, completion }` — accumulated across iterations
+
+**SP-33 Logger interface implications:** This spec assumes SP-33's final Logger signatures will carry raw numeric durations (milliseconds), not pre-formatted strings. If SP-33 delivers formatted strings (e.g., `"1.23s"`), the `EventEmittingLogger` will need to parse them back — preferably SP-33 should pass raw `number` values and let each Logger implementation format as needed.
+
+| SP-33 Logger method | AgentEvent type | State used |
+|---|---|---|
+| `step(iter, max, model, msgCount)` | `plan_start` | sets `currentIteration`, `currentModel` |
+| `plan(planText, model, elapsed, tokensIn?, tokensOut?)` | `plan_update` + `token_usage` (phase: "plan") | uses `currentIteration`; calls `parsePlanSteps()` |
+| `toolHeader(count)` | _(no event)_ | sets `batchSize`, resets `batchIndex` |
+| `toolCall(name, rawArgs)` | `tool_call` | increments `batchIndex`; uses `currentIteration`, `batchSize` |
+| `toolOk(name, elapsed, rawResult, hints?)` | `tool_result` (status: ok) | uses `currentIteration` |
+| `toolErr(name, elapsed, errorMsg)` | `tool_result` (status: error) | uses `currentIteration` |
+| `batchDone(elapsed)` | _(no event — derivable from tool_results)_ | — |
+| `answer(text)` | `message` | — |
+| `llm(elapsed, tokensIn?, tokensOut?)` | `token_usage` (phase: "act") | uses `currentIteration`, `currentModel`; updates `cumulativeTokens` |
+| `maxIter()` | `error` (message: "max iterations reached") | — |
+| `info/success/error/debug` | _(no-op)_ | — |
 
 ## Server changes
 
@@ -103,17 +165,25 @@ bun run agent "prompt" --stream   # streams events to terminal
 
 **HTTP:**
 ```
-POST /chat { msg, sessionId, assistant?, stream?: boolean }
+POST /chat { msg, sessionId?, assistant?, stream?: boolean }
 
-stream: false (default) -> waits for session_end, returns { msg: string }
-stream: true            -> returns SSE event stream
+sessionId: optional — if omitted, server generates a UUID v4 (matching SP-30)
+           if provided, resumes an existing session
+stream: false (default) -> waits for session_end, returns { msg: string, sessionId: string }
+stream: true            -> returns SSE event stream (sessionId in first event)
 ```
 
+The `msg` field name is kept for backward compatibility with the current server. The prototype used `prompt` but we follow existing convention.
+
 The agent always emits events internally. The difference is how the entry point consumes them:
-- **Sync mode** — handler subscribes, waits for `session_end`, extracts `message` event content, returns it
-- **Stream mode** — handler pipes every event as SSE frames immediately
+- **Sync mode** — handler subscribes, waits for `session_end`, extracts `message` event content, returns `{ msg, sessionId }`
+- **Stream mode** — handler pipes every event as SSE frames immediately. The `session_start` event contains the `sessionId`. Uses `streamSSE` from `hono/streaming`.
+
+When `stream: true`, the session queue (`sessionService.enqueue`) still serializes requests per session, but the response is written as an SSE stream rather than awaited and returned as JSON.
 
 ### New routes
+
+All routes are at root level (no `/api` prefix). The SvelteKit frontend proxies all non-asset requests to the Hono backend in development.
 
 | Route                        | Method | Purpose                                       |
 |------------------------------|--------|-----------------------------------------------|
@@ -123,6 +193,15 @@ The agent always emits events internally. The difference is how the entry point 
 | `GET /logs`                  | GET    | Tree of log files grouped by date/session      |
 | `GET /logs/:date/:sid/:file` | GET    | Raw markdown content of a log file             |
 
+**`GET /sessions` response shape** (matching prototype):
+```json
+{
+  "sessions": [
+    { "id": "string", "ended": false, "hasPendingApproval": true, "eventCount": 42 }
+  ]
+}
+```
+
 ### Session unification
 
 The current `sessionService` stores messages. The emitter stores events. These merge: one session object holds both the LLM message history and the `AgentEventEmitter`.
@@ -131,7 +210,7 @@ The current `sessionService` stores messages. The emitter stores events. These m
 
 ### Stack
 
-SvelteKit app in `ui/` at project root. Vite dev server proxies `/api/*` to Hono backend on port 3000.
+SvelteKit app in `ui/` at project root. Vite dev server proxies all non-asset requests to Hono backend on port 3000 (from config `server.port`).
 
 ### Structure
 
@@ -229,6 +308,16 @@ Three-panel layout:
 - All tools, schemas, prompts, config, dispatcher — untouched
 - `playground/semantic_events/` — stays as reference
 - SP-33 logger classes — used as-is, not modified
+
+### Note on SP-33 interface design
+
+This spec has implications for SP-33's `Logger` interface design. For `EventEmittingLogger` to work cleanly:
+- Duration/elapsed parameters should be raw `number` (milliseconds), not pre-formatted strings
+- `step()` should include `model` and `iteration` parameters
+- `plan()` should include token usage so `EventEmittingLogger` can emit a `token_usage` event alongside `plan_update`
+- `toolCall()` does not need `batchIndex`/`batchSize` — `EventEmittingLogger` derives these from `toolHeader(count)` + internal counter
+
+If SP-33 is implemented before this spec, these needs should be communicated. If SP-33's final signatures differ, `EventEmittingLogger` adapts (e.g., parsing formatted strings back to numbers) — the event types remain stable.
 
 ## Out of scope
 

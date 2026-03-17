@@ -199,6 +199,13 @@ describe("ConsoleLogger", () => {
       // Should be truncated — not contain the full 200-char string
       expect(output).not.toContain("x".repeat(200));
     });
+
+    it("uses custom truncation length for results", () => {
+      const logger = new ConsoleLogger({ truncateResult: 10 });
+      logger.toolOk("t", "1s", JSON.stringify({ data: "y".repeat(200) }));
+      const output = captured.join("\n");
+      expect(output).not.toContain("y".repeat(200));
+    });
   });
 });
 ```
@@ -628,8 +635,30 @@ it("writes sidecar file for large tool results", async () => {
   // Sidecar file should exist in the session directory
   const sessionDir = dirname(md.filePath);
   const files = await readdir(sessionDir);
-  const sidecar = files.find(f => f.startsWith("big_tool_") && f.endsWith(".json"));
+  const sidecar = files.find(f => f.startsWith("big_tool_") && f.endsWith(".json") && f !== basename(md.filePath));
   expect(sidecar).toBeDefined();
+});
+
+it("registers beforeExit handler for auto-flush", () => {
+  const spy = spyOn(process, "on");
+  const md = makeLogger(dir, "exit-test");
+  const beforeExitCalls = spy.mock.calls.filter(
+    ([event]) => event === "beforeExit"
+  );
+  expect(beforeExitCalls).toHaveLength(1);
+  spy.mockRestore();
+  md.dispose(); // clean up handler
+});
+
+it("dispose removes beforeExit handler", () => {
+  const md = makeLogger(dir, "dispose-test");
+  const spy = spyOn(process, "removeListener");
+  md.dispose();
+  const removeCalls = spy.mock.calls.filter(
+    ([event]) => event === "beforeExit"
+  );
+  expect(removeCalls).toHaveLength(1);
+  spy.mockRestore();
 });
 
 it("inlines small tool results as before", async () => {
@@ -711,7 +740,8 @@ toolOk(name: string, elapsed: string, rawResult: string, hints?: string[]): void
   let text: string;
   if (rawResult.length > MAX_INLINE_SIZE) {
     const ts = utcTimestamp();
-    const sidecarName = `${name}_${ts.stamp}.json`;
+    const rand = Math.random().toString(36).slice(2, 6);
+    const sidecarName = `${name}_${ts.stamp}_${rand}.json`;
     const sidecarPath = join(this.sessionDir, sidecarName);
     // Write sidecar — chain it so ordering is preserved
     this.chain = this.chain.then(() =>
@@ -736,7 +766,14 @@ toolOk(name: string, elapsed: string, rawResult: string, hints?: string[]): void
 }
 ```
 
-6. Add the four missing methods:
+6. Add `dispose()` method to remove the `beforeExit` handler (prevents accumulation in tests):
+```typescript
+dispose(): void {
+  process.removeListener("beforeExit", this._exitHandler);
+}
+```
+
+7. Add the four missing methods:
 ```typescript
 info(message: string): void {
   this.append(`**ℹ Info:** ${message}\n\n`);
@@ -755,7 +792,7 @@ debug(message: string): void {
 }
 ```
 
-7. Update `init` to use `utcTimestamp().display`:
+8. Update `init` to use `utcTimestamp().display`:
 ```typescript
 init(prompt: string): void {
   const ts = utcTimestamp();
@@ -769,21 +806,7 @@ init(prompt: string): void {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `bun test src/services/markdown-logger.test.ts`
-Expected: All PASS (including new tests). The existing "preserves full payloads without truncation" test will need updating — it now only applies to payloads under 10 KB. Update that test:
-
-Change the existing test at line 53 to use a smaller payload (under 10 KB):
-```typescript
-it("preserves payloads without truncation when under size limit", async () => {
-  const md = makeLogger(dir, "test3");
-  const longString = "x".repeat(5_000); // Under 10 KB limit
-  const args = JSON.stringify({ data: longString });
-  md.toolCall("test_tool", args);
-  await md.flush();
-
-  const content = await readFile(md.filePath, "utf-8");
-  expect(content).toContain(longString);
-});
-```
+Expected: All PASS (including new tests). The existing "preserves full payloads without truncation" test at line 53 is unaffected — it tests `toolCall` (arguments), not `toolOk` (results), so the sidecar threshold does not apply. No change needed.
 
 - [ ] **Step 5: Run full test suite**
 
@@ -815,6 +838,7 @@ Replace the entire file with a slim re-export module:
 // Backward-compatible facade — re-exports from new modules
 import type { Logger } from "../types/logger.ts";
 import { ConsoleLogger } from "./console-logger.ts";
+import { CompositeLogger } from "./composite-logger.ts";
 
 export type Log = Logger;
 
@@ -830,7 +854,6 @@ export const duration = elapsed;
 export function createLogger(md?: import("./markdown-logger.ts").MarkdownLogger): Logger {
   // Temporary shim — will be removed once agent.ts is updated
   if (!md) return new ConsoleLogger();
-  const { CompositeLogger } = require("./composite-logger.ts");
   return new CompositeLogger([new ConsoleLogger(), md]);
 }
 
