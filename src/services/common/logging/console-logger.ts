@@ -1,4 +1,4 @@
-import type { Logger, LogLevel } from "../types/logger.ts";
+import type { Logger, LogLevel } from "../../../types/logger.ts";
 
 // ANSI color constants
 const RESET = "\x1b[0m";

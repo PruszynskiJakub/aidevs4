@@ -1,8 +1,8 @@
 import { basename, extname } from "path";
 import type { ToolDefinition, ToolResponse } from "../types/tool.ts";
 import type { ContentPart } from "../types/llm.ts";
-import { files } from "../services/file.ts";
-import { llm } from "../services/llm.ts";
+import { files } from "../services/common/file.ts";
+import { llm } from "../services/ai/llm.ts";
 import { assertMaxLength, checkFileSize } from "../utils/parse.ts";
 import { toolOk } from "../utils/tool-response.ts";
 import { config } from "../config";

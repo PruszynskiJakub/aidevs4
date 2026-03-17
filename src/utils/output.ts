@@ -1,8 +1,8 @@
 import { join, extname } from "path";
 import { randomUUID } from "crypto";
-import { files } from "../services/file.ts";
+import { files } from "../services/common/file.ts";
 import { config } from "../config/index.ts";
-import { getSessionId } from "../services/session-context.ts";
+import { getSessionId } from "../services/session/session-context.ts";
 
 export type FileType = "document" | "image" | "audio" | "video";
 

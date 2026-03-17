@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { FileProvider } from "../types/file.ts";
-import type { Logger } from "../types/logger.ts";
-import { createBunFileService } from "./file.ts";
-import { config } from "../config/index.ts";
+import type { FileProvider } from "../../../types/file.ts";
+import type { Logger } from "../../../types/logger.ts";
+import { createBunFileService } from "../file.ts";
+import { config } from "../../../config/index.ts";
 
 const SAFE_ID = /^[a-zA-Z0-9_\-]+$/;
 const MAX_INLINE_SIZE = 10_240;

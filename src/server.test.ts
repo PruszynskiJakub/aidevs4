@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { sessionService } from "./services/session.ts";
+import { sessionService } from "./services/session/session.ts";
 
 // Mock runAgent before importing server
 mock.module("./agent.ts", () => ({

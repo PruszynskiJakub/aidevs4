@@ -1,6 +1,6 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResponse } from "../types/tool.ts";
-import { files } from "../services/file.ts";
+import { files } from "../services/common/file.ts";
 import { outputPath } from "../utils/output.ts";
 import { config } from "../config";
 import { safeFilename, assertMaxLength } from "../utils/parse.ts";

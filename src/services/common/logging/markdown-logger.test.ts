@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile, readdir } from "node:fs/promises";
 import { join, basename, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { MarkdownLogger, formatJson, randomSessionId } from "./markdown-logger.ts";
-import { createBunFileService } from "./file.ts";
+import { createBunFileService } from "../file.ts";
 
 function makeLogger(dir: string, sessionId?: string) {
   const fs = createBunFileService([], [dir]);

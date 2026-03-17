@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResponse } from "../types/tool.ts";
-import { llm } from "../services/llm.ts";
-import { promptService } from "../services/prompt.ts";
+import { llm } from "../services/ai/llm.ts";
+import { promptService } from "../services/ai/prompt.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 import { toolOk } from "../utils/tool-response.ts";
 

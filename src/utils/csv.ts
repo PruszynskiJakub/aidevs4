@@ -1,5 +1,5 @@
 import { parse } from "csv-parse/sync";
-import { files } from "../services/file.ts";
+import { files } from "../services/common/file.ts";
 
 export type Row = Record<string, string>;
 

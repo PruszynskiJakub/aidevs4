@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import agentsHub from "./agents_hub.ts";
 import { config } from "../config/index.ts";
-import { _testReadPaths, _testWritePaths } from "../services/file.ts";
+import { _testReadPaths, _testWritePaths } from "../services/common/file.ts";
 
 const handler = agentsHub.handler;
 

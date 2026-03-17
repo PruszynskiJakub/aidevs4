@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import web from "./web.ts";
 import { config } from "../config/index.ts";
-import { _testWritePaths } from "../services/file.ts";
+import { _testWritePaths } from "../services/common/file.ts";
 
 const handler = web.handler;
 

@@ -1,5 +1,5 @@
-import type { LLMMessage } from "../types/llm.ts";
-import type { Session } from "../types/session.ts";
+import type { LLMMessage } from "../../types/llm.ts";
+import type { Session } from "../../types/session.ts";
 
 function createSessionService() {
   const sessions = new Map<string, Session>();

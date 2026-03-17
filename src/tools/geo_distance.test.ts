@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import geoDistance from "./geo_distance.ts";
 import { haversine } from "./geo_distance.ts";
-import { _testReadPaths } from "../services/file.ts";
+import { _testReadPaths } from "../services/common/file.ts";
 
 const handler = geoDistance.handler;
 

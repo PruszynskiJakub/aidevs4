@@ -1,6 +1,6 @@
 import { join } from "path";
 import matter from "gray-matter";
-import { files } from "./file.ts";
+import { files } from "../common/file.ts";
 
 export interface PromptResult {
   model?: string;
@@ -8,7 +8,7 @@ export interface PromptResult {
   content: string;
 }
 
-const PROMPTS_DIR = join(import.meta.dir, "..", "prompts");
+const PROMPTS_DIR = join(import.meta.dir, "..", "..", "prompts");
 
 export function createPromptService(promptsDir = PROMPTS_DIR) {
   return {

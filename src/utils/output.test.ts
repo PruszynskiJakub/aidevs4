@@ -3,8 +3,8 @@ import { mkdtemp, rm, stat } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { inferFileType, outputPath, getEffectiveSessionId } from "./output.ts";
-import { _testWritePaths } from "../services/file.ts";
-import { runWithSession } from "../services/session-context.ts";
+import { _testWritePaths } from "../services/common/file.ts";
+import { runWithSession } from "../services/session/session-context.ts";
 
 // --------------- inferFileType ---------------
 

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { createPromptService } from "./prompt.ts";
-import { _testReadPaths } from "./file.ts";
+import { _testReadPaths } from "../common/file.ts";
 
 let tmp: string;
 let service: ReturnType<typeof createPromptService>;

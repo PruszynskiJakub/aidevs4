@@ -1,6 +1,6 @@
 import { assistants } from "./assistants.ts";
-import { promptService } from "./prompt.ts";
-import type { ToolFilter } from "../types/assistant.ts";
+import { promptService } from "../../ai/prompt.ts";
+import type { ToolFilter } from "../../../types/assistant.ts";
 
 interface ResolvedAssistant {
   prompt: string;

@@ -3,7 +3,7 @@ import type {
   LLMChatResponse,
   ChatCompletionParams,
   CompletionParams,
-} from "../types/llm.ts";
+} from "../../types/llm.ts";
 
 interface ProviderEntry {
   pattern: string | RegExp;

@@ -1,6 +1,6 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResponse } from "../types/tool.ts";
-import { files } from "../services/file.ts";
+import { files } from "../services/common/file.ts";
 import { getApiKey } from "../utils/hub.ts";
 import { config } from "../config/index.ts";
 import { parseCsv } from "../utils/csv.ts";

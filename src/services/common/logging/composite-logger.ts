@@ -1,4 +1,4 @@
-import type { Logger } from "../types/logger";
+import type { Logger } from "../../../types/logger.ts";
 
 export class CompositeLogger implements Logger {
   constructor(private readonly targets: Logger[]) {}

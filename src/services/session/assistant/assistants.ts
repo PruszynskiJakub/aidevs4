@@ -1,8 +1,8 @@
 import { parse } from "yaml";
 import { resolve, basename } from "path";
-import type { AssistantConfig, ToolFilter } from "../types/assistant.ts";
+import type { AssistantConfig, ToolFilter } from "../../../types/assistant.ts";
 
-const ASSISTANTS_DIR = resolve(import.meta.dir, "../assistants");
+const ASSISTANTS_DIR = resolve(import.meta.dir, "../../../assistants");
 
 let cache: Map<string, AssistantConfig> | null = null;
 

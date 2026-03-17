@@ -1,18 +1,18 @@
 import type { LLMProvider, LLMMessage, LLMChatResponse, LLMTool, LLMToolCall } from "./types/llm.ts";
 import type { Logger } from "./types/logger.ts";
 import type { ToolFilter } from "./types/assistant.ts";
-import type { PromptResult } from "./services/prompt.ts";
-import { llm as defaultLLM } from "./services/llm.ts";
+import type { PromptResult } from "./services/ai/prompt.ts";
+import { llm as defaultLLM } from "./services/ai/llm.ts";
 import { config } from "./config/index.ts";
 import { getTools, dispatch } from "./tools/index.ts";
-import { promptService } from "./services/prompt.ts";
-import { elapsed } from "./services/logger.ts";
-import { MarkdownLogger } from "./services/markdown-logger.ts";
-import { ConsoleLogger } from "./services/console-logger.ts";
-import { CompositeLogger } from "./services/composite-logger.ts";
-import { assistants } from "./services/assistants.ts";
+import { promptService } from "./services/ai/prompt.ts";
+import { elapsed } from "./services/common/logging/logger.ts";
+import { MarkdownLogger } from "./services/common/logging/markdown-logger.ts";
+import { ConsoleLogger } from "./services/common/logging/console-logger.ts";
+import { CompositeLogger } from "./services/common/logging/composite-logger.ts";
+import { assistants } from "./services/session/assistant/assistants.ts";
 import { isToolResponse } from "./utils/tool-response.ts";
-import { runWithSession } from "./services/session-context.ts";
+import { runWithSession } from "./services/session/session-context.ts";
 
 function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
   try {
