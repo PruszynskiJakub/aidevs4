@@ -7,17 +7,12 @@ import { promptService } from "./services/prompt.ts";
 import { createLogger, duration } from "./services/logger.ts";
 import { MarkdownLogger } from "./services/markdown-logger.ts";
 import { assistants } from "./services/assistants.ts";
+import { isToolResponse } from "./utils/tool-response.ts";
 
 function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
   try {
     const parsed = JSON.parse(raw);
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "status" in parsed &&
-      "data" in parsed &&
-      (parsed.status === "ok" || parsed.status === "error")
-    ) {
+    if (isToolResponse(parsed)) {
       return { data: parsed.data, hints: parsed.hints };
     }
   } catch { /* not JSON — return raw */ }
@@ -38,10 +33,10 @@ export async function runAgent(
   log.info(`Log: ${md.filePath}`);
 
   const toolFilter = options?.toolFilter;
-  const tools = await getTools(toolFilter);
-
-  // Load plan prompt (independent of assistant)
-  const planPrompt = await promptService.load("plan");
+  const [tools, planPrompt] = await Promise.all([
+    getTools(toolFilter),
+    promptService.load("plan"),
+  ]);
   const planModel = planPrompt.model!;
 
   // Resolve act model
@@ -175,33 +170,23 @@ export async function runAgent(
   return "";
 }
 
+function extractFlag(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag);
+  if (idx === -1) return undefined;
+  const value = args[idx + 1];
+  if (!value) {
+    console.error(`${flag} requires a value`);
+    process.exit(1);
+  }
+  args.splice(idx, 2);
+  return value;
+}
+
 // CLI entry point
 if (import.meta.main) {
   const args = process.argv.slice(2);
-  let sessionId: string | undefined;
-  let modelOverride: string | undefined;
-
-  // Extract --session flag
-  const sessionIdx = args.indexOf("--session");
-  if (sessionIdx !== -1) {
-    sessionId = args[sessionIdx + 1];
-    if (!sessionId) {
-      console.error("--session requires a value");
-      process.exit(1);
-    }
-    args.splice(sessionIdx, 2);
-  }
-
-  // Extract --model flag
-  const modelIdx = args.indexOf("--model");
-  if (modelIdx !== -1) {
-    modelOverride = args[modelIdx + 1];
-    if (!modelOverride) {
-      console.error("--model requires a value");
-      process.exit(1);
-    }
-    args.splice(modelIdx, 2);
-  }
+  const sessionId = extractFlag(args, "--session");
+  const modelOverride = extractFlag(args, "--model");
 
   // Remaining args: [assistant] "prompt" or just "prompt"
   let assistantName: string;

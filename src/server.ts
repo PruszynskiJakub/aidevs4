@@ -30,20 +30,25 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 app.post("/chat", async (c) => {
   const body = await c.req.json().catch(() => null);
 
-  body.sessionId = body.sessionID;
-  if (
-    !body ||
-    typeof body.sessionId !== "string" ||
-    typeof body.sessionID !== "string" ||
-    typeof body.msg !== "string"
-  ) {
+  if (!body || typeof body.msg !== "string") {
     return c.json(
-      { error: "Body must contain sessionId (string) and msg (string)" },
+      { error: "Body must contain sessionId/sessionID (string) and msg (string)" },
       400,
     );
   }
 
-  const { sessionId, msg } = body as { sessionId: string; msg: string };
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId
+    : typeof body.sessionID === "string" ? body.sessionID
+    : undefined;
+
+  if (!sessionId) {
+    return c.json(
+      { error: "Body must contain sessionId or sessionID (string)" },
+      400,
+    );
+  }
+
+  const { msg } = body as { msg: string };
 
   try {
     const answer = await sessionService.enqueue(sessionId, async () => {
