@@ -1,5 +1,5 @@
 import { describe, it, expect, spyOn, beforeEach, afterEach } from "bun:test";
-import { log, duration } from "./logger.ts";
+import { log, elapsed, duration } from "./logger.ts";
 
 const RESET = "\x1b[0m";
 const CYAN = "\x1b[36m";
@@ -7,7 +7,7 @@ const GREEN = "\x1b[32m";
 const RED = "\x1b[31m";
 const DIM = "\x1b[2m";
 
-describe("logger", () => {
+describe("logger singleton", () => {
   let spy: ReturnType<typeof spyOn>;
   let captured: string[];
 
@@ -52,14 +52,17 @@ describe("logger", () => {
   });
 });
 
-describe("duration", () => {
+describe("elapsed", () => {
   it("returns formatted elapsed time", () => {
-    const start = performance.now() - 1500; // simulate 1.5s ago
-    const result = duration(start);
+    const start = performance.now() - 1500;
+    const result = elapsed(start);
     expect(result).toMatch(/^\d+\.\d{2}s$/);
-    // Should be approximately 1.50s
     const seconds = parseFloat(result);
     expect(seconds).toBeGreaterThan(1.0);
     expect(seconds).toBeLessThan(3.0);
+  });
+
+  it("duration is an alias for elapsed", () => {
+    expect(duration).toBe(elapsed);
   });
 });

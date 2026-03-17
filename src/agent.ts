@@ -4,8 +4,10 @@ import { llm as defaultLLM } from "./services/llm.ts";
 import { config } from "./config/index.ts";
 import { getTools, dispatch } from "./tools/index.ts";
 import { promptService } from "./services/prompt.ts";
-import { createLogger, duration } from "./services/logger.ts";
+import { elapsed } from "./services/logger.ts";
 import { MarkdownLogger } from "./services/markdown-logger.ts";
+import { ConsoleLogger } from "./services/console-logger.ts";
+import { CompositeLogger } from "./services/composite-logger.ts";
 import { assistants } from "./services/assistants.ts";
 import { isToolResponse } from "./utils/tool-response.ts";
 
@@ -27,7 +29,7 @@ export async function runAgent(
   const userPrompt = messages.find((m) => m.role === "user")?.content ?? "";
   const md = new MarkdownLogger({ sessionId: options?.sessionId });
   md.init(typeof userPrompt === "string" ? userPrompt : "(structured)");
-  const log = createLogger(md);
+  const log = new CompositeLogger([new ConsoleLogger(), md]);
 
   log.info(`Session: ${md.sessionId}`);
   log.info(`Log: ${md.filePath}`);
@@ -70,7 +72,7 @@ export async function runAgent(
         temperature: planPrompt.temperature,
       }),
     });
-    const planTime = duration(planStart);
+    const planTime = elapsed(planStart);
     const planText = planResponse.content ?? "";
 
     log.plan(
@@ -94,7 +96,7 @@ export async function runAgent(
       messages: actMessages,
       tools,
     });
-    const actTime = duration(actStart);
+    const actTime = elapsed(actStart);
 
     log.llm(
       actTime,
@@ -129,7 +131,7 @@ export async function runAgent(
       functionCalls.map(async (tc) => {
         const start = performance.now();
         const result = await dispatch(tc.function.name, tc.function.arguments, toolFilter);
-        return { result, elapsed: duration(start) };
+        return { result, elapsed: elapsed(start) };
       })
     );
 
@@ -161,7 +163,7 @@ export async function runAgent(
     }
 
     if (functionCalls.length > 1) {
-      log.batchDone(functionCalls.length, duration(batchStart));
+      log.batchDone(functionCalls.length, elapsed(batchStart));
     }
   }
 
