@@ -1,61 +1,81 @@
-const API_KEY = process.env.HUB_API_KEY!;
-const VERIFY_URL = "https://hub.ag3nts.org/verify";
-const CSV_URL = `https://hub.ag3nts.org/data/${API_KEY}/categorize.csv`;
+/**
+ * Categorize task — classify 10 goods as DNG or NEU via hub's internal model.
+ * Prompt must fit within 100 tokens including item data.
+ * Reactor cassettes must be classified as NEU (training exercise requirement).
+ */
+
+const HUB_API_KEY = process.env.HUB_API_KEY!;
+const HUB_BASE = "https://hub.ag3nts.org";
+const VERIFY_URL = `${HUB_BASE}/verify`;
+const CSV_URL = `${HUB_BASE}/data/${HUB_API_KEY}/categorize.csv`;
+
+interface Item {
+  code: string;
+  description: string;
+}
+
+async function fetchCSV(): Promise<Item[]> {
+  const res = await fetch(CSV_URL);
+  const text = await res.text();
+  console.log("CSV content:\n", text);
+  const lines = text.trim().split("\n").slice(1); // skip header
+  return lines.map((line) => {
+    const idx = line.indexOf(",");
+    const code = line.slice(0, idx);
+    const description = line.slice(idx + 1).replace(/^"|"$/g, "");
+    return { code, description };
+  });
+}
 
 async function sendPrompt(prompt: string): Promise<any> {
-  const payload = {
-    apikey: API_KEY,
+  const body = {
+    apikey: HUB_API_KEY,
     task: "categorize",
     answer: { prompt },
   };
   const res = await fetch(VERIFY_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
   return res.json();
 }
 
-function parseCSV(text: string): Array<{ code: string; description: string }> {
-  const lines = text.trim().split("\n").slice(1); // skip header
-  return lines.map((line) => {
-    const idx = line.indexOf(",");
-    const code = line.slice(0, idx).trim();
-    const description = line.slice(idx + 1).trim().replace(/^"|"$/g, "");
-    return { code, description };
-  });
+async function reset(): Promise<void> {
+  const result = await sendPrompt("reset");
+  console.log("Reset:", JSON.stringify(result));
 }
 
-// --- Main ---
+async function run() {
+  // 1. Download fresh CSV
+  const items = await fetchCSV();
+  console.log(`Loaded ${items.length} items\n`);
 
-// Step 1: Reset
-console.log("=== RESET ===");
-const resetResult = await sendPrompt("reset");
-console.log(JSON.stringify(resetResult, null, 2));
+  // 2. Reset budget
+  await reset();
 
-// Step 2: Fetch CSV
-console.log("\n=== CSV CONTENTS ===");
-const csvRes = await fetch(CSV_URL);
-const csvText = await csvRes.text();
-const items = parseCSV(csvText);
-for (const item of items) {
-  console.log(`${item.code}: ${item.description}`);
-}
+  // 3. Classify each item
+  // The prompt template — hub replaces {id} and {description}
+  // Reactor items → NEU, dangerous items → DNG, else NEU
+  const promptTemplate = `Reply DNG or NEU only. If description mentions reactor: NEU. If item is weapon, explosive, toxic, radioactive (not reactor), flammable: DNG. Else: NEU. ID:{id} DESC:{description}`;
 
-// Step 3: Send prompt for each item individually
-// The prompt template - we fill in the actual data
-const promptTemplate = (id: string, desc: string) =>
-  `Classify as DNG or NEU. DNG=weapons,explosives,ammunition. NEU=everything else including reactor parts. Reply one word.
-Item ${id}: ${desc}`;
+  for (const item of items) {
+    const prompt = promptTemplate
+      .replace("{id}", item.code)
+      .replace("{description}", item.description);
 
-console.log("\n=== SENDING CLASSIFICATIONS ===");
-for (const item of items) {
-  const prompt = promptTemplate(item.code, item.description);
-  const result = await sendPrompt(prompt);
-  console.log(`${item.code}: ${JSON.stringify(result)}`);
+    console.log(`\n--- ${item.code} ---`);
+    console.log(`Description: ${item.description}`);
+    console.log(`Prompt length: ~${prompt.length} chars`);
 
-  if (result.code < 0) {
-    console.log("ERROR - stopping");
-    break;
+    const result = await sendPrompt(prompt);
+    console.log("Result:", JSON.stringify(result));
+
+    // If we get a flag, celebrate
+    if (result?.message?.includes("FLG:") || result?.flag) {
+      console.log("\n🎉 FLAG FOUND:", result.message || result.flag);
+    }
   }
 }
+
+run().catch(console.error);

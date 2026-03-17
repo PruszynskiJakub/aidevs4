@@ -3,7 +3,7 @@
   "description": "Interact with the AG3NTS hub.",
   "actions": {
     "verify": {
-      "description": "Submit an answer for verification",
+      "description": "Submit a single answer for verification. For tasks requiring multiple sequential submissions (e.g. classifying N items one by one), use verify_batch instead.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -11,6 +11,19 @@
           "answer_file": { "type": "string", "description": "Absolute path to the JSON file containing the answer data" }
         },
         "required": ["task", "answer_file"],
+        "additionalProperties": false
+      }
+    },
+    "verify_batch": {
+      "description": "Submit multiple answers for verification SEQUENTIALLY (one after another). Use when the hub expects ordered submissions — e.g. classifying N items where each call advances an internal counter. Answers are sent in array order. Stops on first HTTP error. Results written to output file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task": { "type": "string", "description": "The task name to verify against (e.g. \"categorize\")" },
+          "answers_file": { "type": "string", "description": "Absolute path to a JSON file containing an array of answer objects. Each element is sent as the 'answer' field in the verify request, in order." },
+          "output_file": { "type": "string", "description": "Absolute path to write the results JSON array (each entry has index, answer, response)" }
+        },
+        "required": ["task", "answers_file", "output_file"],
         "additionalProperties": false
       }
     },

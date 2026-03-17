@@ -167,10 +167,65 @@ async function apiBatch(payload: {
   );
 }
 
+async function verifyBatch(payload: {
+  task: string;
+  answers_file: string;
+  output_file: string;
+}): Promise<ToolResponse> {
+  assertMaxLength(payload.task, "task", 100);
+  assertMaxLength(payload.answers_file, "answers_file", 500);
+  assertMaxLength(payload.output_file, "output_file", 500);
+
+  await checkFileSize(payload.answers_file, config.limits.maxFileSize);
+  const content = await files.readText(payload.answers_file);
+  const answers = safeParse<unknown>(content, "answers_file");
+
+  if (!Array.isArray(answers)) {
+    throw new Error("answers_file must contain a JSON array of answer objects");
+  }
+  if (answers.length > config.limits.maxBatchRows) {
+    throw new Error(`Batch size ${answers.length} exceeds maximum of ${config.limits.maxBatchRows}`);
+  }
+
+  const apiKey = getApiKey();
+  const results: { index: number; answer: unknown; response: unknown }[] = [];
+
+  for (let i = 0; i < answers.length; i++) {
+    const answer = answers[i];
+    const body = { apikey: apiKey, task: payload.task, answer };
+
+    const res = await fetch(config.hub.verifyUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(config.limits.fetchTimeout),
+    });
+
+    const response = await res.json().catch(() => res.text());
+
+    results.push({ index: i, answer, response });
+
+    if (!res.ok) {
+      await files.write(payload.output_file, JSON.stringify(results, null, 2));
+      const detail = typeof response === "string" ? response : JSON.stringify(response);
+      throw new Error(`Verify batch failed at item ${i} (${res.status}): ${detail}`);
+    }
+  }
+
+  await files.write(payload.output_file, JSON.stringify(results, null, 2));
+
+  return toolOk(
+    { task: payload.task, count: results.length, output_file: payload.output_file },
+    [`Verified ${results.length} items sequentially for task '${payload.task}'. Results written to ${payload.output_file}.`],
+  );
+}
+
 async function agentsHub({ action, payload }: { action: string; payload: Record<string, any> }): Promise<unknown> {
   switch (action) {
     case "verify":
       return verify(payload as { task: string; answer_file: string });
+    case "verify_batch":
+      return verifyBatch(payload as { task: string; answers_file: string; output_file: string });
     case "api_request":
       return apiRequest(payload as { path: string; body?: Record<string, any>; body_file?: string });
     case "api_request_body": {

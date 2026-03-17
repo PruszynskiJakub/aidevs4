@@ -62,7 +62,9 @@ async function promptEngineer(
     }),
   });
 
-  const parsed = safeParse(result, "prompt_engineer response");
+  // Strip markdown code fences if present (LLMs often wrap JSON in ```json ... ```)
+  const cleaned = result.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+  const parsed = safeParse(cleaned, "prompt_engineer response");
 
   if (!parsed.prompt || typeof parsed.prompt !== "string") {
     return toolError("LLM did not return a valid prompt field", [
