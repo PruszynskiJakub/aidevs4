@@ -144,7 +144,7 @@ The `EventEmittingLogger` maps SP-33 Logger method calls to `AgentEvent` emissio
 | `toolHeader(count)` | _(no event)_ | sets `batchSize`, resets `batchIndex` |
 | `toolCall(name, rawArgs)` | `tool_call` | increments `batchIndex`; uses `currentIteration`, `batchSize` |
 | `toolOk(name, elapsed, rawResult, hints?)` | `tool_result` (status: ok) | uses `currentIteration` |
-| `toolErr(name, elapsed, errorMsg)` | `tool_result` (status: error) | uses `currentIteration` |
+| `toolErr(name, errorMsg)` | `tool_result` (status: error, durationMs: 0) | uses `currentIteration`; no elapsed available for errors currently |
 | `batchDone(elapsed)` | _(no event — derivable from tool_results)_ | — |
 | `answer(text)` | `message` | — |
 | `llm(elapsed, tokensIn?, tokensOut?)` | `token_usage` (phase: "act") | uses `currentIteration`, `currentModel`; updates `cumulativeTokens` |
@@ -166,6 +166,7 @@ bun run agent "prompt" --stream   # streams events to terminal
 **HTTP:**
 ```
 POST /chat { msg, sessionId?, assistant?, stream?: boolean }
+              // note: prototype used "prompt" — we use "msg" for backward compat
 
 sessionId: optional — if omitted, server generates a UUID v4 (matching SP-30)
            if provided, resumes an existing session
@@ -317,7 +318,9 @@ This spec has implications for SP-33's `Logger` interface design. For `EventEmit
 - `plan()` should include token usage so `EventEmittingLogger` can emit a `token_usage` event alongside `plan_update`
 - `toolCall()` does not need `batchIndex`/`batchSize` — `EventEmittingLogger` derives these from `toolHeader(count)` + internal counter
 
-If SP-33 is implemented before this spec, these needs should be communicated. If SP-33's final signatures differ, `EventEmittingLogger` adapts (e.g., parsing formatted strings back to numbers) — the event types remain stable.
+Note: the current `duration()` helper returns a formatted string (e.g., `"1.23s"`), not a raw number. SP-33 renames it to `elapsed()` but does not explicitly commit to changing the return type. If SP-33 keeps string returns, `EventEmittingLogger` must parse them back to milliseconds.
+
+If SP-33 is implemented before this spec, these needs should be communicated. If SP-33's final signatures differ, `EventEmittingLogger` adapts — the event types remain stable.
 
 ## Out of scope
 
