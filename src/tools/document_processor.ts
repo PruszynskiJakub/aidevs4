@@ -5,7 +5,7 @@ import { files } from "../services/file.ts";
 import { llm } from "../services/llm.ts";
 import { assertMaxLength, checkFileSize } from "../utils/parse.ts";
 import { toolOk } from "../utils/tool-response.ts";
-import { GEMINI_MODEL, DOC_MAX_FILES, MAX_FILE_SIZE } from "../config.ts";
+import { config } from "../config/index.ts";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 const TEXT_EXTENSIONS = new Set([".md", ".txt", ".csv", ".json", ".xml", ".html"]);
@@ -45,7 +45,7 @@ async function buildContentParts(paths: string[]): Promise<ContentPart[]> {
       );
     }
 
-    await checkFileSize(path, MAX_FILE_SIZE);
+    await checkFileSize(path, config.limits.maxFileSize);
 
     if (IMAGE_EXTENSIONS.has(ext)) {
       const buffer = await files.readBinary(path);
@@ -76,8 +76,8 @@ async function ask(payload: {
   if (!Array.isArray(paths) || paths.length === 0) {
     throw new Error("paths must be a non-empty array of file paths");
   }
-  if (paths.length > DOC_MAX_FILES) {
-    throw new Error(`Too many files: ${paths.length}. Maximum is ${DOC_MAX_FILES}.`);
+  if (paths.length > config.limits.docMaxFiles) {
+    throw new Error(`Too many files: ${paths.length}. Maximum is ${config.limits.docMaxFiles}.`);
   }
   if (typeof question !== "string" || question.trim().length === 0) {
     throw new Error("question must be a non-empty string");
@@ -88,7 +88,7 @@ async function ask(payload: {
   contentParts.push({ type: "text", text: question });
 
   const response = await llm.chatCompletion({
-    model: GEMINI_MODEL,
+    model: config.models.gemini,
     messages: [{ role: "user", content: contentParts }],
   });
 

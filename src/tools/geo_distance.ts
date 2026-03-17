@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResponse } from "../types/tool.ts";
 import { files } from "../services/file.ts";
-import { MAX_FILE_SIZE } from "../config.ts";
+import { config } from "../config/index.ts";
 import { safeParse, assertMaxLength, assertNumericBounds, checkFileSize } from "../utils/parse.ts";
 import { toolOk } from "../utils/tool-response.ts";
 
@@ -58,8 +58,8 @@ async function findNearby(payload: {
   assertMaxLength(payload.queries_file, "queries_file", 500);
   assertNumericBounds(payload.radius_km, "radius_km", 0.001, 40_075);
 
-  await checkFileSize(payload.references_file, MAX_FILE_SIZE);
-  await checkFileSize(payload.queries_file, MAX_FILE_SIZE);
+  await checkFileSize(payload.references_file, config.limits.maxFileSize);
+  await checkFileSize(payload.queries_file, config.limits.maxFileSize);
 
   const refsRaw = await files.readText(payload.references_file);
   const queriesRaw = await files.readText(payload.queries_file);

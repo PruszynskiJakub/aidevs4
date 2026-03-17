@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { FileProvider } from "../types/file.ts";
 import { createBunFileService } from "./file.ts";
-import { LOGS_DIR } from "../config.ts";
+import { config } from "../config/index.ts";
 
 const SAFE_ID = /^[a-zA-Z0-9_\-]+$/;
 
@@ -43,7 +43,7 @@ export class MarkdownLogger {
   private fs: FileProvider;
 
   constructor(options?: { logsDir?: string; sessionId?: string; fs?: FileProvider }) {
-    const logsDir = options?.logsDir ?? LOGS_DIR;
+    const logsDir = options?.logsDir ?? config.paths.logsDir;
     const sid = options?.sessionId ?? randomSessionId();
 
     if (!SAFE_ID.test(sid)) {

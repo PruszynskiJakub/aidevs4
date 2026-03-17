@@ -2,7 +2,7 @@ import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResponse } from "../types/tool.ts";
 import { files } from "../services/file.ts";
 import { getApiKey } from "../utils/hub.ts";
-import { HUB_BASE_URL, HUB_VERIFY_URL, FETCH_TIMEOUT, MAX_BATCH_ROWS, MAX_FILE_SIZE } from "../config.ts";
+import { config } from "../config/index.ts";
 import { parseCsv } from "../utils/csv.ts";
 import { safeParse, validateKeys, assertMaxLength, checkFileSize } from "../utils/parse.ts";
 import { toolOk } from "../utils/tool-response.ts";
@@ -13,17 +13,17 @@ async function verify(payload: { task: string; answer_file: string }): Promise<T
 
   const apiKey = getApiKey();
 
-  await checkFileSize(payload.answer_file, MAX_FILE_SIZE);
+  await checkFileSize(payload.answer_file, config.limits.maxFileSize);
   const content = await files.readText(payload.answer_file);
   const answer = safeParse(content, "answer_file");
 
   const body = { apikey: apiKey, task: payload.task, answer };
 
-  const res = await fetch(HUB_VERIFY_URL, {
+  const res = await fetch(config.hub.verifyUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+    signal: AbortSignal.timeout(config.limits.fetchTimeout),
   });
 
   const response = await res.json().catch(() => res.text());
@@ -59,7 +59,7 @@ async function apiRequest(payload: {
   let body: Record<string, any>;
   if (hasFile) {
     assertMaxLength(payload.body_file!, "body_file", 500);
-    await checkFileSize(payload.body_file!, MAX_FILE_SIZE);
+    await checkFileSize(payload.body_file!, config.limits.maxFileSize);
     const content = await files.readText(payload.body_file!);
     body = safeParse(content, "body_file");
   } else {
@@ -69,12 +69,12 @@ async function apiRequest(payload: {
   const apiKey = getApiKey();
   body.apikey = apiKey;
 
-  const url = `${HUB_BASE_URL}/api/${payload.path}`;
+  const url = `${config.hub.baseUrl}/api/${payload.path}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+    signal: AbortSignal.timeout(config.limits.fetchTimeout),
   });
 
   const contentType = res.headers.get("content-type") || "";
@@ -107,7 +107,7 @@ async function apiBatch(payload: {
   const fieldMap: Record<string, string> = safeParse(payload.field_map_json, "field_map_json");
   validateKeys(fieldMap);
 
-  await checkFileSize(payload.data_file, MAX_FILE_SIZE);
+  await checkFileSize(payload.data_file, config.limits.maxFileSize);
 
   let rows: Record<string, any>[];
   if (payload.data_file.endsWith(".csv")) {
@@ -121,12 +121,12 @@ async function apiBatch(payload: {
     rows = parsed;
   }
 
-  if (rows.length > MAX_BATCH_ROWS) {
-    throw new Error(`Batch size ${rows.length} exceeds maximum of ${MAX_BATCH_ROWS} rows`);
+  if (rows.length > config.limits.maxBatchRows) {
+    throw new Error(`Batch size ${rows.length} exceeds maximum of ${config.limits.maxBatchRows} rows`);
   }
 
   const apiKey = getApiKey();
-  const url = `${HUB_BASE_URL}/api/${payload.path}`;
+  const url = `${config.hub.baseUrl}/api/${payload.path}`;
   const results: { input: Record<string, any>; response: unknown }[] = [];
 
   for (const row of rows) {
@@ -141,7 +141,7 @@ async function apiBatch(payload: {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(mapped),
-      signal: AbortSignal.timeout(FETCH_TIMEOUT),
+      signal: AbortSignal.timeout(config.limits.fetchTimeout),
     });
 
     const contentType = res.headers.get("content-type") || "";

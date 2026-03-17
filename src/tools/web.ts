@@ -2,7 +2,7 @@ import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResponse } from "../types/tool.ts";
 import { files } from "../services/file.ts";
 import { ensureOutputDir, outputPath } from "../utils/output.ts";
-import { FETCH_TIMEOUT, WEB_ALLOWED_HOSTS, WEB_PLACEHOLDER_MAP } from "../config.ts";
+import { config } from "../config/index.ts";
 import { safeFilename, assertMaxLength } from "../utils/parse.ts";
 import { toolOk } from "../utils/tool-response.ts";
 
@@ -10,9 +10,9 @@ const PLACEHOLDER_RE = /\{\{(\w+)\}\}/g;
 
 function resolvePlaceholders(url: string): string {
   return url.replace(PLACEHOLDER_RE, (_match, name: string) => {
-    const resolver = WEB_PLACEHOLDER_MAP[name];
+    const resolver = config.web.placeholderMap[name];
     if (!resolver) {
-      const available = Object.keys(WEB_PLACEHOLDER_MAP).join(", ");
+      const available = Object.keys(config.web.placeholderMap).join(", ");
       throw new Error(`Unknown placeholder "{{${name}}}". Available: ${available}`);
     }
     return resolver();
@@ -20,10 +20,10 @@ function resolvePlaceholders(url: string): string {
 }
 
 function assertHostAllowed(hostname: string): void {
-  const allowed = WEB_ALLOWED_HOSTS.some((entry) => hostname.endsWith(entry));
+  const allowed = config.sandbox.webAllowedHosts.some((entry) => hostname.endsWith(entry));
   if (!allowed) {
     throw new Error(
-      `Host "${hostname}" is not on the allowlist. Allowed: ${WEB_ALLOWED_HOSTS.join(", ")}`,
+      `Host "${hostname}" is not on the allowlist. Allowed: ${config.sandbox.webAllowedHosts.join(", ")}`,
     );
   }
 }
@@ -46,7 +46,7 @@ async function download(payload: { url: string; filename: string }): Promise<Too
 
   await ensureOutputDir();
 
-  const response = await fetch(resolvedUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT) });
+  const response = await fetch(resolvedUrl, { signal: AbortSignal.timeout(config.limits.fetchTimeout) });
   if (!response.ok) {
     throw new Error(`Download failed (${response.status}): ${payload.filename}`);
   }

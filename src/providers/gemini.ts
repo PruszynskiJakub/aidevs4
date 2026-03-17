@@ -10,7 +10,7 @@ import type {
   CompletionParams,
   ContentPart,
 } from "../types/llm.ts";
-import { GEMINI_TIMEOUT } from "../config.ts";
+import { config } from "../config/index.ts";
 
 function contentPartsToGemini(content: string | ContentPart[]): Part[] {
   if (typeof content === "string") {
@@ -127,7 +127,7 @@ export function createGeminiProvider(apiKey: string): LLMProvider {
           ...(systemInstruction && { systemInstruction }),
           ...(params.temperature !== undefined && { temperature: params.temperature }),
           ...(params.tools?.length && { tools: toGeminiTools(params.tools) }),
-          abortSignal: AbortSignal.timeout(GEMINI_TIMEOUT),
+          abortSignal: AbortSignal.timeout(config.limits.geminiTimeout),
         },
       });
 
@@ -163,7 +163,7 @@ export function createGeminiProvider(apiKey: string): LLMProvider {
         config: {
           systemInstruction: params.systemPrompt,
           temperature: params.temperature ?? 0,
-          abortSignal: AbortSignal.timeout(GEMINI_TIMEOUT),
+          abortSignal: AbortSignal.timeout(config.limits.geminiTimeout),
         },
       });
 

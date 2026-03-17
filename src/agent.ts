@@ -1,6 +1,6 @@
 import type { LLMProvider, LLMMessage } from "./types/llm.ts";
 import { llm as defaultLLM } from "./services/llm.ts";
-import { MAX_ITERATIONS } from "./config.ts";
+import { config } from "./config/index.ts";
 import { getTools, dispatch } from "./tools/index.ts";
 import { promptService } from "./services/prompt.ts";
 import { createLogger, duration } from "./services/logger.ts";
@@ -55,8 +55,8 @@ export async function runAgent(
     actModel = act.model!;
   }
 
-  for (let i = 0; i < MAX_ITERATIONS; i++) {
-    log.step(i + 1, MAX_ITERATIONS, actModel, messages.length);
+  for (let i = 0; i < config.limits.maxIterations; i++) {
+    log.step(i + 1, config.limits.maxIterations, actModel, messages.length);
 
     // --- PLAN PHASE ---
     // Build plan messages: plan system prompt + conversation history (without act system prompt)
@@ -168,7 +168,7 @@ export async function runAgent(
     }
   }
 
-  log.maxIter(MAX_ITERATIONS);
+  log.maxIter(config.limits.maxIterations);
   await md.flush();
   return "";
 }
@@ -195,7 +195,7 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  const persona = getPersona(process.env.PERSONA);
+  const persona = getPersona(config.persona);
   const act = await promptService.load("act", {
     objective: persona.objective,
     tone: persona.tone,

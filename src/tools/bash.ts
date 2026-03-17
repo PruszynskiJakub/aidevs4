@@ -1,12 +1,12 @@
 import { resolve } from "path";
 import { $ } from "bun";
-import { OUTPUT_DIR } from "../config.ts";
+import { config } from "../config/index.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResponse } from "../types/tool.ts";
 import { toolOk } from "../utils/tool-response.ts";
 
 const MAX_OUTPUT = 20_000;
-const cwd = resolve(OUTPUT_DIR);
+const cwd = resolve(config.paths.outputDir);
 
 async function bash(args: { command: string }): Promise<string | ToolResponse> {
   const result = await $`bash -c ${args.command}`.cwd(cwd).quiet().nothrow();

@@ -1,12 +1,12 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResponse } from "../types/tool.ts";
 import { getApiKey } from "../utils/hub.ts";
-import { HUB_BASE_URL, FETCH_TIMEOUT } from "../config.ts";
+import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 import { toolOk } from "../utils/tool-response.ts";
 
 const PACKAGEID_RE = /^[A-Za-z0-9]+$/;
-const PACKAGES_URL = `${HUB_BASE_URL}/api/packages`;
+const PACKAGES_URL = `${config.hub.baseUrl}/api/packages`;
 
 function validateAlphanumeric(value: string, name: string): void {
   if (!PACKAGEID_RE.test(value)) {
@@ -24,7 +24,7 @@ async function checkPackage(payload: { packageid: string }): Promise<ToolRespons
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ apikey: apiKey, action: "check", packageid: payload.packageid }),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+    signal: AbortSignal.timeout(config.limits.fetchTimeout),
   });
 
   const text = await res.text();
@@ -65,7 +65,7 @@ async function redirectPackage(payload: {
       destination: payload.destination,
       code: payload.code,
     }),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+    signal: AbortSignal.timeout(config.limits.fetchTimeout),
   });
 
   const text = await res.text();

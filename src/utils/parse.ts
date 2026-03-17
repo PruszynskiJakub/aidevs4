@@ -1,5 +1,5 @@
 import { stat } from "fs/promises";
-import { MAX_FILE_SIZE } from "../config.ts";
+import { config } from "../config/index.ts";
 
 /**
  * Safe JSON.parse wrapper — returns typed result or throws a labelled error
@@ -76,7 +76,7 @@ export function assertNumericBounds(value: number, name: string, min: number, ma
  * Checks that a file does not exceed the configured max size.
  * Uses fs.stat to avoid reading the file contents.
  */
-export async function checkFileSize(path: string, maxBytes: number = MAX_FILE_SIZE): Promise<void> {
+export async function checkFileSize(path: string, maxBytes: number = config.limits.maxFileSize): Promise<void> {
   const s = await stat(path);
   if (s.size > maxBytes) {
     const sizeMB = (s.size / (1024 * 1024)).toFixed(1);

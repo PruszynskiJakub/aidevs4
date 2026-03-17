@@ -4,9 +4,10 @@ import { sessionService } from "./services/session.ts";
 import { promptService } from "./services/prompt.ts";
 import { log } from "./services/logger.ts";
 import { getPersona } from "./config/personas.ts";
+import { config } from "./config/index.ts";
 import type { LLMMessage } from "./types/llm.ts";
 
-const persona = getPersona(process.env.PERSONA);
+const persona = getPersona(config.persona);
 const actPrompt = await promptService.load("act", {
   objective: persona.objective,
   tone: persona.tone,
@@ -77,7 +78,7 @@ app.post("/chat", async (c) => {
   }
 });
 
-const port = Number(process.env.PORT) || 3000;
+const port = config.server.port;
 
 export default {
   fetch: app.fetch,
