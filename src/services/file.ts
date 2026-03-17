@@ -1,11 +1,24 @@
 import { readdir, stat, mkdir, appendFile } from "fs/promises";
-import { resolve } from "path";
+import { join, resolve } from "path";
 import type { FileProvider, FileStat } from "../types/file.ts";
 import { config } from "../config/index.ts";
+import { getSessionId } from "./session-context.ts";
 
 // Mutable copies of config paths — tests push/splice these for temp dir access
 export const _testReadPaths: string[] = [...config.sandbox.allowedReadPaths];
 export const _testWritePaths: string[] = [...config.sandbox.allowedWritePaths];
+
+function narrowOutputPaths(allowedDirs: string[]): string[] {
+  const sessionId = getSessionId();
+  if (!sessionId) return allowedDirs;
+
+  const outputDir = resolve(config.paths.outputDir);
+  const sessionOutputDir = resolve(join(outputDir, sessionId));
+  return allowedDirs.map((dir) => {
+    const resolved = resolve(dir);
+    return resolved === outputDir ? sessionOutputDir : dir;
+  });
+}
 
 function assertPathAllowed(
   targetPath: string,
@@ -13,13 +26,14 @@ function assertPathAllowed(
   operation: "read" | "write",
 ): void {
   const resolved = resolve(targetPath);
-  const allowed = allowedDirs.some((dir) => {
+  const effective = narrowOutputPaths(allowedDirs);
+  const allowed = effective.some((dir) => {
     const resolvedDir = resolve(dir);
     return resolved === resolvedDir || resolved.startsWith(resolvedDir + "/");
   });
   if (!allowed) {
     throw new Error(
-      `Access denied: cannot ${operation} "${resolved}". Allowed ${operation} directories: [${allowedDirs.map((d) => resolve(d)).join(", ")}]`,
+      `Access denied: cannot ${operation} "${resolved}". Allowed ${operation} directories: [${effective.map((d) => resolve(d)).join(", ")}]`,
     );
   }
 }

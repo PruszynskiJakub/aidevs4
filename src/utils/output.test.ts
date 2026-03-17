@@ -2,8 +2,9 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, rm, stat } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { inferFileType, outputPath } from "./output.ts";
+import { inferFileType, outputPath, getEffectiveSessionId } from "./output.ts";
 import { _testWritePaths } from "../services/file.ts";
+import { runWithSession } from "../services/session-context.ts";
 
 // --------------- inferFileType ---------------
 
@@ -80,21 +81,21 @@ describe("outputPath", () => {
   // UUID v4 pattern: 8-4-4-4-12 hex chars
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-  it("returns path with correct structure: {outputDir}/{type}/{uuid}/{filename}", async () => {
-    // Temporarily override config to use tmp dir
-    const origOutputDir = (await import("../config/index.ts")).config.paths.outputDir;
-    // We can't mutate frozen config, so we test the path structure from a real call
+  it("returns path with correct structure: {outputDir}/{sessionId}/{type}/{uuid}/{filename}", async () => {
     const result = await outputPath("report.csv");
 
-    // Path should end with document/{uuid}/report.csv
+    // Path should end with {sessionId}/document/{uuid}/report.csv
     const parts = result.split("/");
     const filename = parts.pop()!;
     const uuid = parts.pop()!;
     const type = parts.pop()!;
+    const sessionSegment = parts.pop()!;
 
     expect(filename).toBe("report.csv");
     expect(type).toBe("document");
     expect(UUID_RE.test(uuid)).toBe(true);
+    // sessionSegment is either an explicit session or a fallback UUID
+    expect(sessionSegment.length).toBeGreaterThan(0);
   });
 
   it("creates the UUID directory", async () => {
@@ -129,5 +130,42 @@ describe("outputPath", () => {
     const uuid2 = path2.split("/").slice(-2, -1)[0];
 
     expect(uuid1).not.toBe(uuid2);
+  });
+
+  it("uses explicit sessionId inside runWithSession", async () => {
+    await runWithSession("test-session", async () => {
+      const result = await outputPath("file.json");
+      expect(result).toContain("/test-session/document/");
+    });
+  });
+
+  it("uses fallback UUID outside any session", async () => {
+    // Called outside runWithSession — should use a stable fallback UUID
+    const result = await outputPath("file.json");
+    const sessionSegment = result.split("/").slice(-4, -3)[0];
+    expect(UUID_RE.test(sessionSegment)).toBe(true);
+
+    // Fallback is stable across calls
+    const result2 = await outputPath("other.json");
+    const sessionSegment2 = result2.split("/").slice(-4, -3)[0];
+    expect(sessionSegment2).toBe(sessionSegment);
+  });
+
+  it("isolates concurrent sessions in outputPath", async () => {
+    const paths: Record<string, string> = {};
+
+    await Promise.all([
+      runWithSession("sess-A", async () => {
+        paths.a = await outputPath("a.txt");
+      }),
+      runWithSession("sess-B", async () => {
+        paths.b = await outputPath("b.txt");
+      }),
+    ]);
+
+    expect(paths.a).toContain("/sess-A/");
+    expect(paths.b).toContain("/sess-B/");
+    expect(paths.a).not.toContain("/sess-B/");
+    expect(paths.b).not.toContain("/sess-A/");
   });
 });

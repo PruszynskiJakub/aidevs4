@@ -10,6 +10,7 @@ import { ConsoleLogger } from "./services/console-logger.ts";
 import { CompositeLogger } from "./services/composite-logger.ts";
 import { assistants } from "./services/assistants.ts";
 import { isToolResponse } from "./utils/tool-response.ts";
+import { runWithSession } from "./services/session-context.ts";
 
 function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
   try {
@@ -34,142 +35,139 @@ export async function runAgent(
   log.info(`Session: ${md.sessionId}`);
   log.info(`Log: ${md.filePath}`);
 
-  const toolFilter = options?.toolFilter;
-  const [tools, planPrompt] = await Promise.all([
-    getTools(toolFilter),
-    promptService.load("plan"),
-  ]);
-  const planModel = planPrompt.model!;
+  return runWithSession(md.sessionId, async () => {
+    const toolFilter = options?.toolFilter;
+    const [tools, planPrompt] = await Promise.all([
+      getTools(toolFilter),
+      promptService.load("plan"),
+    ]);
+    const planModel = planPrompt.model!;
 
-  // Resolve act model
-  let actModel: string;
-  if (options?.model) {
-    actModel = options.model;
-  } else {
-    const assistant = await assistants.get("default");
-    const act = await promptService.load("act", {
-      objective: assistant.objective,
-      tone: assistant.tone,
-    });
-    actModel = act.model!;
-  }
-
-  for (let i = 0; i < config.limits.maxIterations; i++) {
-    log.step(i + 1, config.limits.maxIterations, actModel, messages.length);
-
-    // --- PLAN PHASE ---
-    // Build plan messages: plan system prompt + conversation history (without act system prompt)
-    const planMessages: LLMMessage[] = [
-      { role: "system", content: planPrompt.content },
-      ...messages.filter((m) => m.role !== "system"),
-    ];
-
-    const planStart = performance.now();
-    const planResponse = await provider.chatCompletion({
-      model: planModel,
-      messages: planMessages,
-      ...(planPrompt.temperature !== undefined && {
-        temperature: planPrompt.temperature,
-      }),
-    });
-    const planTime = elapsed(planStart);
-    const planText = planResponse.content ?? "";
-
-    log.plan(
-      planText,
-      planModel,
-      planTime,
-      planResponse.usage?.promptTokens,
-      planResponse.usage?.completionTokens,
-    );
-
-    // --- ACT PHASE ---
-    // Inject plan as assistant message — only for the act call, not persisted in main history
-    const actMessages: LLMMessage[] = [
-      ...messages,
-      { role: "assistant", content: `## Current Plan\n\n${planText}` },
-    ];
-
-    const actStart = performance.now();
-    const response = await provider.chatCompletion({
-      model: actModel,
-      messages: actMessages,
-      tools,
-    });
-    const actTime = elapsed(actStart);
-
-    log.llm(
-      actTime,
-      response.usage?.promptTokens,
-      response.usage?.completionTokens,
-    );
-
-    messages.push({
-      role: "assistant",
-      content: response.content,
-      ...(response.toolCalls.length && { toolCalls: response.toolCalls }),
-    });
-
-    if (response.finishReason === "stop" || !response.toolCalls.length) {
-      log.answer(response.content);
-      await md.flush();
-      return response.content ?? "";
+    // Resolve act model
+    let actModel: string;
+    if (options?.model) {
+      actModel = options.model;
+    } else {
+      const assistant = await assistants.get("default");
+      const act = await promptService.load("act", {
+        objective: assistant.objective,
+        tone: assistant.tone,
+      });
+      actModel = act.model!;
     }
 
-    const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
+    for (let i = 0; i < config.limits.maxIterations; i++) {
+      log.step(i + 1, config.limits.maxIterations, actModel, messages.length);
 
-    // Announce all tool calls upfront
-    log.toolHeader(functionCalls.length);
-    for (const tc of functionCalls) {
-      log.toolCall(tc.function.name, tc.function.arguments);
-    }
+      // --- PLAN PHASE ---
+      const planMessages: LLMMessage[] = [
+        { role: "system", content: planPrompt.content },
+        ...messages.filter((m) => m.role !== "system"),
+      ];
 
-    // Execute tools
-    const batchStart = performance.now();
+      const planStart = performance.now();
+      const planResponse = await provider.chatCompletion({
+        model: planModel,
+        messages: planMessages,
+        ...(planPrompt.temperature !== undefined && {
+          temperature: planPrompt.temperature,
+        }),
+      });
+      const planTime = elapsed(planStart);
+      const planText = planResponse.content ?? "";
 
-    const settled = await Promise.allSettled(
-      functionCalls.map(async (tc) => {
-        const start = performance.now();
-        const result = await dispatch(tc.function.name, tc.function.arguments, toolFilter);
-        return { result, elapsed: elapsed(start) };
-      })
-    );
+      log.plan(
+        planText,
+        planModel,
+        planTime,
+        planResponse.usage?.promptTokens,
+        planResponse.usage?.completionTokens,
+      );
 
-    // Report results — parse ToolResponse, extract data for LLM, surface hints in log
-    for (let j = 0; j < functionCalls.length; j++) {
-      const tc = functionCalls[j];
-      const outcome = settled[j];
+      // --- ACT PHASE ---
+      const actMessages: LLMMessage[] = [
+        ...messages,
+        { role: "assistant", content: `## Current Plan\n\n${planText}` },
+      ];
 
-      if (outcome.status === "fulfilled") {
-        const { result, elapsed } = outcome.value;
-        const parsed = parseToolResponse(result);
-        const llmContent = JSON.stringify(parsed.data);
-        log.toolOk(tc.function.name, elapsed, llmContent, parsed.hints);
-        messages.push({
-          role: "tool",
-          toolCallId: tc.id,
-          content: llmContent,
-        });
-      } else {
-        const errorMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
-        const errorResult = JSON.stringify({ error: errorMsg });
-        log.toolErr(tc.function.name, errorMsg);
-        messages.push({
-          role: "tool",
-          toolCallId: tc.id,
-          content: errorResult,
-        });
+      const actStart = performance.now();
+      const response = await provider.chatCompletion({
+        model: actModel,
+        messages: actMessages,
+        tools,
+      });
+      const actTime = elapsed(actStart);
+
+      log.llm(
+        actTime,
+        response.usage?.promptTokens,
+        response.usage?.completionTokens,
+      );
+
+      messages.push({
+        role: "assistant",
+        content: response.content,
+        ...(response.toolCalls.length && { toolCalls: response.toolCalls }),
+      });
+
+      if (response.finishReason === "stop" || !response.toolCalls.length) {
+        log.answer(response.content);
+        await md.flush();
+        return response.content ?? "";
+      }
+
+      const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
+
+      log.toolHeader(functionCalls.length);
+      for (const tc of functionCalls) {
+        log.toolCall(tc.function.name, tc.function.arguments);
+      }
+
+      const batchStart = performance.now();
+
+      const settled = await Promise.allSettled(
+        functionCalls.map(async (tc) => {
+          const start = performance.now();
+          const result = await dispatch(tc.function.name, tc.function.arguments, toolFilter);
+          return { result, elapsed: elapsed(start) };
+        })
+      );
+
+      for (let j = 0; j < functionCalls.length; j++) {
+        const tc = functionCalls[j];
+        const outcome = settled[j];
+
+        if (outcome.status === "fulfilled") {
+          const { result, elapsed } = outcome.value;
+          const parsed = parseToolResponse(result);
+          const llmContent = JSON.stringify(parsed.data);
+          log.toolOk(tc.function.name, elapsed, llmContent, parsed.hints);
+          messages.push({
+            role: "tool",
+            toolCallId: tc.id,
+            content: llmContent,
+          });
+        } else {
+          const errorMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
+          const errorResult = JSON.stringify({ error: errorMsg });
+          log.toolErr(tc.function.name, errorMsg);
+          messages.push({
+            role: "tool",
+            toolCallId: tc.id,
+            content: errorResult,
+          });
+        }
+      }
+
+      if (functionCalls.length > 1) {
+        log.batchDone(functionCalls.length, elapsed(batchStart));
       }
     }
 
-    if (functionCalls.length > 1) {
-      log.batchDone(functionCalls.length, elapsed(batchStart));
-    }
-  }
-
-  log.maxIter(config.limits.maxIterations);
-  await md.flush();
-  return "";
+    log.maxIter(config.limits.maxIterations);
+    await md.flush();
+    return "";
+  });
 }
 
 function extractFlag(args: string[], flag: string): string | undefined {
