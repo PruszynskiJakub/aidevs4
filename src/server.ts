@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { runAgent } from "./agent.ts";
-import { sessionService } from "./services/session/session.ts";
-import { resolveAssistant } from "./services/session/assistant/assistant-resolver.ts";
+import { sessionService } from "./services/agent/session.ts";
+import { resolveAssistant } from "./services/agent/assistant/assistant-resolver.ts";
 import { log } from "./services/common/logging/logger.ts";
 import { config } from "./config/index.ts";
 import type { LLMMessage } from "./types/llm.ts";

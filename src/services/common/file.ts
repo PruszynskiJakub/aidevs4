@@ -2,7 +2,7 @@ import { readdir, stat, mkdir, appendFile } from "fs/promises";
 import { join, resolve } from "path";
 import type { FileProvider, FileStat } from "../../types/file.ts";
 import { config } from "../../config/index.ts";
-import { getSessionId } from "../session/session-context.ts";
+import { getSessionId } from "../agent/session-context.ts";
 
 // Mutable copies of config paths — tests push/splice these for temp dir access
 export const _testReadPaths: string[] = [...config.sandbox.allowedReadPaths];

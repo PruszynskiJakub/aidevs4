@@ -4,7 +4,7 @@ import { config } from "../config/index.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResponse } from "../types/tool.ts";
 import { toolOk } from "../utils/tool-response.ts";
-import { getSessionId } from "../services/session/session-context.ts";
+import { getSessionId } from "../services/agent/session-context.ts";
 
 const MAX_OUTPUT = 20_000;
 

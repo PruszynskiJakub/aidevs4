@@ -1,20 +1,48 @@
 import { AsyncLocalStorage } from "async_hooks";
+import type { AgentState } from "../../types/agent-state.ts";
+import type { Logger } from "../../types/logger.ts"; // used by RunContext
 
-interface SessionStore {
-  sessionId: string;
+interface RunContext {
+  state: AgentState;
+  log: Logger;
 }
 
-const asyncLocalStorage = new AsyncLocalStorage<SessionStore>();
+const asyncLocalStorage = new AsyncLocalStorage<RunContext>();
 
-export function runWithSession<T>(
-  sessionId: string,
+// ── Primary API ───────────────────────────────────────────────
+
+export function runWithContext<T>(
+  state: AgentState,
+  log: Logger,
   fn: () => Promise<T>,
 ): Promise<T> {
-  return asyncLocalStorage.run({ sessionId }, fn);
+  return asyncLocalStorage.run({ state, log }, fn);
 }
 
+export function getState(): AgentState | undefined {
+  return asyncLocalStorage.getStore()?.state;
+}
+
+export function requireState(): AgentState {
+  const state = getState();
+  if (!state) throw new Error("No active agent state context");
+  return state;
+}
+
+export function getLogger(): Logger | undefined {
+  return asyncLocalStorage.getStore()?.log;
+}
+
+export function requireLogger(): Logger {
+  const log = getLogger();
+  if (!log) throw new Error("No active logger context");
+  return log;
+}
+
+// ── Convenience sessionId accessors ───────────────────────────
+
 export function getSessionId(): string | undefined {
-  return asyncLocalStorage.getStore()?.sessionId;
+  return asyncLocalStorage.getStore()?.state.sessionId;
 }
 
 export function requireSessionId(): string {

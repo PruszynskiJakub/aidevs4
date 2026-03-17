@@ -4,7 +4,24 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { inferFileType, outputPath, getEffectiveSessionId } from "./output.ts";
 import { _testWritePaths } from "../services/common/file.ts";
-import { runWithSession } from "../services/session/session-context.ts";
+import { runWithContext } from "../services/agent/session-context.ts";
+import type { AgentState } from "../types/agent-state.ts";
+import type { Logger } from "../types/logger.ts";
+
+const noopLog = new Proxy({} as Logger, { get: () => () => {} });
+
+function makeState(sessionId: string): AgentState {
+  return {
+    sessionId,
+    messages: [],
+    tokens: { plan: { promptTokens: 0, completionTokens: 0 }, act: { promptTokens: 0, completionTokens: 0 } },
+    iteration: 0,
+  };
+}
+
+function withSession<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
+  return runWithContext(makeState(sessionId), noopLog, fn);
+}
 
 // --------------- inferFileType ---------------
 
@@ -133,7 +150,7 @@ describe("outputPath", () => {
   });
 
   it("uses explicit sessionId inside runWithSession", async () => {
-    await runWithSession("test-session", async () => {
+    await withSession("test-session", async () => {
       const result = await outputPath("file.json");
       expect(result).toContain("/test-session/document/");
     });
@@ -155,10 +172,10 @@ describe("outputPath", () => {
     const paths: Record<string, string> = {};
 
     await Promise.all([
-      runWithSession("sess-A", async () => {
+      withSession("sess-A", async () => {
         paths.a = await outputPath("a.txt");
       }),
-      runWithSession("sess-B", async () => {
+      withSession("sess-B", async () => {
         paths.b = await outputPath("b.txt");
       }),
     ]);

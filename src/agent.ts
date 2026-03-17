@@ -1,7 +1,7 @@
 import type { LLMProvider, LLMMessage, LLMChatResponse, LLMTool, LLMToolCall } from "./types/llm.ts";
-import type { Logger } from "./types/logger.ts";
 import type { ToolFilter } from "./types/assistant.ts";
 import type { PromptResult } from "./services/ai/prompt.ts";
+import type { AgentState } from "./types/agent-state.ts";
 import { llm as defaultLLM } from "./services/ai/llm.ts";
 import { config } from "./config/index.ts";
 import { getTools, dispatch } from "./tools/index.ts";
@@ -10,9 +10,9 @@ import { elapsed } from "./services/common/logging/logger.ts";
 import { MarkdownLogger } from "./services/common/logging/markdown-logger.ts";
 import { ConsoleLogger } from "./services/common/logging/console-logger.ts";
 import { CompositeLogger } from "./services/common/logging/composite-logger.ts";
-import { assistants } from "./services/session/assistant/assistants.ts";
+import { assistants } from "./services/agent/assistant/assistants.ts";
 import { isToolResponse } from "./utils/tool-response.ts";
-import { runWithSession } from "./services/session/session-context.ts";
+import { runWithContext, requireState, requireLogger } from "./services/agent/session-context.ts";
 
 function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
   try {
@@ -27,7 +27,7 @@ function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
 function createLogger(
   userPrompt: string | unknown,
   sessionId?: string,
-): { log: Logger; md: MarkdownLogger } {
+): { log: CompositeLogger; md: MarkdownLogger } {
   const md = new MarkdownLogger({ sessionId });
   md.init(typeof userPrompt === "string" ? userPrompt : "(structured)");
   const log = new CompositeLogger([new ConsoleLogger(), md]);
@@ -47,14 +47,14 @@ async function resolveActModel(modelOverride?: string): Promise<string> {
 }
 
 async function executePlanPhase(
-  messages: LLMMessage[],
   planPrompt: PromptResult,
   provider: LLMProvider,
-  log: Logger,
 ): Promise<string> {
+  const state = requireState();
+  const log = requireLogger();
   const planMessages: LLMMessage[] = [
     { role: "system", content: planPrompt.content },
-    ...messages.filter((m) => m.role !== "system"),
+    ...state.messages.filter((m) => m.role !== "system"),
   ];
 
   const planStart = performance.now();
@@ -68,6 +68,9 @@ async function executePlanPhase(
   const planTime = elapsed(planStart);
   const planText = planResponse.content ?? "";
 
+  state.tokens.plan.promptTokens += planResponse.usage?.promptTokens ?? 0;
+  state.tokens.plan.completionTokens += planResponse.usage?.completionTokens ?? 0;
+
   log.plan(
     planText,
     planPrompt.model!,
@@ -80,15 +83,15 @@ async function executePlanPhase(
 }
 
 async function executeActPhase(
-  messages: LLMMessage[],
   planText: string,
   actModel: string,
   tools: LLMTool[],
   provider: LLMProvider,
-  log: Logger,
 ): Promise<LLMChatResponse> {
+  const state = requireState();
+  const log = requireLogger();
   const actMessages: LLMMessage[] = [
-    ...messages,
+    ...state.messages,
     { role: "assistant", content: `## Current Plan\n\n${planText}` },
   ];
 
@@ -100,13 +103,16 @@ async function executeActPhase(
   });
   const actTime = elapsed(actStart);
 
+  state.tokens.act.promptTokens += response.usage?.promptTokens ?? 0;
+  state.tokens.act.completionTokens += response.usage?.completionTokens ?? 0;
+
   log.llm(
     actTime,
     response.usage?.promptTokens,
     response.usage?.completionTokens,
   );
 
-  messages.push({
+  state.messages.push({
     role: "assistant",
     content: response.content,
     ...(response.toolCalls.length && { toolCalls: response.toolCalls }),
@@ -117,10 +123,10 @@ async function executeActPhase(
 
 async function dispatchTools(
   functionCalls: LLMToolCall[],
-  messages: LLMMessage[],
   toolFilter: ToolFilter | undefined,
-  log: Logger,
 ): Promise<void> {
+  const state = requireState();
+  const log = requireLogger();
   log.toolHeader(functionCalls.length);
   for (const tc of functionCalls) {
     log.toolCall(tc.function.name, tc.function.arguments);
@@ -145,7 +151,7 @@ async function dispatchTools(
       const parsed = parseToolResponse(result);
       const llmContent = JSON.stringify(parsed.data);
       log.toolOk(tc.function.name, elapsed, llmContent, parsed.hints);
-      messages.push({
+      state.messages.push({
         role: "tool",
         toolCallId: tc.id,
         content: llmContent,
@@ -154,7 +160,7 @@ async function dispatchTools(
       const errorMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
       const errorResult = JSON.stringify({ error: errorMsg });
       log.toolErr(tc.function.name, errorMsg);
-      messages.push({
+      state.messages.push({
         role: "tool",
         toolCallId: tc.id,
         content: errorResult,
@@ -175,7 +181,17 @@ export async function runAgent(
   const userPrompt = messages.find((m) => m.role === "user")?.content ?? "";
   const { log, md } = createLogger(userPrompt, options?.sessionId);
 
-  return runWithSession(md.sessionId, async () => {
+  const state: AgentState = {
+    sessionId: md.sessionId,
+    messages,
+    tokens: {
+      plan: { promptTokens: 0, completionTokens: 0 },
+      act: { promptTokens: 0, completionTokens: 0 },
+    },
+    iteration: 0,
+  };
+
+  return runWithContext(state, log, async () => {
     const [tools, planPrompt] = await Promise.all([
       getTools(options?.toolFilter),
       promptService.load("plan"),
@@ -183,10 +199,11 @@ export async function runAgent(
     const actModel = await resolveActModel(options?.model);
 
     for (let i = 0; i < config.limits.maxIterations; i++) {
-      log.step(i + 1, config.limits.maxIterations, actModel, messages.length);
+      state.iteration = i;
+      log.step(i + 1, config.limits.maxIterations, actModel, state.messages.length);
 
-      const planText = await executePlanPhase(messages, planPrompt, provider, log);
-      const response = await executeActPhase(messages, planText, actModel, tools, provider, log);
+      const planText = await executePlanPhase(planPrompt, provider);
+      const response = await executeActPhase(planText, actModel, tools, provider);
 
       if (response.finishReason === "stop" || !response.toolCalls.length) {
         log.answer(response.content);
@@ -195,7 +212,7 @@ export async function runAgent(
       }
 
       const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
-      await dispatchTools(functionCalls, messages, options?.toolFilter, log);
+      await dispatchTools(functionCalls, options?.toolFilter);
     }
 
     log.maxIter(config.limits.maxIterations);
