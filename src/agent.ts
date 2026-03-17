@@ -1,5 +1,7 @@
-import type { LLMProvider, LLMMessage } from "./types/llm.ts";
+import type { LLMProvider, LLMMessage, LLMChatResponse, LLMTool, LLMToolCall } from "./types/llm.ts";
+import type { Logger } from "./types/logger.ts";
 import type { ToolFilter } from "./types/assistant.ts";
+import type { PromptResult } from "./services/prompt.ts";
 import { llm as defaultLLM } from "./services/llm.ts";
 import { config } from "./config/index.ts";
 import { getTools, dispatch } from "./tools/index.ts";
@@ -22,93 +24,169 @@ function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
   return { data: raw };
 }
 
+function createLogger(
+  userPrompt: string | unknown,
+  sessionId?: string,
+): { log: Logger; md: MarkdownLogger } {
+  const md = new MarkdownLogger({ sessionId });
+  md.init(typeof userPrompt === "string" ? userPrompt : "(structured)");
+  const log = new CompositeLogger([new ConsoleLogger(), md]);
+  log.info(`Session: ${md.sessionId}`);
+  log.info(`Log: ${md.filePath}`);
+  return { log, md };
+}
+
+async function resolveActModel(modelOverride?: string): Promise<string> {
+  if (modelOverride) return modelOverride;
+  const assistant = await assistants.get("default");
+  const act = await promptService.load("act", {
+    objective: assistant.objective,
+    tone: assistant.tone,
+  });
+  return act.model!;
+}
+
+async function executePlanPhase(
+  messages: LLMMessage[],
+  planPrompt: PromptResult,
+  provider: LLMProvider,
+  log: Logger,
+): Promise<string> {
+  const planMessages: LLMMessage[] = [
+    { role: "system", content: planPrompt.content },
+    ...messages.filter((m) => m.role !== "system"),
+  ];
+
+  const planStart = performance.now();
+  const planResponse = await provider.chatCompletion({
+    model: planPrompt.model!,
+    messages: planMessages,
+    ...(planPrompt.temperature !== undefined && {
+      temperature: planPrompt.temperature,
+    }),
+  });
+  const planTime = elapsed(planStart);
+  const planText = planResponse.content ?? "";
+
+  log.plan(
+    planText,
+    planPrompt.model!,
+    planTime,
+    planResponse.usage?.promptTokens,
+    planResponse.usage?.completionTokens,
+  );
+
+  return planText;
+}
+
+async function executeActPhase(
+  messages: LLMMessage[],
+  planText: string,
+  actModel: string,
+  tools: LLMTool[],
+  provider: LLMProvider,
+  log: Logger,
+): Promise<LLMChatResponse> {
+  const actMessages: LLMMessage[] = [
+    ...messages,
+    { role: "assistant", content: `## Current Plan\n\n${planText}` },
+  ];
+
+  const actStart = performance.now();
+  const response = await provider.chatCompletion({
+    model: actModel,
+    messages: actMessages,
+    tools,
+  });
+  const actTime = elapsed(actStart);
+
+  log.llm(
+    actTime,
+    response.usage?.promptTokens,
+    response.usage?.completionTokens,
+  );
+
+  messages.push({
+    role: "assistant",
+    content: response.content,
+    ...(response.toolCalls.length && { toolCalls: response.toolCalls }),
+  });
+
+  return response;
+}
+
+async function dispatchTools(
+  functionCalls: LLMToolCall[],
+  messages: LLMMessage[],
+  toolFilter: ToolFilter | undefined,
+  log: Logger,
+): Promise<void> {
+  log.toolHeader(functionCalls.length);
+  for (const tc of functionCalls) {
+    log.toolCall(tc.function.name, tc.function.arguments);
+  }
+
+  const batchStart = performance.now();
+
+  const settled = await Promise.allSettled(
+    functionCalls.map(async (tc) => {
+      const start = performance.now();
+      const result = await dispatch(tc.function.name, tc.function.arguments, toolFilter);
+      return { result, elapsed: elapsed(start) };
+    })
+  );
+
+  for (let j = 0; j < functionCalls.length; j++) {
+    const tc = functionCalls[j];
+    const outcome = settled[j];
+
+    if (outcome.status === "fulfilled") {
+      const { result, elapsed } = outcome.value;
+      const parsed = parseToolResponse(result);
+      const llmContent = JSON.stringify(parsed.data);
+      log.toolOk(tc.function.name, elapsed, llmContent, parsed.hints);
+      messages.push({
+        role: "tool",
+        toolCallId: tc.id,
+        content: llmContent,
+      });
+    } else {
+      const errorMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
+      const errorResult = JSON.stringify({ error: errorMsg });
+      log.toolErr(tc.function.name, errorMsg);
+      messages.push({
+        role: "tool",
+        toolCallId: tc.id,
+        content: errorResult,
+      });
+    }
+  }
+
+  if (functionCalls.length > 1) {
+    log.batchDone(functionCalls.length, elapsed(batchStart));
+  }
+}
+
 export async function runAgent(
   messages: LLMMessage[],
   provider: LLMProvider = defaultLLM,
   options?: { model?: string; sessionId?: string; toolFilter?: ToolFilter },
 ): Promise<string> {
   const userPrompt = messages.find((m) => m.role === "user")?.content ?? "";
-  const md = new MarkdownLogger({ sessionId: options?.sessionId });
-  md.init(typeof userPrompt === "string" ? userPrompt : "(structured)");
-  const log = new CompositeLogger([new ConsoleLogger(), md]);
-
-  log.info(`Session: ${md.sessionId}`);
-  log.info(`Log: ${md.filePath}`);
+  const { log, md } = createLogger(userPrompt, options?.sessionId);
 
   return runWithSession(md.sessionId, async () => {
-    const toolFilter = options?.toolFilter;
     const [tools, planPrompt] = await Promise.all([
-      getTools(toolFilter),
+      getTools(options?.toolFilter),
       promptService.load("plan"),
     ]);
-    const planModel = planPrompt.model!;
-
-    // Resolve act model
-    let actModel: string;
-    if (options?.model) {
-      actModel = options.model;
-    } else {
-      const assistant = await assistants.get("default");
-      const act = await promptService.load("act", {
-        objective: assistant.objective,
-        tone: assistant.tone,
-      });
-      actModel = act.model!;
-    }
+    const actModel = await resolveActModel(options?.model);
 
     for (let i = 0; i < config.limits.maxIterations; i++) {
       log.step(i + 1, config.limits.maxIterations, actModel, messages.length);
 
-      // --- PLAN PHASE ---
-      const planMessages: LLMMessage[] = [
-        { role: "system", content: planPrompt.content },
-        ...messages.filter((m) => m.role !== "system"),
-      ];
-
-      const planStart = performance.now();
-      const planResponse = await provider.chatCompletion({
-        model: planModel,
-        messages: planMessages,
-        ...(planPrompt.temperature !== undefined && {
-          temperature: planPrompt.temperature,
-        }),
-      });
-      const planTime = elapsed(planStart);
-      const planText = planResponse.content ?? "";
-
-      log.plan(
-        planText,
-        planModel,
-        planTime,
-        planResponse.usage?.promptTokens,
-        planResponse.usage?.completionTokens,
-      );
-
-      // --- ACT PHASE ---
-      const actMessages: LLMMessage[] = [
-        ...messages,
-        { role: "assistant", content: `## Current Plan\n\n${planText}` },
-      ];
-
-      const actStart = performance.now();
-      const response = await provider.chatCompletion({
-        model: actModel,
-        messages: actMessages,
-        tools,
-      });
-      const actTime = elapsed(actStart);
-
-      log.llm(
-        actTime,
-        response.usage?.promptTokens,
-        response.usage?.completionTokens,
-      );
-
-      messages.push({
-        role: "assistant",
-        content: response.content,
-        ...(response.toolCalls.length && { toolCalls: response.toolCalls }),
-      });
+      const planText = await executePlanPhase(messages, planPrompt, provider, log);
+      const response = await executeActPhase(messages, planText, actModel, tools, provider, log);
 
       if (response.finishReason === "stop" || !response.toolCalls.length) {
         log.answer(response.content);
@@ -117,51 +195,7 @@ export async function runAgent(
       }
 
       const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
-
-      log.toolHeader(functionCalls.length);
-      for (const tc of functionCalls) {
-        log.toolCall(tc.function.name, tc.function.arguments);
-      }
-
-      const batchStart = performance.now();
-
-      const settled = await Promise.allSettled(
-        functionCalls.map(async (tc) => {
-          const start = performance.now();
-          const result = await dispatch(tc.function.name, tc.function.arguments, toolFilter);
-          return { result, elapsed: elapsed(start) };
-        })
-      );
-
-      for (let j = 0; j < functionCalls.length; j++) {
-        const tc = functionCalls[j];
-        const outcome = settled[j];
-
-        if (outcome.status === "fulfilled") {
-          const { result, elapsed } = outcome.value;
-          const parsed = parseToolResponse(result);
-          const llmContent = JSON.stringify(parsed.data);
-          log.toolOk(tc.function.name, elapsed, llmContent, parsed.hints);
-          messages.push({
-            role: "tool",
-            toolCallId: tc.id,
-            content: llmContent,
-          });
-        } else {
-          const errorMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
-          const errorResult = JSON.stringify({ error: errorMsg });
-          log.toolErr(tc.function.name, errorMsg);
-          messages.push({
-            role: "tool",
-            toolCallId: tc.id,
-            content: errorResult,
-          });
-        }
-      }
-
-      if (functionCalls.length > 1) {
-        log.batchDone(functionCalls.length, elapsed(batchStart));
-      }
+      await dispatchTools(functionCalls, messages, options?.toolFilter, log);
     }
 
     log.maxIter(config.limits.maxIterations);
