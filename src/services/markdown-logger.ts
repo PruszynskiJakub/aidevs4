@@ -1,25 +1,20 @@
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { FileProvider } from "../types/file.ts";
+import type { Logger } from "../types/logger.ts";
 import { createBunFileService } from "./file.ts";
 import { config } from "../config/index.ts";
 
 const SAFE_ID = /^[a-zA-Z0-9_\-]+$/;
+const MAX_INLINE_SIZE = 10_240;
 
-function dateFolder(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function timeStamp(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
-}
-
-function formatDate(): string {
-  return new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, "");
+function utcTimestamp(): { folder: string; stamp: string; display: string } {
+  const iso = new Date().toISOString();
+  return {
+    folder: iso.slice(0, 10),                           // 2026-03-17
+    stamp: iso.slice(11, 19).replace(/:/g, "-"),         // 14-30-05
+    display: iso.replace("T", " ").slice(0, 19),         // 2026-03-17 14:30:05
+  };
 }
 
 /** Generate a UUID v4 string for anonymous sessions */
@@ -36,11 +31,17 @@ export function formatJson(raw: string): string {
   }
 }
 
-export class MarkdownLogger {
+function tokenSuffix(tokensIn?: number, tokensOut?: number): string {
+  return tokensIn != null ? ` | ${tokensIn} → ${tokensOut} tokens` : "";
+}
+
+export class MarkdownLogger implements Logger {
   readonly filePath: string;
   readonly sessionId: string;
+  readonly sessionDir: string;
   private chain: Promise<void> = Promise.resolve();
   private fs: FileProvider;
+  private _exitHandler: () => void;
 
   constructor(options?: { logsDir?: string; sessionId?: string; fs?: FileProvider }) {
     const logsDir = options?.logsDir ?? config.paths.logsDir;
@@ -52,14 +53,24 @@ export class MarkdownLogger {
 
     this.fs = options?.fs ?? createBunFileService([], [logsDir]);
     this.sessionId = sid;
-    const dir = join(logsDir, dateFolder(), sid);
-    this.filePath = join(dir, `log_${timeStamp()}.md`);
+    const ts = utcTimestamp();
+    const dir = join(logsDir, ts.folder, sid);
+    this.sessionDir = dir;
+    this.filePath = join(dir, `log_${ts.stamp}.md`);
     // Kick off directory creation — subsequent appends chain after it
     this.chain = this.fs.mkdir(dir);
+    this._exitHandler = () => { this.flush(); };
+    process.on("beforeExit", this._exitHandler);
+  }
+
+  dispose(): void {
+    process.removeListener("beforeExit", this._exitHandler);
   }
 
   private append(text: string): void {
-    this.chain = this.chain.then(() => this.fs.append(this.filePath, text));
+    this.chain = this.chain.then(() =>
+      this.fs.append(this.filePath, text).catch(() => {/* logging must not throw */}),
+    );
   }
 
   /** Wait for all pending writes to complete */
@@ -68,8 +79,9 @@ export class MarkdownLogger {
   }
 
   init(prompt: string): void {
+    const ts = utcTimestamp();
     this.append(
-      `# Agent Log — ${formatDate()}\n\n` +
+      `# Agent Log — ${ts.display}\n\n` +
       `## User Prompt\n\n${prompt}\n\n---\n\n`,
     );
   }
@@ -83,15 +95,13 @@ export class MarkdownLogger {
   }
 
   llm(elapsed: string, tokensIn?: number, tokensOut?: number): void {
-    const tokenStr = tokensIn != null ? ` | ${tokensIn} → ${tokensOut} tokens` : "";
-    this.append(`**LLM responded** in ${elapsed}${tokenStr}\n\n`);
+    this.append(`**LLM responded** in ${elapsed}${tokenSuffix(tokensIn, tokensOut)}\n\n`);
   }
 
   plan(planText: string, model: string, elapsed: string, tokensIn?: number, tokensOut?: number): void {
-    const tokenStr = tokensIn != null ? ` | ${tokensIn} → ${tokensOut} tokens` : "";
     this.append(
       `### Plan\n\n` +
-      `*Model: ${model} · ${elapsed}${tokenStr}*\n\n` +
+      `*Model: ${model} · ${elapsed}${tokenSuffix(tokensIn, tokensOut)}*\n\n` +
       `${planText}\n\n`,
     );
   }
@@ -109,9 +119,23 @@ export class MarkdownLogger {
   }
 
   toolOk(name: string, elapsed: string, rawResult: string, hints?: string[]): void {
-    let text =
-      `**Result** (${elapsed}) — OK\n\n` +
-      `\`\`\`json\n${formatJson(rawResult)}\n\`\`\`\n\n`;
+    let text: string;
+    if (rawResult.length > MAX_INLINE_SIZE) {
+      const ts = utcTimestamp();
+      const rand = Math.random().toString(36).slice(2, 6);
+      const sidecarName = `${name}_${ts.stamp}_${rand}.json`;
+      const sidecarPath = join(this.sessionDir, sidecarName);
+      this.chain = this.chain.then(() =>
+        this.fs.write(sidecarPath, formatJson(rawResult)).catch(() => {}),
+      );
+      text =
+        `**Result** (${elapsed}) — OK\n\n` +
+        `> Output too large (${rawResult.length} bytes). See [full output](${sidecarName})\n\n`;
+    } else {
+      text =
+        `**Result** (${elapsed}) — OK\n\n` +
+        `\`\`\`json\n${formatJson(rawResult)}\n\`\`\`\n\n`;
+    }
     if (hints?.length) {
       text += `> **Hints:**\n`;
       for (const hint of hints) {
@@ -143,5 +167,21 @@ export class MarkdownLogger {
     this.append(
       `---\n\n## STOPPED — reached ${max} iterations\n`,
     );
+  }
+
+  info(message: string): void {
+    this.append(`**ℹ Info:** ${message}\n\n`);
+  }
+
+  success(message: string): void {
+    this.append(`**✓ Success:** ${message}\n\n`);
+  }
+
+  error(message: string): void {
+    this.append(`**✗ Error:** ${message}\n\n`);
+  }
+
+  debug(message: string): void {
+    this.append(`*Debug: ${message}*\n\n`);
   }
 }

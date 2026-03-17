@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { mkdtemp, rm, readFile, readdir } from "node:fs/promises";
 import { join, basename, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -176,6 +176,94 @@ describe("MarkdownLogger", () => {
   it("exposes sessionId on the instance", () => {
     const md = makeLogger(dir, "mySession");
     expect(md.sessionId).toBe("mySession");
+  });
+
+  it("logs info messages", async () => {
+    const md = makeLogger(dir, "info-test");
+    md.info("informational");
+    await md.flush();
+    const content = await readFile(md.filePath, "utf-8");
+    expect(content).toContain("informational");
+  });
+
+  it("logs success messages", async () => {
+    const md = makeLogger(dir, "success-test");
+    md.success("completed");
+    await md.flush();
+    const content = await readFile(md.filePath, "utf-8");
+    expect(content).toContain("completed");
+  });
+
+  it("logs error messages", async () => {
+    const md = makeLogger(dir, "error-test");
+    md.error("something failed");
+    await md.flush();
+    const content = await readFile(md.filePath, "utf-8");
+    expect(content).toContain("something failed");
+  });
+
+  it("logs debug messages", async () => {
+    const md = makeLogger(dir, "debug-test");
+    md.debug("debug details");
+    await md.flush();
+    const content = await readFile(md.filePath, "utf-8");
+    expect(content).toContain("debug details");
+  });
+
+  it("uses UTC consistently for folder and header", async () => {
+    const md = makeLogger(dir, "utc-test");
+    md.init("utc test");
+    await md.flush();
+    const rel = md.filePath.slice(dir.length + 1);
+    const dateFolder = rel.split("/")[0];
+    expect(dateFolder).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const content = await readFile(md.filePath, "utf-8");
+    expect(content).toMatch(/# Agent Log — \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+  });
+
+  it("registers beforeExit handler for auto-flush", () => {
+    const spy = spyOn(process, "on");
+    const md = makeLogger(dir, "exit-test");
+    const beforeExitCalls = spy.mock.calls.filter(
+      ([event]) => event === "beforeExit"
+    );
+    expect(beforeExitCalls).toHaveLength(1);
+    spy.mockRestore();
+    md.dispose();
+  });
+
+  it("dispose removes beforeExit handler", () => {
+    const md = makeLogger(dir, "dispose-test");
+    const spy = spyOn(process, "removeListener");
+    md.dispose();
+    const removeCalls = spy.mock.calls.filter(
+      ([event]) => event === "beforeExit"
+    );
+    expect(removeCalls).toHaveLength(1);
+    spy.mockRestore();
+  });
+
+  it("writes sidecar file for large tool results", async () => {
+    const md = makeLogger(dir, "sidecar-test");
+    const largePayload = JSON.stringify({ data: "x".repeat(20_000) });
+    md.toolOk("big_tool", "2.00s", largePayload);
+    await md.flush();
+    const content = await readFile(md.filePath, "utf-8");
+    expect(content).not.toContain("x".repeat(20_000));
+    expect(content).toMatch(/\[full output\]/);
+    const sessionDir = dirname(md.filePath);
+    const files = await readdir(sessionDir);
+    const sidecar = files.find(f => f.startsWith("big_tool_") && f.endsWith(".json"));
+    expect(sidecar).toBeDefined();
+  });
+
+  it("inlines small tool results as before", async () => {
+    const md = makeLogger(dir, "inline-test");
+    md.toolOk("small_tool", "0.50s", '{"result":"ok"}');
+    await md.flush();
+    const content = await readFile(md.filePath, "utf-8");
+    expect(content).toContain('"result": "ok"');
+    expect(content).not.toContain("[full output]");
   });
 });
 
