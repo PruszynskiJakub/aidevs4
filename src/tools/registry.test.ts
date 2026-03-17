@@ -180,6 +180,182 @@ describe("registry", () => {
     });
   });
 
+  describe("getTools with ToolFilter", () => {
+    function registerEchoAndMulti() {
+      const echo: ToolDefinition = {
+        name: "echo",
+        handler: async (args: { text: string }) => args.text,
+      };
+      const echoSchema = {
+        name: "echo",
+        description: "Echoes text back",
+        parameters: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+          additionalProperties: false,
+        },
+      };
+
+      const multi: ToolDefinition = {
+        name: "multi",
+        handler: async ({ action, payload }: { action: string; payload: unknown }) => ({ action, payload }),
+      };
+      const multiSchema = {
+        name: "multi",
+        description: "Multi-action tool",
+        actions: {
+          create: {
+            description: "Create a thing",
+            parameters: {
+              type: "object",
+              properties: { name: { type: "string" } },
+              required: ["name"],
+              additionalProperties: false,
+            },
+          },
+          delete: {
+            description: "Delete a thing",
+            parameters: {
+              type: "object",
+              properties: { id: { type: "string" } },
+              required: ["id"],
+              additionalProperties: false,
+            },
+          },
+        },
+      };
+
+      register(echo, echoSchema);
+      register(multi, multiSchema);
+    }
+
+    it("include filter returns only matching simple tools", async () => {
+      registerEchoAndMulti();
+      const tools = await getTools({ include: ["echo"] });
+      expect(tools).toHaveLength(1);
+      expect(tools[0].function.name).toBe("echo");
+    });
+
+    it("include filter returns multi-action expanded tools by base name", async () => {
+      registerEchoAndMulti();
+      const tools = await getTools({ include: ["multi"] });
+      expect(tools).toHaveLength(2);
+      const names = tools.map((t) => t.function.name);
+      expect(names).toContain("multi__create");
+      expect(names).toContain("multi__delete");
+    });
+
+    it("exclude filter removes matching tools", async () => {
+      registerEchoAndMulti();
+      const tools = await getTools({ exclude: ["echo"] });
+      expect(tools).toHaveLength(2);
+      const names = tools.map((t) => t.function.name);
+      expect(names).toContain("multi__create");
+      expect(names).toContain("multi__delete");
+    });
+
+    it("no filter returns all tools (backward compat)", async () => {
+      registerEchoAndMulti();
+      const tools = await getTools();
+      expect(tools).toHaveLength(3);
+    });
+  });
+
+  describe("dispatch with ToolFilter", () => {
+    it("rejects tool not in include list", async () => {
+      const tool: ToolDefinition = {
+        name: "echo",
+        handler: async (args: { text: string }) => args.text,
+      };
+      const schema = {
+        name: "echo",
+        description: "Echoes text back",
+        parameters: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+          additionalProperties: false,
+        },
+      };
+
+      register(tool, schema);
+      const result = JSON.parse(await dispatch("echo", '{"text":"hi"}', { include: ["other"] }));
+      expect(result.status).toBe("error");
+      expect(result.data.error).toContain("Tool not allowed");
+    });
+
+    it("allows tool in include list", async () => {
+      const tool: ToolDefinition = {
+        name: "echo",
+        handler: async (args: { text: string }) => args.text,
+      };
+      const schema = {
+        name: "echo",
+        description: "Echoes text back",
+        parameters: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+          additionalProperties: false,
+        },
+      };
+
+      register(tool, schema);
+      const result = JSON.parse(await dispatch("echo", '{"text":"hi"}', { include: ["echo"] }));
+      expect(result.status).toBe("ok");
+      expect(result.data).toBe("hi");
+    });
+
+    it("rejects multi-action tool not in include list", async () => {
+      const tool: ToolDefinition = {
+        name: "ma",
+        handler: async (args: { action: string; payload: unknown }) => "done",
+      };
+      const schema = {
+        name: "ma",
+        description: "Multi",
+        actions: {
+          run: {
+            description: "Run it",
+            parameters: {
+              type: "object",
+              properties: { x: { type: "number" } },
+              required: ["x"],
+              additionalProperties: false,
+            },
+          },
+        },
+      };
+
+      register(tool, schema);
+      const result = JSON.parse(await dispatch("ma__run", '{"x":1}', { include: ["other"] }));
+      expect(result.status).toBe("error");
+      expect(result.data.error).toContain("Tool not allowed");
+    });
+
+    it("dispatch without filter works (backward compat)", async () => {
+      const tool: ToolDefinition = {
+        name: "echo",
+        handler: async (args: { text: string }) => args.text,
+      };
+      const schema = {
+        name: "echo",
+        description: "Echoes text back",
+        parameters: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+          additionalProperties: false,
+        },
+      };
+
+      register(tool, schema);
+      const result = JSON.parse(await dispatch("echo", '{"text":"hi"}'));
+      expect(result.status).toBe("ok");
+    });
+  });
+
   describe("reset", () => {
     it("clears all registered tools", async () => {
       const tool: ToolDefinition = {
