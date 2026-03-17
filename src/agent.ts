@@ -1,7 +1,7 @@
 import type { LLMProvider, LLMMessage } from "./types/llm.ts";
 import { llm as defaultLLM } from "./services/llm.ts";
 import { MAX_ITERATIONS } from "./config.ts";
-import { getTools, dispatch } from "./tools/dispatcher.ts";
+import { getTools, dispatch } from "./tools/index.ts";
 import { promptService } from "./services/prompt.ts";
 import { createLogger, duration } from "./services/logger.ts";
 import { MarkdownLogger } from "./services/markdown-logger.ts";

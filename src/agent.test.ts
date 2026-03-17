@@ -15,7 +15,7 @@ mock.module("./services/prompt.ts", () => ({
 
 // Stub dispatcher — we control dispatch results per test
 let dispatchResults: Record<string, () => Promise<string>> = {};
-mock.module("./tools/dispatcher.ts", () => ({
+mock.module("./tools/index.ts", () => ({
   getTools: async () => [],
   dispatch: async (name: string, _argsJson: string) => {
     const fn = dispatchResults[name];
