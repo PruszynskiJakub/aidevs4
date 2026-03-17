@@ -36,7 +36,7 @@ gives short answers, infer reasonable defaults and confirm them.
 ### 4. Draft the spec
 
 Once aligned, generate the spec using the template at
-`.claude/skills/spec:draft/template.md`. Fill in every section:
+`.claude/skills/spec:draft/assets/template.md`. Fill in every section:
 
 - **SP number**: determine next number by scanning existing `_specs/SP-*.md`
   files. If none exist, start at SP-01.
