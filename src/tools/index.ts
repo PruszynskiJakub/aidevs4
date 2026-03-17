@@ -14,6 +14,8 @@ import shipping from "./shipping.ts";
 import shippingSchema from "../schemas/shipping.json";
 import document_processor from "./document_processor.ts";
 import documentProcessorSchema from "../schemas/document_processor.json";
+import prompt_engineer from "./prompt_engineer.ts";
+import promptEngineerSchema from "../schemas/prompt_engineer.json";
 
 register(think, thinkSchema);
 register(bash, bashSchema);
@@ -22,6 +24,7 @@ register(web, webSchema);
 register(geo_distance, geoDistanceSchema);
 register(shipping, shippingSchema);
 register(document_processor, documentProcessorSchema);
+register(prompt_engineer, promptEngineerSchema);
 
 export { getTools, dispatch, reset };
 export type { ToolFilter } from "../types/assistant.ts";
