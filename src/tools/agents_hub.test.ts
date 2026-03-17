@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import agentsHub from "./agents_hub.ts";
-import { ALLOWED_READ_PATHS, ALLOWED_WRITE_PATHS } from "../config.ts";
+import { config } from "../config/index.ts";
+import { _testReadPaths, _testWritePaths } from "../services/file.ts";
 
 const handler = agentsHub.handler;
 
@@ -12,16 +13,14 @@ const originalFetch = globalThis.fetch;
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "agents-hub-test-"));
-  ALLOWED_READ_PATHS.push(tmp);
-  ALLOWED_WRITE_PATHS.push(tmp);
-  process.env.HUB_API_KEY = "test-key-123";
+  _testReadPaths.push(tmp);
+  _testWritePaths.push(tmp);
 });
 
 afterAll(async () => {
-  ALLOWED_READ_PATHS.splice(ALLOWED_READ_PATHS.indexOf(tmp), 1);
-  ALLOWED_WRITE_PATHS.splice(ALLOWED_WRITE_PATHS.indexOf(tmp), 1);
+  _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
+  _testWritePaths.splice(_testWritePaths.indexOf(tmp), 1);
   await rm(tmp, { recursive: true, force: true });
-  delete process.env.HUB_API_KEY;
   globalThis.fetch = originalFetch;
 });
 
@@ -50,7 +49,7 @@ describe("agents_hub api_request", () => {
 
     expect(capturedUrl).toBe("https://hub.ag3nts.org/api/location");
     expect(capturedBody.query).toBe("test");
-    expect(capturedBody.apikey).toBe("test-key-123");
+    expect(capturedBody.apikey).toBe(config.hub.apiKey);
     expect(result.status).toBe("ok");
     expect(result.data.path).toBe("location");
     expect(result.data.response).toEqual({ message: "ok" });
@@ -78,7 +77,7 @@ describe("agents_hub api_request", () => {
 
     expect(capturedBody.query).toBe("from-file");
     expect(capturedBody.limit).toBe(5);
-    expect(capturedBody.apikey).toBe("test-key-123");
+    expect(capturedBody.apikey).toBe(config.hub.apiKey);
     expect(result.status).toBe("ok");
     expect(result.data.response).toEqual({ data: [1, 2] });
   });
@@ -150,7 +149,7 @@ describe("agents_hub api_request_body", () => {
 
     expect(capturedBody.query).toBe("hello");
     expect(capturedBody.limit).toBe(10);
-    expect(capturedBody.apikey).toBe("test-key-123");
+    expect(capturedBody.apikey).toBe(config.hub.apiKey);
     expect(result.status).toBe("ok");
     expect(result.data.path).toBe("test");
     expect(result.data.response).toEqual({ ok: true });
@@ -187,7 +186,7 @@ describe("agents_hub api_request_file", () => {
     })) as any;
 
     expect(capturedBody.data).toBe("from-file-action");
-    expect(capturedBody.apikey).toBe("test-key-123");
+    expect(capturedBody.apikey).toBe(config.hub.apiKey);
     expect(result.status).toBe("ok");
     expect(result.data.path).toBe("upload");
     expect(result.data.response).toEqual({ result: "ok" });
@@ -238,7 +237,7 @@ describe("agents_hub api_batch", () => {
     expect(capturedBodies[0].birthYear).toBe("1990");
     expect(capturedBodies[0].born).toBeUndefined();
     expect(capturedBodies[0].name).toBe("Alice");
-    expect(capturedBodies[0].apikey).toBe("test-key-123");
+    expect(capturedBodies[0].apikey).toBe(config.hub.apiKey);
 
     // Check output file was written
     const output = JSON.parse(await Bun.file(outputFile).text());
@@ -294,7 +293,7 @@ describe("agents_hub api_batch", () => {
     expect(result.data.count).toBe(2);
     expect(capturedBodies[0].name).toBe("Alice");
     expect(capturedBodies[0].age).toBe("30");
-    expect(capturedBodies[0].apikey).toBe("test-key-123");
+    expect(capturedBodies[0].apikey).toBe(config.hub.apiKey);
   });
 
   it("throws on non-array JSON file", async () => {

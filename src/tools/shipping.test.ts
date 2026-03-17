@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, mock, beforeEach } from "bun:test";
+import { config } from "../config/index.ts";
 import shipping from "./shipping.ts";
 
 const handler = shipping.handler;
@@ -6,11 +7,9 @@ const handler = shipping.handler;
 const originalFetch = globalThis.fetch;
 
 beforeAll(() => {
-  process.env.HUB_API_KEY = "test-key-123";
 });
 
 afterAll(() => {
-  delete process.env.HUB_API_KEY;
   globalThis.fetch = originalFetch;
 });
 
@@ -35,7 +34,7 @@ describe("shipping check", () => {
     const result = (await handler({ action: "check", payload: { packageid: "PKG123" } })) as any;
 
     expect(capturedUrl).toBe("https://hub.ag3nts.org/api/packages");
-    expect(capturedBody.apikey).toBe("test-key-123");
+    expect(capturedBody.apikey).toBe(config.hub.apiKey);
     expect(capturedBody.action).toBe("check");
     expect(capturedBody.packageid).toBe("PKG123");
     expect(result.status).toBe("ok");
@@ -62,7 +61,7 @@ describe("shipping redirect", () => {
       payload: { packageid: "PKG456", destination: "PWR6132PL", code: "SEC001" },
     })) as any;
 
-    expect(capturedBody.apikey).toBe("test-key-123");
+    expect(capturedBody.apikey).toBe(config.hub.apiKey);
     expect(capturedBody.action).toBe("redirect");
     expect(capturedBody.packageid).toBe("PKG456");
     expect(capturedBody.destination).toBe("PWR6132PL");

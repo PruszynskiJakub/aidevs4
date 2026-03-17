@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import geoDistance from "./geo_distance.ts";
 import { haversine } from "./geo_distance.ts";
-import { ALLOWED_READ_PATHS } from "../config.ts";
+import { _testReadPaths } from "../services/file.ts";
 
 const handler = geoDistance.handler;
 
@@ -12,11 +12,11 @@ let tmp: string;
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "geo-distance-test-"));
-  ALLOWED_READ_PATHS.push(tmp);
+  _testReadPaths.push(tmp);
 });
 
 afterAll(async () => {
-  ALLOWED_READ_PATHS.splice(ALLOWED_READ_PATHS.indexOf(tmp), 1);
+  _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
   await rm(tmp, { recursive: true, force: true });
 });
 

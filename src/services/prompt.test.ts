@@ -3,14 +3,14 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { createPromptService } from "./prompt.ts";
-import { ALLOWED_READ_PATHS } from "../config.ts";
+import { _testReadPaths } from "./file.ts";
 
 let tmp: string;
 let service: ReturnType<typeof createPromptService>;
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "prompt-service-test-"));
-  ALLOWED_READ_PATHS.push(tmp);
+  _testReadPaths.push(tmp);
   service = createPromptService(tmp);
 
   await Bun.write(
@@ -45,7 +45,7 @@ Only model in frontmatter.`,
 });
 
 afterAll(async () => {
-  ALLOWED_READ_PATHS.splice(ALLOWED_READ_PATHS.indexOf(tmp), 1);
+  _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
   await rm(tmp, { recursive: true, force: true });
 });
 

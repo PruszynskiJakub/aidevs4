@@ -24,3 +24,4 @@ register(shipping, shippingSchema);
 register(document_processor, documentProcessorSchema);
 
 export { getTools, dispatch, reset };
+export type { ToolFilter } from "../types/assistant.ts";

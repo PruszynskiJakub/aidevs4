@@ -74,7 +74,7 @@ export const config = deepFreeze({
   server: {
     port: Number(process.env.PORT) || 3000,
   },
-  persona: process.env.PERSONA as string | undefined,
+  assistant: (process.env.ASSISTANT ?? process.env.PERSONA) as string | undefined,
 });
 
 export default config;

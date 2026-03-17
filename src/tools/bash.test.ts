@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { resolve } from "path";
-import { OUTPUT_DIR } from "../config.ts";
+import { config } from "../config/index.ts";
 import bash from "./bash.ts";
 
 describe("bash tool", () => {
@@ -24,6 +24,6 @@ describe("bash tool", () => {
 
   it("runs with CWD set to output directory", async () => {
     const result = await bash.handler({ command: "pwd" });
-    expect(result).toBe(resolve(OUTPUT_DIR));
+    expect(result).toBe(resolve(config.paths.outputDir));
   });
 });

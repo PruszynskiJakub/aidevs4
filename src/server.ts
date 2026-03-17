@@ -3,16 +3,18 @@ import { runAgent } from "./agent.ts";
 import { sessionService } from "./services/session.ts";
 import { promptService } from "./services/prompt.ts";
 import { log } from "./services/logger.ts";
-import { getPersona } from "./config/personas.ts";
+import { assistants } from "./services/assistants.ts";
 import { config } from "./config/index.ts";
 import type { LLMMessage } from "./types/llm.ts";
 
-const persona = getPersona(config.persona);
+const assistantName = config.assistant ?? "default";
+const assistant = await assistants.get(assistantName);
 const actPrompt = await promptService.load("act", {
-  objective: persona.objective,
-  tone: persona.tone,
+  objective: assistant.objective,
+  tone: assistant.tone,
 });
-const agentModel = persona.model ?? actPrompt.model!;
+const agentModel = assistant.model ?? actPrompt.model!;
+const toolFilter = assistant.tools;
 
 const app = new Hono();
 
@@ -59,7 +61,11 @@ app.post("/chat", async (c) => {
 
       // Pass a copy so runAgent's pushes don't double-add to session
       const messages: LLMMessage[] = [...session.messages];
-      const result = await runAgent(messages, undefined, { model: agentModel, sessionId });
+      const result = await runAgent(messages, undefined, {
+        model: agentModel,
+        sessionId,
+        toolFilter,
+      });
 
       // Persist the messages that runAgent appended (assistant + tool messages)
       const newMessages = messages.slice(session.messages.length);

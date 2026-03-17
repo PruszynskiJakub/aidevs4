@@ -1,5 +1,6 @@
 import type { LLMTool } from "../types/llm.ts";
 import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolFilter } from "../types/assistant.ts";
 import { safeParse } from "../utils/parse.ts";
 import { toolOk, toolError, isToolResponse } from "../utils/tool-response.ts";
 
@@ -62,8 +63,23 @@ export function register(
   }
 }
 
-export async function getTools(): Promise<LLMTool[]> {
-  return expandedTools;
+/** Extract base tool name (before `__` separator for multi-action tools). */
+function baseName(expandedName: string): string {
+  const idx = expandedName.indexOf(SEPARATOR);
+  return idx === -1 ? expandedName : expandedName.slice(0, idx);
+}
+
+function matchesFilter(name: string, filter?: ToolFilter): boolean {
+  if (!filter) return true;
+  const base = baseName(name);
+  if (filter.include) return filter.include.includes(base);
+  if (filter.exclude) return !filter.exclude.includes(base);
+  return true;
+}
+
+export async function getTools(filter?: ToolFilter): Promise<LLMTool[]> {
+  if (!filter) return expandedTools;
+  return expandedTools.filter((t) => matchesFilter(t.function.name, filter));
 }
 
 function wrapResult(result: unknown): string {
@@ -92,7 +108,11 @@ function buildErrorHints(message: string): string[] {
   return hints;
 }
 
-export async function dispatch(name: string, argsJson: string): Promise<string> {
+export async function dispatch(name: string, argsJson: string, filter?: ToolFilter): Promise<string> {
+  if (!matchesFilter(name, filter)) {
+    return JSON.stringify(toolError(`Tool not allowed: ${name}`));
+  }
+
   let tool = handlers.get(name);
 
   if (tool) {

@@ -1,11 +1,12 @@
 import type { LLMProvider, LLMMessage } from "./types/llm.ts";
+import type { ToolFilter } from "./types/assistant.ts";
 import { llm as defaultLLM } from "./services/llm.ts";
 import { config } from "./config/index.ts";
 import { getTools, dispatch } from "./tools/index.ts";
 import { promptService } from "./services/prompt.ts";
 import { createLogger, duration } from "./services/logger.ts";
 import { MarkdownLogger } from "./services/markdown-logger.ts";
-import { getPersona } from "./config/personas.ts";
+import { assistants } from "./services/assistants.ts";
 
 function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
   try {
@@ -26,7 +27,7 @@ function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
 export async function runAgent(
   messages: LLMMessage[],
   provider: LLMProvider = defaultLLM,
-  options?: { model?: string; sessionId?: string },
+  options?: { model?: string; sessionId?: string; toolFilter?: ToolFilter },
 ): Promise<string> {
   const userPrompt = messages.find((m) => m.role === "user")?.content ?? "";
   const md = new MarkdownLogger({ sessionId: options?.sessionId });
@@ -36,9 +37,10 @@ export async function runAgent(
   log.info(`Session: ${md.sessionId}`);
   log.info(`Log: ${md.filePath}`);
 
-  const tools = await getTools();
+  const toolFilter = options?.toolFilter;
+  const tools = await getTools(toolFilter);
 
-  // Load plan prompt (independent of persona)
+  // Load plan prompt (independent of assistant)
   const planPrompt = await promptService.load("plan");
   const planModel = planPrompt.model!;
 
@@ -47,10 +49,10 @@ export async function runAgent(
   if (options?.model) {
     actModel = options.model;
   } else {
-    const persona = getPersona();
+    const assistant = await assistants.get("default");
     const act = await promptService.load("act", {
-      objective: persona.objective,
-      tone: persona.tone,
+      objective: assistant.objective,
+      tone: assistant.tone,
     });
     actModel = act.model!;
   }
@@ -131,7 +133,7 @@ export async function runAgent(
     const settled = await Promise.allSettled(
       functionCalls.map(async (tc) => {
         const start = performance.now();
-        const result = await dispatch(tc.function.name, tc.function.arguments);
+        const result = await dispatch(tc.function.name, tc.function.arguments, toolFilter);
         return { result, elapsed: duration(start) };
       })
     );
@@ -177,6 +179,7 @@ export async function runAgent(
 if (import.meta.main) {
   const args = process.argv.slice(2);
   let sessionId: string | undefined;
+  let modelOverride: string | undefined;
 
   // Extract --session flag
   const sessionIdx = args.indexOf("--session");
@@ -189,22 +192,46 @@ if (import.meta.main) {
     args.splice(sessionIdx, 2);
   }
 
-  const prompt = args[0];
-  if (!prompt) {
-    console.error('Usage: bun run agent "your prompt" [--session <id>]');
+  // Extract --model flag
+  const modelIdx = args.indexOf("--model");
+  if (modelIdx !== -1) {
+    modelOverride = args[modelIdx + 1];
+    if (!modelOverride) {
+      console.error("--model requires a value");
+      process.exit(1);
+    }
+    args.splice(modelIdx, 2);
+  }
+
+  // Remaining args: [assistant] "prompt" or just "prompt"
+  let assistantName: string;
+  let prompt: string;
+
+  if (args.length >= 2) {
+    assistantName = args[0];
+    prompt = args[1];
+  } else if (args.length === 1) {
+    assistantName = config.assistant ?? "default";
+    prompt = args[0];
+  } else {
+    console.error('Usage: bun run agent [assistant] "your prompt" [--session <id>] [--model <model>]');
     process.exit(1);
   }
 
-  const persona = getPersona(config.persona);
+  const assistant = await assistants.get(assistantName);
   const act = await promptService.load("act", {
-    objective: persona.objective,
-    tone: persona.tone,
+    objective: assistant.objective,
+    tone: assistant.tone,
   });
-  const agentModel = persona.model ?? act.model!;
+  const agentModel = modelOverride ?? assistant.model ?? act.model!;
   const messages: LLMMessage[] = [
     { role: "system", content: act.content },
     { role: "user", content: prompt },
   ];
 
-  void runAgent(messages, undefined, { model: agentModel, sessionId });
+  void runAgent(messages, undefined, {
+    model: agentModel,
+    sessionId,
+    toolFilter: assistant.tools,
+  });
 }

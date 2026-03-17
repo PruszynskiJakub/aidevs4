@@ -3,7 +3,7 @@ import { llm } from "../../src/services/llm.ts";
 import { MAX_ITERATIONS } from "../../src/config.ts";
 import { getTools, dispatch } from "../../src/tools/dispatcher.ts";
 import { promptService } from "../../src/services/prompt.ts";
-import { getPersona } from "../../src/config/personas.ts";
+import { assistants } from "../../src/services/assistants.ts";
 import { AgentEventEmitter } from "./event_emitter.ts";
 import { makeEventId, parsePlanSteps } from "./types.ts";
 import type { AgentEvent } from "./types.ts";
@@ -49,12 +49,12 @@ export async function runEventAgent(
   emit(emitter, { type: "session_start", sessionId, prompt });
 
   try {
-    const persona = getPersona();
+    const assistant = await assistants.get("default");
     const act = await promptService.load("act", {
-      objective: persona.objective,
-      tone: persona.tone,
+      objective: assistant.objective,
+      tone: assistant.tone,
     });
-    const actModel = persona.model ?? act.model!;
+    const actModel = assistant.model ?? act.model!;
 
     const planPrompt = await promptService.load("plan");
     const planModel = planPrompt.model!;

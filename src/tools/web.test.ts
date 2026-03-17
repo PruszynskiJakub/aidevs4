@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import web from "./web.ts";
-import { ALLOWED_WRITE_PATHS } from "../config.ts";
+import { config } from "../config/index.ts";
+import { _testWritePaths } from "../services/file.ts";
 
 const handler = web.handler;
 
@@ -12,14 +13,12 @@ const originalFetch = globalThis.fetch;
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "web-test-"));
-  ALLOWED_WRITE_PATHS.push(tmp);
-  process.env.HUB_API_KEY = "test-key-123";
+  _testWritePaths.push(tmp);
 });
 
 afterAll(async () => {
-  ALLOWED_WRITE_PATHS.splice(ALLOWED_WRITE_PATHS.indexOf(tmp), 1);
+  _testWritePaths.splice(_testWritePaths.indexOf(tmp), 1);
   await rm(tmp, { recursive: true, force: true });
-  delete process.env.HUB_API_KEY;
   globalThis.fetch = originalFetch;
 });
 
@@ -44,7 +43,7 @@ describe("web download", () => {
       },
     })) as any;
 
-    expect(capturedUrl).toBe("https://hub.ag3nts.org/data/test-key-123/people.csv");
+    expect(capturedUrl).toBe(`https://hub.ag3nts.org/data/${config.hub.apiKey}/people.csv`);
     expect(result.status).toBe("ok");
     expect(result.data.filename).toBe("people.csv");
     expect(result.data.path).toContain("people.csv");
