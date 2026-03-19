@@ -3,9 +3,8 @@
 
 ----
 ### Brain dump
-Support multiple providers not only OPEN_AI
 Support tool_search capability
-
+Verify przyjmujący nie tylko pliki bo jest to kłopotliwe w obecnej formie
 
 
 ---

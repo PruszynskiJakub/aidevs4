@@ -46,7 +46,7 @@ export const config = deepFreeze({
   models: {
     agent: "gpt-4.1",
     transform: "gpt-4.1-mini",
-    gemini: "gemini-2.5-flash",
+    gemini: "gemini-3-flash-preview",
   },
   hub: {
     baseUrl: HUB_BASE_URL,
@@ -58,7 +58,7 @@ export const config = deepFreeze({
     geminiApiKey: process.env.GEMINI_API_KEY as string | undefined,
   },
   limits: {
-    maxIterations: 20,
+    maxIterations: 40,
     fetchTimeout: 30_000,
     maxBatchRows: 1000,
     maxFileSize: 10 * 1024 * 1024,

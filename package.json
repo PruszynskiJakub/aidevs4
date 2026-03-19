@@ -11,7 +11,8 @@
     "server": "bun run src/server.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/sharp": "^0.32.0"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -22,6 +23,7 @@
     "gray-matter": "^4.0.3",
     "hono": "^4.12.7",
     "openai": "^6.27.0",
+    "sharp": "^0.34.5",
     "yaml": "^2.8.2"
   }
 }
