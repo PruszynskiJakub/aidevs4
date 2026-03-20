@@ -4,18 +4,15 @@ import { files } from "../services/common/file.ts";
 import { getApiKey } from "../utils/hub.ts";
 import { config } from "../config/index.ts";
 import { parseCsv } from "../utils/csv.ts";
-import { safeParse, validateKeys, assertMaxLength, checkFileSize } from "../utils/parse.ts";
+import { safeParse, validateKeys, assertMaxLength, checkFileSize, resolveInput } from "../utils/parse.ts";
 import { toolOk } from "../utils/tool-response.ts";
 
-async function verify(payload: { task: string; answer_file: string }): Promise<ToolResponse> {
+async function verify(payload: { task: string; answer: string }): Promise<ToolResponse> {
   assertMaxLength(payload.task, "task", 100);
-  assertMaxLength(payload.answer_file, "answer_file", 500);
+  assertMaxLength(payload.answer, "answer", 100_000);
 
   const apiKey = getApiKey();
-
-  await checkFileSize(payload.answer_file, config.limits.maxFileSize);
-  const content = await files.readText(payload.answer_file);
-  const answer = safeParse(content, "answer_file");
+  const answer = await resolveInput(payload.answer, "answer");
 
   const body = { apikey: apiKey, task: payload.task, answer };
 
@@ -41,31 +38,17 @@ async function verify(payload: { task: string; answer_file: string }): Promise<T
 
 async function apiRequest(payload: {
   path: string;
-  body?: Record<string, any>;
-  body_file?: string;
+  body: string;
 }): Promise<ToolResponse> {
   assertMaxLength(payload.path, "path", 200);
+  assertMaxLength(payload.body, "body", 100_000);
 
-  const hasBody = payload.body !== undefined;
-  const hasFile = payload.body_file !== undefined;
-
-  if (hasBody && hasFile) {
-    throw new Error("Provide either body or body_file, not both");
-  }
-  if (!hasBody && !hasFile) {
-    throw new Error("Provide either body or body_file");
+  const resolved = await resolveInput(payload.body, "body");
+  if (typeof resolved !== "object" || resolved === null || Array.isArray(resolved)) {
+    throw new Error("body must resolve to a JSON object");
   }
 
-  let body: Record<string, any>;
-  if (hasFile) {
-    assertMaxLength(payload.body_file!, "body_file", 500);
-    await checkFileSize(payload.body_file!, config.limits.maxFileSize);
-    const content = await files.readText(payload.body_file!);
-    body = safeParse(content, "body_file");
-  } else {
-    body = { ...payload.body };
-  }
-
+  const body = { ...(resolved as Record<string, any>) };
   const apiKey = getApiKey();
   body.apikey = apiKey;
 
@@ -169,19 +152,17 @@ async function apiBatch(payload: {
 
 async function verifyBatch(payload: {
   task: string;
-  answers_file: string;
+  answers: string;
   output_file: string;
 }): Promise<ToolResponse> {
   assertMaxLength(payload.task, "task", 100);
-  assertMaxLength(payload.answers_file, "answers_file", 500);
+  assertMaxLength(payload.answers, "answers", 100_000);
   assertMaxLength(payload.output_file, "output_file", 500);
 
-  await checkFileSize(payload.answers_file, config.limits.maxFileSize);
-  const content = await files.readText(payload.answers_file);
-  const answers = safeParse<unknown>(content, "answers_file");
+  const answers = await resolveInput(payload.answers, "answers");
 
   if (!Array.isArray(answers)) {
-    throw new Error("answers_file must contain a JSON array of answer objects");
+    throw new Error("answers must resolve to a JSON array of answer objects");
   }
   if (answers.length > config.limits.maxBatchRows) {
     throw new Error(`Batch size ${answers.length} exceeds maximum of ${config.limits.maxBatchRows}`);
@@ -223,18 +204,11 @@ async function verifyBatch(payload: {
 async function agentsHub({ action, payload }: { action: string; payload: Record<string, any> }): Promise<unknown> {
   switch (action) {
     case "verify":
-      return verify(payload as { task: string; answer_file: string });
+      return verify(payload as { task: string; answer: string });
     case "verify_batch":
-      return verifyBatch(payload as { task: string; answers_file: string; output_file: string });
+      return verifyBatch(payload as { task: string; answers: string; output_file: string });
     case "api_request":
-      return apiRequest(payload as { path: string; body?: Record<string, any>; body_file?: string });
-    case "api_request_body": {
-      assertMaxLength(payload.body_json, "body_json", 100_000);
-      assertMaxLength(payload.path, "path", 200);
-      return apiRequest({ path: payload.path, body: safeParse(payload.body_json, "body_json") });
-    }
-    case "api_request_file":
-      return apiRequest({ path: payload.path, body_file: payload.body_file });
+      return apiRequest(payload as { path: string; body: string });
     case "api_batch":
       return apiBatch(payload as { path: string; data_file: string; field_map_json: string; output_file: string });
     default:

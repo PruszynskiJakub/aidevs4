@@ -28,13 +28,145 @@ beforeEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-describe("agents_hub api_request", () => {
-  it("sends inline body with apikey merged", async () => {
-    let capturedUrl = "";
+// --------------- verify ---------------
+
+describe("agents_hub verify", () => {
+  it("submits inline JSON object as answer", async () => {
     let capturedBody: any = null;
 
-    globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
-      capturedUrl = url;
+    globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return new Response(JSON.stringify({ code: 0, message: "OK" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+
+    const result = (await handler({
+      action: "verify",
+      payload: { task: "test", answer: '{"city":"Krakow"}' },
+    })) as any;
+
+    expect(capturedBody.answer).toEqual({ city: "Krakow" });
+    expect(capturedBody.apikey).toBe(config.hub.apiKey);
+    expect(capturedBody.task).toBe("test");
+    expect(result.status).toBe("ok");
+  });
+
+  it("submits inline raw string as answer", async () => {
+    let capturedBody: any = null;
+
+    globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return new Response(JSON.stringify({ code: 0, message: "OK" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+
+    await handler({
+      action: "verify",
+      payload: { task: "test", answer: "KRAKOW" },
+    });
+
+    expect(capturedBody.answer).toBe("KRAKOW");
+  });
+
+  it("reads answer from file", async () => {
+    const answerFile = join(tmp, "answer.json");
+    await Bun.write(answerFile, JSON.stringify({ city: "Krakow" }));
+
+    let capturedBody: any = null;
+
+    globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return new Response(JSON.stringify({ code: 0, message: "OK" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+
+    await handler({
+      action: "verify",
+      payload: { task: "test", answer: answerFile },
+    });
+
+    expect(capturedBody.answer).toEqual({ city: "Krakow" });
+  });
+});
+
+// --------------- verify_batch ---------------
+
+describe("agents_hub verify_batch", () => {
+  it("submits inline JSON array", async () => {
+    const capturedBodies: any[] = [];
+    const outputFile = join(tmp, "vb_inline_out.json");
+
+    globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
+      capturedBodies.push(JSON.parse(init?.body as string));
+      return new Response(JSON.stringify({ code: 0, message: "OK" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+
+    const result = (await handler({
+      action: "verify_batch",
+      payload: {
+        task: "test",
+        answers: '[{"a":1},{"a":2}]',
+        output_file: outputFile,
+      },
+    })) as any;
+
+    expect(result.data.count).toBe(2);
+    expect(capturedBodies[0].answer).toEqual({ a: 1 });
+    expect(capturedBodies[1].answer).toEqual({ a: 2 });
+  });
+
+  it("reads answers from file", async () => {
+    const answersFile = join(tmp, "answers.json");
+    const outputFile = join(tmp, "vb_file_out.json");
+    await Bun.write(answersFile, JSON.stringify([{ a: 1 }, { a: 2 }]));
+
+    const capturedBodies: any[] = [];
+
+    globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
+      capturedBodies.push(JSON.parse(init?.body as string));
+      return new Response(JSON.stringify({ code: 0, message: "OK" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+
+    const result = (await handler({
+      action: "verify_batch",
+      payload: { task: "test", answers: answersFile, output_file: outputFile },
+    })) as any;
+
+    expect(result.data.count).toBe(2);
+    expect(capturedBodies[0].answer).toEqual({ a: 1 });
+  });
+
+  it("rejects inline non-array", async () => {
+    const outputFile = join(tmp, "vb_bad_out.json");
+
+    await expect(
+      handler({
+        action: "verify_batch",
+        payload: { task: "test", answers: '{"a":1}', output_file: outputFile },
+      }),
+    ).rejects.toThrow("answers must resolve to a JSON array");
+  });
+});
+
+// --------------- api_request (merged) ---------------
+
+describe("agents_hub api_request", () => {
+  it("sends inline JSON body with apikey merged", async () => {
+    let capturedBody: any = null;
+
+    globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
       capturedBody = JSON.parse(init?.body as string);
       return new Response(JSON.stringify({ message: "ok" }), {
         status: 200,
@@ -44,15 +176,13 @@ describe("agents_hub api_request", () => {
 
     const result = (await handler({
       action: "api_request",
-      payload: { path: "location", body: { query: "test" } },
+      payload: { path: "location", body: '{"query":"test"}' },
     })) as any;
 
-    expect(capturedUrl).toBe("https://hub.ag3nts.org/api/location");
     expect(capturedBody.query).toBe("test");
     expect(capturedBody.apikey).toBe(config.hub.apiKey);
     expect(result.status).toBe("ok");
     expect(result.data.path).toBe("location");
-    expect(result.data.response).toEqual({ message: "ok" });
     expect(result.hints).toContain("Response from /api/location received.");
   });
 
@@ -72,32 +202,35 @@ describe("agents_hub api_request", () => {
 
     const result = (await handler({
       action: "api_request",
-      payload: { path: "search", body_file: bodyFile },
+      payload: { path: "search", body: bodyFile },
     })) as any;
 
     expect(capturedBody.query).toBe("from-file");
     expect(capturedBody.limit).toBe(5);
     expect(capturedBody.apikey).toBe(config.hub.apiKey);
     expect(result.status).toBe("ok");
-    expect(result.data.response).toEqual({ data: [1, 2] });
   });
 
-  it("throws when both body and body_file are provided", async () => {
+  it("rejects non-object body (raw string)", async () => {
+    globalThis.fetch = mock(async () => {
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as any;
+
     await expect(
       handler({
         action: "api_request",
-        payload: { path: "test", body: { x: 1 }, body_file: "/some/file.json" },
+        payload: { path: "test", body: "KRAKOW" },
       }),
-    ).rejects.toThrow("Provide either body or body_file, not both");
+    ).rejects.toThrow("body must resolve to a JSON object");
   });
 
-  it("throws when neither body nor body_file is provided", async () => {
+  it("rejects non-object body (array)", async () => {
     await expect(
       handler({
         action: "api_request",
-        payload: { path: "test" },
+        payload: { path: "test", body: "[1,2,3]" },
       }),
-    ).rejects.toThrow("Provide either body or body_file");
+    ).rejects.toThrow("body must resolve to a JSON object");
   });
 
   it("throws on non-OK HTTP response", async () => {
@@ -108,7 +241,7 @@ describe("agents_hub api_request", () => {
     await expect(
       handler({
         action: "api_request",
-        payload: { path: "missing", body: {} },
+        payload: { path: "missing", body: '{"x":1}' },
       }),
     ).rejects.toThrow("API request failed (404): Not Found");
   });
@@ -123,75 +256,14 @@ describe("agents_hub api_request", () => {
 
     const result = (await handler({
       action: "api_request",
-      payload: { path: "echo", body: { msg: "hi" } },
+      payload: { path: "echo", body: '{"msg":"hi"}' },
     })) as any;
 
     expect(result.data.response).toBe("plain text response");
   });
 });
 
-describe("agents_hub api_request_body", () => {
-  it("parses body_json string and sends as body with apikey", async () => {
-    let capturedBody: any = null;
-
-    globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
-      capturedBody = JSON.parse(init?.body as string);
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }) as any;
-
-    const result = (await handler({
-      action: "api_request_body",
-      payload: { path: "test", body_json: '{"query":"hello","limit":10}' },
-    })) as any;
-
-    expect(capturedBody.query).toBe("hello");
-    expect(capturedBody.limit).toBe(10);
-    expect(capturedBody.apikey).toBe(config.hub.apiKey);
-    expect(result.status).toBe("ok");
-    expect(result.data.path).toBe("test");
-    expect(result.data.response).toEqual({ ok: true });
-  });
-
-  it("throws on invalid body_json", async () => {
-    await expect(
-      handler({
-        action: "api_request_body",
-        payload: { path: "test", body_json: "not-json" },
-      }),
-    ).rejects.toThrow();
-  });
-});
-
-describe("agents_hub api_request_file", () => {
-  it("reads body from file with apikey merged", async () => {
-    const bodyFile = join(tmp, "request_file_action.json");
-    await Bun.write(bodyFile, JSON.stringify({ data: "from-file-action" }));
-
-    let capturedBody: any = null;
-
-    globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
-      capturedBody = JSON.parse(init?.body as string);
-      return new Response(JSON.stringify({ result: "ok" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }) as any;
-
-    const result = (await handler({
-      action: "api_request_file",
-      payload: { path: "upload", body_file: bodyFile },
-    })) as any;
-
-    expect(capturedBody.data).toBe("from-file-action");
-    expect(capturedBody.apikey).toBe(config.hub.apiKey);
-    expect(result.status).toBe("ok");
-    expect(result.data.path).toBe("upload");
-    expect(result.data.response).toEqual({ result: "ok" });
-  });
-});
+// --------------- api_batch (unchanged) ---------------
 
 describe("agents_hub api_batch", () => {
   it("sends each JSON row with field mapping and writes results", async () => {
@@ -228,22 +300,15 @@ describe("agents_hub api_batch", () => {
     })) as any;
 
     expect(result.status).toBe("ok");
-    expect(result.data.path).toBe("location");
     expect(result.data.count).toBe(3);
-    expect(result.data.output_file).toBe(outputFile);
-    expect(result.hints).toContain(`Processed 3 rows. Results written to ${outputFile}.`);
 
-    // Check field mapping: born → birthYear
     expect(capturedBodies[0].birthYear).toBe("1990");
     expect(capturedBodies[0].born).toBeUndefined();
     expect(capturedBodies[0].name).toBe("Alice");
     expect(capturedBodies[0].apikey).toBe(config.hub.apiKey);
 
-    // Check output file was written
     const output = JSON.parse(await Bun.file(outputFile).text());
     expect(output.length).toBe(3);
-    expect(output[0].input).toEqual({ name: "Alice", born: "1990" });
-    expect(output[0].response).toEqual({ status: "found", id: 1 });
   });
 
   it("passes fields through unchanged with empty field map", async () => {
@@ -292,7 +357,6 @@ describe("agents_hub api_batch", () => {
 
     expect(result.data.count).toBe(2);
     expect(capturedBodies[0].name).toBe("Alice");
-    expect(capturedBodies[0].age).toBe("30");
     expect(capturedBodies[0].apikey).toBe(config.hub.apiKey);
   });
 

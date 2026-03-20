@@ -8,9 +8,9 @@
         "type": "object",
         "properties": {
           "task": { "type": "string", "description": "The task name to verify against (e.g. \"people\")" },
-          "answer_file": { "type": "string", "description": "Absolute path to the JSON file containing the answer data" }
+          "answer": { "type": "string", "description": "The answer to submit — file path to a JSON file, inline JSON string, or a raw string value" }
         },
-        "required": ["task", "answer_file"],
+        "required": ["task", "answer"],
         "additionalProperties": false
       }
     },
@@ -20,39 +20,27 @@
         "type": "object",
         "properties": {
           "task": { "type": "string", "description": "The task name to verify against (e.g. \"categorize\")" },
-          "answers_file": { "type": "string", "description": "Absolute path to a JSON file containing an array of answer objects. Each element is sent as the 'answer' field in the verify request, in order." },
+          "answers": { "type": "string", "description": "Array of answers — file path to a JSON array file, or an inline JSON array string" },
           "output_file": { "type": "string", "description": "Absolute path to write the results JSON array (each entry has index, answer, response)" }
         },
-        "required": ["task", "answers_file", "output_file"],
+        "required": ["task", "answers", "output_file"],
         "additionalProperties": false
       }
     },
-    "api_request_body": {
-      "description": "POST to /api/* with an inline JSON body. For a single call only — if calling the same endpoint for each item in a dataset, use api_batch instead.",
+    "api_request": {
+      "description": "POST to /api/* with a JSON body. For a single call only — if calling the same endpoint for each item in a dataset, use api_batch instead.",
       "parameters": {
         "type": "object",
         "properties": {
           "path": { "type": "string", "description": "API path segment after /api/ (e.g. \"location\")" },
-          "body_json": { "type": "string", "description": "JSON-encoded string of the request body (will be parsed before sending), skip apiKey field, it's gonna be injected automatically" }
+          "body": { "type": "string", "description": "Request body — file path to a JSON file, inline JSON string, or a raw string value. apikey is injected automatically." }
         },
-        "required": ["path", "body_json"],
-        "additionalProperties": false
-      }
-    },
-    "api_request_file": {
-      "description": "POST to /api/* with body loaded from a JSON file",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "path": { "type": "string", "description": "API path segment after /api/ (e.g. \"location\")" },
-          "body_file": { "type": "string", "description": "Absolute path to a JSON file for the request body" }
-        },
-        "required": ["path", "body_file"],
+        "required": ["path", "body"],
         "additionalProperties": false
       }
     },
     "api_batch": {
-      "description": "POST to /api/* for each row in a CSV/JSON array file. Preferred over multiple api_request_body calls — use whenever a dataset needs the same endpoint called per item. Apikey auto-injected. Calls made sequentially.",
+      "description": "POST to /api/* for each row in a CSV/JSON array file. Preferred over multiple api_request calls — use whenever a dataset needs the same endpoint called per item. Apikey auto-injected. Calls made sequentially.",
       "parameters": {
         "type": "object",
         "properties": {

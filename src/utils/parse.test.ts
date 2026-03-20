@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -9,7 +9,9 @@ import {
   assertMaxLength,
   assertNumericBounds,
   checkFileSize,
+  resolveInput,
 } from "./parse.ts";
+import { _testReadPaths } from "../services/common/file.ts";
 
 // --------------- safeParse ---------------
 
@@ -198,5 +200,53 @@ describe("checkFileSize", () => {
 
   it("throws on nonexistent file", async () => {
     await expect(checkFileSize("/tmp/nonexistent-file-xyz.txt")).rejects.toThrow();
+  });
+});
+
+// --------------- resolveInput ---------------
+
+describe("resolveInput", () => {
+  let tmp: string;
+
+  beforeAll(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "resolve-input-test-"));
+    _testReadPaths.push(tmp);
+  });
+
+  afterAll(async () => {
+    _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("reads and parses a JSON file", async () => {
+    const p = join(tmp, "data.json");
+    await Bun.write(p, JSON.stringify({ city: "Krakow" }));
+    const result = await resolveInput(p, "test");
+    expect(result).toEqual({ city: "Krakow" });
+  });
+
+  it("parses inline JSON object", async () => {
+    const result = await resolveInput('{"city":"Krakow"}', "test");
+    expect(result).toEqual({ city: "Krakow" });
+  });
+
+  it("parses inline JSON array", async () => {
+    const result = await resolveInput("[1,2,3]", "test");
+    expect(result).toEqual([1, 2, 3]);
+  });
+
+  it("parses inline JSON number", async () => {
+    const result = await resolveInput("42", "test");
+    expect(result).toBe(42);
+  });
+
+  it("returns raw string for non-JSON, non-file input", async () => {
+    const result = await resolveInput("KRAKOW", "test");
+    expect(result).toBe("KRAKOW");
+  });
+
+  it("returns raw string for invalid JSON that is not a file", async () => {
+    const result = await resolveInput("not/a/file/{bad", "test");
+    expect(result).toBe("not/a/file/{bad");
   });
 });
