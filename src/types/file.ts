@@ -8,6 +8,7 @@ export interface FileStat {
 export type WritableData = string | Response;
 
 export interface FileProvider {
+  exists(path: string): Promise<boolean>;
   readText(path: string): Promise<string>;
   readBinary(path: string): Promise<Buffer>;
   readJson<T = unknown>(path: string): Promise<T>;

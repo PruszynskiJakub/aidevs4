@@ -43,6 +43,15 @@ export function createBunFileService(
   writePaths: string[] = _testWritePaths,
 ): FileProvider {
   return {
+    async exists(path: string): Promise<boolean> {
+      try {
+        assertPathAllowed(path, readPaths, "read");
+        return await Bun.file(path).exists();
+      } catch {
+        return false;
+      }
+    },
+
     async readText(path: string): Promise<string> {
       assertPathAllowed(path, readPaths, "read");
       return Bun.file(path).text();

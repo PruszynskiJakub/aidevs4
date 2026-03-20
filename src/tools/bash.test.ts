@@ -26,4 +26,38 @@ describe("bash tool", () => {
     const result = await bash.handler({ command: "pwd" });
     expect(result).toBe(resolve(config.paths.outputDir));
   });
+
+  it("blocks redirect writes to absolute paths outside session dir", async () => {
+    await expect(
+      bash.handler({ command: "echo hi > /tmp/evil.txt" }),
+    ).rejects.toThrow("outside the session output directory");
+  });
+
+  it("blocks append redirects outside session dir", async () => {
+    await expect(
+      bash.handler({ command: "echo hi >> /tmp/evil.txt" }),
+    ).rejects.toThrow("outside the session output directory");
+  });
+
+  it("blocks tee writes outside session dir", async () => {
+    await expect(
+      bash.handler({ command: "echo hi | tee /tmp/evil.txt" }),
+    ).rejects.toThrow("outside the session output directory");
+  });
+
+  it("blocks path traversal via ../", async () => {
+    await expect(
+      bash.handler({ command: "echo hi > ../../etc/evil.txt" }),
+    ).rejects.toThrow("outside the session output directory");
+  });
+
+  it("allows redirects to relative paths within cwd", async () => {
+    const result = await bash.handler({ command: "echo hi > test_output.txt && cat test_output.txt" });
+    expect(result).toBe("hi");
+  });
+
+  it("allows /dev/null redirects", async () => {
+    const result = await bash.handler({ command: "echo hi > /dev/null" });
+    expect(result).toBe("(no output)");
+  });
 });

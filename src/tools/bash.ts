@@ -14,8 +14,32 @@ function getBashCwd(): string {
   return resolve(config.paths.outputDir);
 }
 
+/**
+ * Extract paths that appear as write targets (after >, >>, tee, etc.)
+ * and verify they resolve within the session output directory.
+ */
+function assertWritesInSessionDir(command: string, cwd: string): void {
+  // Match redirect targets: > file, >> file, tee file
+  const redirectTargets = [
+    ...command.matchAll(/>{1,2}\s*([^\s;&|]+)/g),
+    ...command.matchAll(/\btee\s+(?:-[a-z]\s+)*([^\s;&|]+)/g),
+  ].map((m) => m[1]);
+
+  for (const target of redirectTargets) {
+    if (target.startsWith("/dev/")) continue; // /dev/null etc.
+    const resolved = resolve(cwd, target);
+    if (!resolved.startsWith(cwd + "/") && resolved !== cwd) {
+      throw new Error(
+        `Write target "${target}" resolves to "${resolved}" which is outside the session output directory "${cwd}". ` +
+          `Use the filesystem tool or files service to write elsewhere.`,
+      );
+    }
+  }
+}
+
 async function bash(args: { command: string }): Promise<string | ToolResponse> {
   const cwd = getBashCwd();
+  assertWritesInSessionDir(args.command, cwd);
   const result = await $`bash -c ${args.command}`.cwd(cwd).quiet().nothrow();
 
   const stdout = result.stdout.toString().trim();

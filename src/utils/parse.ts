@@ -1,5 +1,6 @@
 import { stat } from "fs/promises";
 import { config } from "../config/index.ts";
+import { files } from "../services/common/file.ts";
 
 /**
  * Safe JSON.parse wrapper — returns typed result or throws a labelled error
@@ -69,6 +70,25 @@ export function assertNumericBounds(value: number, name: string, min: number, ma
   }
   if (value < min || value > max) {
     throw new Error(`${name} must be between ${min} and ${max}`);
+  }
+}
+
+/**
+ * Resolves a dual-purpose input: file path → JSON string → raw string.
+ * Resolution order: if `input` is a path to an existing file, read & parse it;
+ * otherwise try JSON.parse; otherwise return the raw string.
+ */
+export async function resolveInput(input: string, label: string): Promise<unknown> {
+  if (await files.exists(input)) {
+    await checkFileSize(input);
+    const content = await files.readText(input);
+    return safeParse(content, label);
+  }
+
+  try {
+    return JSON.parse(input);
+  } catch {
+    return input;
   }
 }
 
