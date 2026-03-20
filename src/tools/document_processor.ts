@@ -1,10 +1,12 @@
 import { basename, extname } from "path";
-import type { ToolDefinition, ToolResponse } from "../types/tool.ts";
+import type { ToolDefinition } from "../types/tool.ts";
+import type { Document } from "../types/document.ts";
 import type { ContentPart } from "../types/llm.ts";
 import { files } from "../services/common/file.ts";
 import { llm } from "../services/ai/llm.ts";
 import { assertMaxLength, checkFileSize } from "../utils/parse.ts";
-import { toolOk } from "../utils/tool-response.ts";
+import { createDocument } from "../utils/document.ts";
+import { resolveSessionPath } from "../utils/output.ts";
 import { config } from "../config";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
@@ -35,8 +37,9 @@ function getExtension(path: string): string {
 async function buildContentParts(paths: string[]): Promise<ContentPart[]> {
   const parts: ContentPart[] = [];
 
-  for (const path of paths) {
-    validatePath(path);
+  for (const rawPath of paths) {
+    validatePath(rawPath);
+    const path = resolveSessionPath(rawPath);
     const ext = getExtension(path);
 
     if (!IMAGE_EXTENSIONS.has(ext) && !TEXT_EXTENSIONS.has(ext)) {
@@ -70,7 +73,7 @@ async function buildContentParts(paths: string[]): Promise<ContentPart[]> {
 async function ask(payload: {
   paths: string[];
   question: string;
-}): Promise<ToolResponse> {
+}): Promise<Document> {
   const { paths, question } = payload;
 
   if (!Array.isArray(paths) || paths.length === 0) {
@@ -93,11 +96,13 @@ async function ask(payload: {
   });
 
   const answer = response.content ?? "";
+  const fileNames = paths.map((p) => basename(p)).join(", ");
 
-  return toolOk(
-    { answer },
-    [`Answer based on ${paths.length} document(s). Use document_processor__ask again for follow-up questions.`],
-  );
+  return createDocument(answer, `Answer based on ${paths.length} document(s): ${fileNames}`, {
+    source: paths[0],
+    type: "document",
+    mime_type: "text/plain",
+  });
 }
 
 async function documentProcessor({
@@ -106,7 +111,7 @@ async function documentProcessor({
 }: {
   action: string;
   payload: Record<string, any>;
-}): Promise<unknown> {
+}): Promise<Document> {
   switch (action) {
     case "ask":
       return ask(payload as { paths: string[]; question: string });

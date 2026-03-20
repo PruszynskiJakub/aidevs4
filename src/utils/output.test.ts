@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, rm, stat } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { inferFileType, outputPath, getEffectiveSessionId } from "./output.ts";
+import { inferFileType, outputPath, getEffectiveSessionId, toSessionPath, resolveSessionPath } from "./output.ts";
+import { config } from "../config/index.ts";
 import { _testWritePaths } from "../services/common/file.ts";
 import { runWithContext } from "../services/agent/session-context.ts";
 import type { AgentState } from "../types/agent-state.ts";
@@ -184,5 +185,54 @@ describe("outputPath", () => {
     expect(paths.b).toContain("/sess-B/");
     expect(paths.a).not.toContain("/sess-B/");
     expect(paths.b).not.toContain("/sess-A/");
+  });
+});
+
+// --------------- toSessionPath ---------------
+
+describe("toSessionPath", () => {
+  it("strips session output dir prefix from absolute path", async () => {
+    await withSession("sess-rel", async () => {
+      const abs = await outputPath("photo.png");
+      const rel = toSessionPath(abs);
+      expect(rel).toMatch(/^image\/[0-9a-f-]+\/photo\.png$/);
+      expect(rel).not.toContain("sess-rel");
+      expect(rel).not.toContain(config.paths.outputDir);
+    });
+  });
+
+  it("returns path unchanged if not under session dir", async () => {
+    await withSession("sess-rel2", async () => {
+      const foreignPath = "/some/other/path/file.txt";
+      expect(toSessionPath(foreignPath)).toBe(foreignPath);
+    });
+  });
+});
+
+// --------------- resolveSessionPath ---------------
+
+describe("resolveSessionPath", () => {
+  it("resolves relative path to absolute under session dir", async () => {
+    await withSession("sess-resolve", async () => {
+      const resolved = resolveSessionPath("image/abc-123/photo.png");
+      expect(resolved).toContain("/sess-resolve/image/abc-123/photo.png");
+      expect(resolved).toContain(config.paths.outputDir);
+    });
+  });
+
+  it("returns absolute paths unchanged", async () => {
+    await withSession("sess-resolve2", async () => {
+      const abs = "/absolute/path/to/file.txt";
+      expect(resolveSessionPath(abs)).toBe(abs);
+    });
+  });
+
+  it("roundtrips with toSessionPath", async () => {
+    await withSession("sess-roundtrip", async () => {
+      const abs = await outputPath("data.csv");
+      const rel = toSessionPath(abs);
+      const back = resolveSessionPath(rel);
+      expect(back).toBe(abs);
+    });
   });
 });

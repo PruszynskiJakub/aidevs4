@@ -1,12 +1,15 @@
 import type { ToolDefinition } from "../types/tool.ts";
-import type { ToolResponse } from "../types/tool.ts";
+import type { Document } from "../types/document.ts";
 import { files } from "../services/common/file.ts";
-import { outputPath } from "../utils/output.ts";
+import { outputPath, toSessionPath } from "../utils/output.ts";
 import { config } from "../config";
 import { safeFilename, assertMaxLength } from "../utils/parse.ts";
-import { toolOk } from "../utils/tool-response.ts";
+import { createDocument } from "../utils/document.ts";
 
 const PLACEHOLDER_RE = /\{\{(\w+)\}\}/g;
+
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
+const TEXT_EXTENSIONS = new Set([".txt", ".csv", ".tsv", ".log"]);
 
 function resolvePlaceholders(url: string): string {
   return url.replace(PLACEHOLDER_RE, (_match, name: string) => {
@@ -28,7 +31,14 @@ function assertHostAllowed(hostname: string): void {
   }
 }
 
-async function download(payload: { url: string; filename: string }): Promise<ToolResponse> {
+function inferDocType(filename: string): { type: "document" | "text" | "image"; mime_type: string } {
+  const ext = filename.slice(filename.lastIndexOf(".")).toLowerCase();
+  if (IMAGE_EXTENSIONS.has(ext)) return { type: "image", mime_type: `image/${ext.slice(1)}` };
+  if (TEXT_EXTENSIONS.has(ext)) return { type: "text", mime_type: "text/plain" };
+  return { type: "document", mime_type: "application/octet-stream" };
+}
+
+async function download(payload: { url: string; filename: string }): Promise<Document> {
   assertMaxLength(payload.url, "url", 2048);
   assertMaxLength(payload.filename, "filename", 255);
   safeFilename(payload.filename);
@@ -52,13 +62,22 @@ async function download(payload: { url: string; filename: string }): Promise<Too
   const path = await outputPath(payload.filename);
   await files.write(path, response);
 
-  return toolOk(
-    { filename: payload.filename, path },
-    [`File saved to ${path}. Inspect with bash: head -5 ${path}`],
-  );
+  const contentType = response.headers.get("content-type") || "";
+  const { type, mime_type } = inferDocType(payload.filename);
+
+  // Use session-relative path to save tokens in LLM context.
+  // bash cwd is already the session output dir, so relative paths work directly.
+  const relativePath = toSessionPath(path);
+  const text = `File saved to ${relativePath}. Inspect with bash: head -20 ${relativePath}`;
+
+  return createDocument(text, `Web download from ${payload.url}`, {
+    source: payload.url,
+    type,
+    mime_type: contentType || mime_type,
+  });
 }
 
-async function web({ action, payload }: { action: string; payload: Record<string, any> }): Promise<unknown> {
+async function web({ action, payload }: { action: string; payload: Record<string, any> }): Promise<Document> {
   switch (action) {
     case "download":
       return download(payload as { url: string; filename: string });
