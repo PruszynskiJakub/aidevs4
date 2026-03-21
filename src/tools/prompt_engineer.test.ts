@@ -63,7 +63,7 @@ describe("prompt_engineer tool", () => {
       feedback: "Item 3 was misclassified",
     });
 
-    const callArgs = mockCompletion.mock.calls[0][0] as any;
+    const callArgs = (mockCompletion.mock.calls as any[][])[0][0];
     expect(callArgs.userPrompt).toContain("## Current Prompt");
     expect(callArgs.userPrompt).toContain("Old prompt here");
     expect(callArgs.userPrompt).toContain("## Feedback");

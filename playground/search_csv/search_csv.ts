@@ -1,4 +1,4 @@
-import { parse, stringify } from "csv-parse/sync";
+import { parse } from "csv-parse/sync";
 import { join } from "path";
 import { mkdir } from "fs/promises";
 

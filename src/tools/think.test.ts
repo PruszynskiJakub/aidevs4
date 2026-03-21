@@ -40,7 +40,7 @@ describe("think tool", () => {
     });
 
     expect(completionMock).toHaveBeenCalledTimes(1);
-    const call = completionMock.mock.calls[0][0] as any;
+    const call = (completionMock.mock.calls as any[][])[0][0];
     expect(call.userPrompt).toContain("What format is needed?");
     expect(call.systemPrompt).toBeTruthy();
   });

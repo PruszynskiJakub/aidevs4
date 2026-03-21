@@ -1,4 +1,4 @@
-import { createOpenAIProvider } from "../../src/services/llm.ts";
+import { createOpenAIProvider } from "../../src/providers/openai.ts";
 import type { LLMMessage, LLMTool, LLMToolCall } from "../../src/types/llm.ts";
 import { $ } from "bun";
 
@@ -120,7 +120,7 @@ async function runAgent(userPrompt: string) {
 
     // Execute tool calls
     const functionCalls = response.toolCalls.filter(
-      (tc) => tc.type === "function",
+      (tc: LLMToolCall) => tc.type === "function",
     );
 
     for (const tc of functionCalls) {

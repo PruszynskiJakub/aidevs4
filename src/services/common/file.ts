@@ -70,7 +70,11 @@ export function createBunFileService(
 
     async write(path: string, data: string | Response): Promise<void> {
       assertPathAllowed(path, writePaths, "write");
-      await Bun.write(path, data);
+      if (data instanceof Response) {
+        await Bun.write(path, await data.arrayBuffer());
+      } else {
+        await Bun.write(path, data);
+      }
     },
 
     async append(path: string, data: string): Promise<void> {

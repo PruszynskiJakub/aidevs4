@@ -1,9 +1,9 @@
-import type { LLMMessage } from "../../src/types/llm.ts";
-import { llm } from "../../src/services/llm.ts";
-import { MAX_ITERATIONS } from "../../src/config.ts";
-import { getTools, dispatch } from "../../src/tools/dispatcher.ts";
-import { promptService } from "../../src/services/prompt.ts";
-import { assistants } from "../../src/services/assistants.ts";
+import type { LLMMessage, LLMToolCall } from "../../src/types/llm.ts";
+import { llm } from "../../src/services/ai/llm.ts";
+import { config } from "../../src/config/index.ts";
+import { getTools, dispatch } from "../../src/tools/index.ts";
+import { promptService } from "../../src/services/ai/prompt.ts";
+import { assistantsService as assistants } from "../../src/services/agent/assistant/assistants.ts";
 import { AgentEventEmitter } from "./event_emitter.ts";
 import { makeEventId, parsePlanSteps } from "./types.ts";
 import type { AgentEvent } from "./types.ts";
@@ -66,7 +66,7 @@ export async function runEventAgent(
       { role: "user", content: prompt },
     ];
 
-    for (let i = 0; i < MAX_ITERATIONS; i++) {
+    for (let i = 0; i < config.limits.maxIterations; i++) {
       const iteration = i + 1;
 
       // --- PLAN PHASE ---
@@ -160,7 +160,7 @@ export async function runEventAgent(
       }
 
       // --- TOOL EXECUTION ---
-      const functionCalls = response.toolCalls.filter((tc) => tc.type === "function");
+      const functionCalls = response.toolCalls.filter((tc: LLMToolCall) => tc.type === "function");
 
       // Request user approval before executing
       const requestId = `approve_${sessionId}_${iteration}`;
@@ -223,7 +223,7 @@ export async function runEventAgent(
 
         if (outcome.status === "fulfilled") {
           const { result, elapsed } = outcome.value;
-          const parsed = parseToolResponse(result);
+          const parsed = parseToolResponse(result.xml);
           const llmContent = JSON.stringify(parsed.data);
 
           emit(emitter, {

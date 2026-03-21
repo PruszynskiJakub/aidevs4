@@ -17,15 +17,15 @@ import { _testReadPaths } from "../services/common/file.ts";
 
 describe("safeParse", () => {
   it("parses valid JSON", () => {
-    expect(safeParse('{"a":1}', "test")).toEqual({ a: 1 });
+    expect(safeParse<Record<string, number>>('{"a":1}', "test")).toEqual({ a: 1 });
   });
 
   it("parses valid JSON array", () => {
-    expect(safeParse("[1,2,3]", "arr")).toEqual([1, 2, 3]);
+    expect(safeParse<number[]>("[1,2,3]", "arr")).toEqual([1, 2, 3]);
   });
 
   it("parses valid JSON string", () => {
-    expect(safeParse('"hello"', "str")).toBe("hello");
+    expect(safeParse<string>('"hello"', "str")).toBe("hello");
   });
 
   it("throws labelled error on invalid JSON", () => {
