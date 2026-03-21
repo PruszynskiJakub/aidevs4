@@ -13,6 +13,7 @@ import { ConsoleLogger } from "./services/common/logging/console-logger.ts";
 import { createCompositeLogger } from "./services/common/logging/composite-logger.ts";
 import { assistantResolverService } from "./services/agent/assistant/assistant-resolver.ts";
 import { runWithContext, requireState, requireLogger } from "./utils/session-context.ts";
+import { createErrorDocument, formatDocumentsXml } from "./services/common/document-store.ts";
 
 function createLogger(
   userPrompt: string | unknown,
@@ -152,7 +153,7 @@ async function dispatchTools(
       state.messages.push({
         role: "tool",
         toolCallId: tc.id,
-        content: `<document id="error" description="Error from ${tc.function.name}">Error: ${errorMsg}</document>`,
+        content: formatDocumentsXml(createErrorDocument(tc.function.name, errorMsg)),
       });
     }
   }

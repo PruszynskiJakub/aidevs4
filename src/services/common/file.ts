@@ -3,7 +3,7 @@ import { join, resolve } from "path";
 import type { FileProvider, FileStat } from "../../types/file.ts";
 import { config } from "../../config/index.ts";
 import { getSessionId } from "../../utils/session-context.ts";
-import { safeParse } from "../../utils/parse.ts";
+import { safeParse, formatSizeMB } from "../../utils/parse.ts";
 
 export class FileSizeLimitError extends Error {
   override readonly name = "FileSizeLimitError";
@@ -102,9 +102,7 @@ export function createBunFileService(
     async checkFileSize(path: string, maxBytes: number = config.limits.maxFileSize): Promise<void> {
       const s = await svc.stat(path);
       if (s.size > maxBytes) {
-        const sizeMB = (s.size / (1024 * 1024)).toFixed(1);
-        const limitMB = (maxBytes / (1024 * 1024)).toFixed(1);
-        throw new FileSizeLimitError(`File ${path} is ${sizeMB} MB — exceeds limit of ${limitMB} MB`);
+        throw new FileSizeLimitError(`File ${path} is ${formatSizeMB(s.size)} MB — exceeds limit of ${formatSizeMB(maxBytes)} MB`);
       }
     },
 
@@ -112,9 +110,7 @@ export function createBunFileService(
       try {
         const s = await svc.stat(input);
         if (s.size > config.limits.maxFileSize) {
-          const sizeMB = (s.size / (1024 * 1024)).toFixed(1);
-          const limitMB = (config.limits.maxFileSize / (1024 * 1024)).toFixed(1);
-          throw new FileSizeLimitError(`File ${input} is ${sizeMB} MB — exceeds limit of ${limitMB} MB`);
+          throw new FileSizeLimitError(`File ${input} is ${formatSizeMB(s.size)} MB — exceeds limit of ${formatSizeMB(config.limits.maxFileSize)} MB`);
         }
         const content = await svc.readText(input);
         return safeParse(content, label);

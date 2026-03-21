@@ -58,6 +58,13 @@ export function assertMaxLength(value: string, name: string, maxLength: number):
 }
 
 /**
+ * Converts a byte count to a human-readable MB string (e.g. "10.5").
+ */
+export function formatSizeMB(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(1);
+}
+
+/**
  * Validates that a number is finite and within [min, max].
  */
 export function assertNumericBounds(value: number, name: string, min: number, max: number): void {
