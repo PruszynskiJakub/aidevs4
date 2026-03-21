@@ -1,6 +1,10 @@
 import { config } from "../config/index.ts";
 import { files } from "../services/common/file.ts";
 
+export class FileSizeLimitError extends Error {
+  override readonly name = "FileSizeLimitError";
+}
+
 /**
  * Safe JSON.parse wrapper — returns typed result or throws a labelled error
  * that never echoes raw input (prevents stack trace leakage).
@@ -74,14 +78,22 @@ export function assertNumericBounds(value: number, name: string, min: number, ma
 
 /**
  * Resolves a dual-purpose input: file path → JSON string → raw string.
- * Resolution order: if `input` is a path to an existing file, read & parse it;
- * otherwise try JSON.parse; otherwise return the raw string.
+ * Resolution order: try to read as file (& parse JSON); if file not found,
+ * try JSON.parse on the raw string; otherwise return the raw string.
  */
 export async function resolveInput(input: string, label: string): Promise<unknown> {
-  if (await files.exists(input)) {
-    await checkFileSize(input);
+  try {
+    const stat = await files.stat(input);
+    if (stat.size > config.limits.maxFileSize) {
+      const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
+      const limitMB = (config.limits.maxFileSize / (1024 * 1024)).toFixed(1);
+      throw new FileSizeLimitError(`File ${input} is ${sizeMB} MB — exceeds limit of ${limitMB} MB`);
+    }
     const content = await files.readText(input);
     return safeParse(content, label);
+  } catch (err) {
+    // Re-throw size limit errors; fall through for file-not-found / inaccessible.
+    if (err instanceof FileSizeLimitError) throw err;
   }
 
   try {
@@ -100,6 +112,6 @@ export async function checkFileSize(path: string, maxBytes: number = config.limi
   if (s.size > maxBytes) {
     const sizeMB = (s.size / (1024 * 1024)).toFixed(1);
     const limitMB = (maxBytes / (1024 * 1024)).toFixed(1);
-    throw new Error(`File ${path} is ${sizeMB} MB — exceeds limit of ${limitMB} MB`);
+    throw new FileSizeLimitError(`File ${path} is ${sizeMB} MB — exceeds limit of ${limitMB} MB`);
   }
 }

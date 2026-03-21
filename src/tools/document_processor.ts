@@ -8,18 +8,7 @@ import { assertMaxLength, checkFileSize } from "../utils/parse.ts";
 import { createDocument } from "../utils/document.ts";
 import { resolveSessionPath } from "../utils/output.ts";
 import { config } from "../config";
-
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
-const TEXT_EXTENSIONS = new Set([".md", ".txt", ".csv", ".json", ".xml", ".html"]);
-const ALL_SUPPORTED = [...IMAGE_EXTENSIONS, ...TEXT_EXTENSIONS].sort();
-
-const MIME_TYPES: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-};
+import { IMAGE_EXTENSIONS, TEXT_EXTENSIONS, ALL_SUPPORTED_EXTENSIONS, inferMimeType } from "../utils/media-types.ts";
 
 function validatePath(path: string): void {
   if (typeof path !== "string" || path.length === 0) {
@@ -38,7 +27,7 @@ async function buildContentParts(paths: string[]): Promise<ContentPart[]> {
     const ext = extname(path).toLowerCase();
     if (!IMAGE_EXTENSIONS.has(ext) && !TEXT_EXTENSIONS.has(ext)) {
       throw new Error(
-        `Unsupported file extension "${ext}". Supported: ${ALL_SUPPORTED.join(", ")}`,
+        `Unsupported file extension "${ext}". Supported: ${ALL_SUPPORTED_EXTENSIONS.join(", ")}`,
       );
     }
     return { path, ext };
@@ -50,7 +39,7 @@ async function buildContentParts(paths: string[]): Promise<ContentPart[]> {
       await checkFileSize(path, config.limits.maxFileSize);
       if (IMAGE_EXTENSIONS.has(ext)) {
         const buffer = await files.readBinary(path);
-        return { type: "image", data: buffer.toString("base64"), mimeType: MIME_TYPES[ext] };
+        return { type: "image", data: buffer.toString("base64"), mimeType: inferMimeType(path) };
       }
       const content = await files.readText(path);
       return { type: "text", text: `--- FILE: ${basename(path)} ---\n${content}` };

@@ -146,26 +146,26 @@ describe("ConsoleLogger", () => {
       expect(captured).toHaveLength(1);
     });
 
-    it("debug is suppressed at level=warn", () => {
-      const logger = new ConsoleLogger({ level: "warn" });
+    it("debug is suppressed at level=error", () => {
+      const logger = new ConsoleLogger({ level: "error" });
       logger.debug("trace msg");
       expect(captured).toHaveLength(0);
     });
 
-    it("info is suppressed at level=warn", () => {
-      const logger = new ConsoleLogger({ level: "warn" });
+    it("info is suppressed at level=error", () => {
+      const logger = new ConsoleLogger({ level: "error" });
       logger.info("info msg");
       expect(captured).toHaveLength(0);
     });
 
-    it("success is suppressed at level=warn (maps to info level)", () => {
-      const logger = new ConsoleLogger({ level: "warn" });
+    it("success is suppressed at level=error (maps to info level)", () => {
+      const logger = new ConsoleLogger({ level: "error" });
       logger.success("done");
       expect(captured).toHaveLength(0);
     });
 
-    it("error is shown at level=warn", () => {
-      const logger = new ConsoleLogger({ level: "warn" });
+    it("error is shown at level=error", () => {
+      const logger = new ConsoleLogger({ level: "error" });
       logger.error("error msg");
       expect(captured).toHaveLength(1);
     });

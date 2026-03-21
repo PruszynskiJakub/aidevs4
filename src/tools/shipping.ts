@@ -3,7 +3,7 @@ import type { Document } from "../types/document.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 import { createDocument } from "../utils/document.ts";
-import { hubPost, stringify } from "../utils/hub-fetch.ts";
+import { HUB_DOC_META, hubPost, stringify } from "../utils/hub-fetch.ts";
 
 const PACKAGEID_RE = /^[A-Za-z0-9]+$/;
 const PACKAGES_URL = `${config.hub.baseUrl}/api/packages`;
@@ -27,7 +27,7 @@ async function checkPackage(payload: { packageid: string }): Promise<Document> {
   return createDocument(
     stringify(response),
     `Package ${payload.packageid} status. Use shipping__redirect to reroute if needed.`,
-    { source: "hub.ag3nts.org", type: "document", mimeType: "application/json" },
+    HUB_DOC_META,
   );
 }
 
@@ -62,7 +62,7 @@ async function redirectPackage(payload: {
   return createDocument(
     stringify(response),
     `Redirect processed for ${payload.packageid}.${confirmNote} IMPORTANT: Always include the confirmation code in your reply.`,
-    { source: "hub.ag3nts.org", type: "document", mimeType: "application/json" },
+    HUB_DOC_META,
   );
 }
 

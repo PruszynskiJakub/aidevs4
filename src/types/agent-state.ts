@@ -1,5 +1,4 @@
 import type { LLMMessage } from "./llm.ts";
-import type { Document } from "./document.ts";
 
 export interface TokenUsage {
   promptTokens: number;
@@ -11,5 +10,4 @@ export interface AgentState {
   messages: LLMMessage[];
   tokens: { plan: TokenUsage; act: TokenUsage };
   iteration: number;
-  documents: Document[];
 }

@@ -55,12 +55,15 @@ describe("inferFileType", () => {
     expect(inferFileType("clip.webm")).toBe("video");
   });
 
-  it("returns 'document' for document extensions", () => {
+  it("returns 'text' for text-based extensions", () => {
+    expect(inferFileType("data.csv")).toBe("text");
+    expect(inferFileType("notes.txt")).toBe("text");
+    expect(inferFileType("config.json")).toBe("text");
+    expect(inferFileType("page.html")).toBe("text");
+  });
+
+  it("returns 'document' for non-text document extensions", () => {
     expect(inferFileType("report.pdf")).toBe("document");
-    expect(inferFileType("data.csv")).toBe("document");
-    expect(inferFileType("notes.txt")).toBe("document");
-    expect(inferFileType("config.json")).toBe("document");
-    expect(inferFileType("page.html")).toBe("document");
   });
 
   it("returns 'document' for unknown extensions", () => {
@@ -102,7 +105,7 @@ describe("outputPath", () => {
   it("returns path with correct structure: {outputDir}/{sessionId}/{type}/{uuid}/{filename}", async () => {
     const result = await outputPath("report.csv");
 
-    // Path should end with {sessionId}/document/{uuid}/report.csv
+    // Path should end with {sessionId}/text/{uuid}/report.csv (csv is a text type)
     const parts = result.split("/");
     const filename = parts.pop()!;
     const uuid = parts.pop()!;
@@ -110,7 +113,7 @@ describe("outputPath", () => {
     const sessionSegment = parts.pop()!;
 
     expect(filename).toBe("report.csv");
-    expect(type).toBe("document");
+    expect(type).toBe("text");
     expect(UUID_RE.test(uuid)).toBe(true);
     // sessionSegment is either an explicit session or a fallback UUID
     expect(sessionSegment.length).toBeGreaterThan(0);
@@ -153,7 +156,7 @@ describe("outputPath", () => {
   it("uses explicit sessionId inside runWithSession", async () => {
     await withSession("test-session", async () => {
       const result = await outputPath("file.json");
-      expect(result).toContain("/test-session/document/");
+      expect(result).toContain("/test-session/text/");
     });
   });
 

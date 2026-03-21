@@ -5,11 +5,9 @@ import { outputPath, toSessionPath } from "../utils/output.ts";
 import { config } from "../config";
 import { safeFilename, assertMaxLength } from "../utils/parse.ts";
 import { createDocument } from "../utils/document.ts";
+import { inferCategory, inferMimeType } from "../utils/media-types.ts";
 
 const PLACEHOLDER_RE = /\{\{(\w+)\}\}/g;
-
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
-const TEXT_EXTENSIONS = new Set([".txt", ".csv", ".tsv", ".log"]);
 
 function resolvePlaceholders(url: string): string {
   return url.replace(PLACEHOLDER_RE, (_match, name: string) => {
@@ -29,13 +27,6 @@ function assertHostAllowed(hostname: string): void {
       `Host "${hostname}" is not on the allowlist. Allowed: ${config.sandbox.webAllowedHosts.join(", ")}`,
     );
   }
-}
-
-function inferDocType(filename: string): { type: "document" | "text" | "image"; mimeType: string } {
-  const ext = filename.slice(filename.lastIndexOf(".")).toLowerCase();
-  if (IMAGE_EXTENSIONS.has(ext)) return { type: "image", mimeType: `image/${ext.slice(1)}` };
-  if (TEXT_EXTENSIONS.has(ext)) return { type: "text", mimeType: "text/plain" };
-  return { type: "document", mimeType: "application/octet-stream" };
 }
 
 async function download(payload: { url: string; filename: string }): Promise<Document> {
@@ -62,8 +53,9 @@ async function download(payload: { url: string; filename: string }): Promise<Doc
   const path = await outputPath(payload.filename);
   await files.write(path, response);
 
-  const contentType = response.headers.get("content-type") || "";
-  const { type, mimeType } = inferDocType(payload.filename);
+  const contentTypeHeader = response.headers.get("content-type");
+  const type = inferCategory(payload.filename);
+  const mimeType = contentTypeHeader || inferMimeType(payload.filename);
 
   // Use session-relative path to save tokens in LLM context.
   // bash cwd is already the session output dir, so relative paths work directly.
@@ -73,7 +65,7 @@ async function download(payload: { url: string; filename: string }): Promise<Doc
   return createDocument(text, `Web download from ${payload.url}`, {
     source: payload.url,
     type,
-    mimeType: contentType || mimeType,
+    mimeType,
   });
 }
 

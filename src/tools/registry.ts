@@ -1,10 +1,7 @@
 import type { LLMTool } from "../types/llm.ts";
-import type { Document } from "../types/document.ts";
-import type { ToolDefinition } from "../types/tool.ts";
-import type { ToolFilter } from "../types/tool.ts";
+import type { ToolDefinition, ToolFilter } from "../types/tool.ts";
 import { safeParse } from "../utils/parse.ts";
 import { createErrorDocument, formatDocumentsXml } from "../utils/document.ts";
-import { getState } from "../services/agent/session-context.ts";
 
 const SEPARATOR = "__";
 
@@ -84,13 +81,6 @@ export async function getTools(filter?: ToolFilter): Promise<LLMTool[]> {
   return expandedTools.filter((t) => matchesFilter(t.function.name, filter));
 }
 
-function storeDocuments(docs: Document | Document[]): void {
-  const state = getState();
-  if (!state) return;
-  const arr = Array.isArray(docs) ? docs : [docs];
-  state.documents.push(...arr);
-}
-
 export interface DispatchResult {
   xml: string;
   isError: boolean;
@@ -103,21 +93,16 @@ async function tryDispatch(
 ): Promise<DispatchResult> {
   try {
     const result = await tool.handler(args);
-    storeDocuments(result);
     return { xml: formatDocumentsXml(result), isError: false };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    const doc = createErrorDocument(name, message);
-    storeDocuments(doc);
-    return { xml: formatDocumentsXml(doc), isError: true };
+    return { xml: formatDocumentsXml(createErrorDocument(name, message)), isError: true };
   }
 }
 
 export async function dispatch(name: string, argsJson: string, filter?: ToolFilter): Promise<DispatchResult> {
   if (!matchesFilter(name, filter)) {
-    const doc = createErrorDocument(name, `Tool not allowed: ${name}`);
-    storeDocuments(doc);
-    return { xml: formatDocumentsXml(doc), isError: true };
+    return { xml: formatDocumentsXml(createErrorDocument(name, `Tool not allowed: ${name}`)), isError: true };
   }
 
   const parsed = safeParse<Record<string, unknown>>(argsJson, name);
@@ -135,9 +120,7 @@ export async function dispatch(name: string, argsJson: string, filter?: ToolFilt
     if (multiTool) return tryDispatch(name, multiTool, { action: actionName, payload: parsed });
   }
 
-  const doc = createErrorDocument(name, `Unknown tool: ${name}`);
-  storeDocuments(doc);
-  return { xml: formatDocumentsXml(doc), isError: true };
+  return { xml: formatDocumentsXml(createErrorDocument(name, `Unknown tool: ${name}`)), isError: true };
 }
 
 export function reset(): void {

@@ -178,7 +178,6 @@ export async function runAgent(
       act: { promptTokens: 0, completionTokens: 0 },
     },
     iteration: 0,
-    documents: [],
   };
 
   return runWithContext(state, log, async () => {

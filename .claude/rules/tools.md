@@ -14,7 +14,7 @@ Tools must be safe by construction — never rely on model behaviour.
 ## File & Export Convention
 
 - Tool: `src/tools/<tool_name>.ts` — exports `default { name, handler } satisfies ToolDefinition`
-- Schema: `src/schemas/<tool_name>.json` — matched by filename, auto-discovered
+- Schema: `src/schemas/<tool_name>.json` — matched by filename, registered in `src/tools/index.ts`
 - Naming: `snake_case`, unique and unambiguous (`send_email` not `send`)
 - Multi-action tools: use `{ action, payload }` handler shape with top-level
   `actions` key in schema. Dispatcher expands to `${tool}__${action}`.

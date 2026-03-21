@@ -62,8 +62,7 @@ function tokenSuffix(tokensIn?: number, tokensOut?: number): string {
 const LEVEL_ORDER: Record<LogLevel, number> = {
   debug: 0,
   info: 1,
-  warn: 2,
-  error: 3,
+  error: 2,
 };
 
 export interface ConsoleLoggerOptions {

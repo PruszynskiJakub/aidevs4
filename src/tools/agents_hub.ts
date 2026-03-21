@@ -5,7 +5,7 @@ import { config } from "../config/index.ts";
 import { parseCsv } from "../utils/csv.ts";
 import { safeParse, validateKeys, assertMaxLength, checkFileSize, resolveInput } from "../utils/parse.ts";
 import { createDocument } from "../utils/document.ts";
-import { hubPost, stringify } from "../utils/hub-fetch.ts";
+import { HUB_DOC_META, hubPost, stringify } from "../utils/hub-fetch.ts";
 
 async function verify(payload: { task: string; answer: string }): Promise<Document> {
   assertMaxLength(payload.task, "task", 100);
@@ -18,11 +18,7 @@ async function verify(payload: { task: string; answer: string }): Promise<Docume
     "Verify failed",
   );
 
-  return createDocument(stringify(response), `Verification result for task '${payload.task}'`, {
-    source: "hub.ag3nts.org",
-    type: "document",
-    mimeType: "application/json",
-  });
+  return createDocument(stringify(response), `Verification result for task '${payload.task}'`, HUB_DOC_META);
 }
 
 async function apiRequest(payload: {
@@ -44,11 +40,7 @@ async function apiRequest(payload: {
     "API request failed",
   );
 
-  return createDocument(stringify(response), `Response from /api/${payload.path}`, {
-    source: "hub.ag3nts.org",
-    type: "document",
-    mimeType: "application/json",
-  });
+  return createDocument(stringify(response), `Response from /api/${payload.path}`, HUB_DOC_META);
 }
 
 async function apiBatch(payload: {
@@ -107,11 +99,7 @@ async function apiBatch(payload: {
   await files.write(payload.output_file, JSON.stringify(results, null, 2));
 
   return results.map((r, i) =>
-    createDocument(stringify(r.response), `Batch row ${i + 1}/${results.length} from /api/${payload.path}`, {
-      source: "hub.ag3nts.org",
-      type: "document",
-      mimeType: "application/json",
-    }),
+    createDocument(stringify(r.response), `Batch row ${i + 1}/${results.length} from /api/${payload.path}`, HUB_DOC_META),
   );
 }
 
@@ -153,11 +141,7 @@ async function verifyBatch(payload: {
   await files.write(payload.output_file, JSON.stringify(results, null, 2));
 
   return results.map((r) =>
-    createDocument(stringify(r.response), `Verify batch item ${r.index} for task '${payload.task}'`, {
-      source: "hub.ag3nts.org",
-      type: "document",
-      mimeType: "application/json",
-    }),
+    createDocument(stringify(r.response), `Verify batch item ${r.index} for task '${payload.task}'`, HUB_DOC_META),
   );
 }
 

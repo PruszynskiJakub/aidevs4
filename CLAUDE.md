@@ -35,7 +35,8 @@ The agent's toolbox grows with each completed task.
   │   ├── prompts/                   # Markdown prompt files (.md + YAML frontmatter)
   │   │   └── system.md             # Agent system prompt
   │   ├── tools/                    # Tool implementations (auto-registered)
-  │   │   ├── dispatcher.ts         # Auto-discovers and dispatches tools
+  │   │   ├── registry.ts           # Tool registry and dispatch logic
+  │   │   ├── index.ts              # Explicit tool + schema registration
   │   │   └── <tool_name>.ts        # Each exports default ToolDefinition
   │   ├── schemas/                  # OpenAI function calling schemas (JSON)
   │   │   └── <tool_name>.json      # Matched to tools by filename
@@ -107,8 +108,8 @@ The agent's toolbox grows with each completed task.
   (src/types/tool.ts). Export as `export default { … } satisfies ToolDefinition`.
 - **File convention**: `src/tools/<tool_name>.ts` + `src/schemas/<tool_name>.json` —
   dispatcher matches them by filename. Naming is snake_case.
-- **Auto-discovery**: `dispatcher.ts` scans `src/tools/` at runtime — just drop a
-  file and it's registered. No manual wiring.
+- **Registration**: Add the tool import and `register()` call in
+  `src/tools/index.ts`. No auto-discovery — every tool is explicitly wired.
 - **Schemas**: Hand-written JSON in OpenAI function-calling format. Always set
   `additionalProperties: false` on every object, list all properties in `required`.
   Dispatcher adds `strict: true`. Avoid `oneOf`, `anyOf`, type arrays
@@ -119,7 +120,7 @@ The agent's toolbox grows with each completed task.
   dispatcher expands each action into a separate OpenAI function named
   `${tool}__${action}` (double-underscore separator). Each action has its own
   `description` and `parameters`. Handler switches on `action`.
-  See `csv_processor` as the reference pattern.
+  See `agents_hub` as the reference pattern.
 - **File I/O**: Always use `files` service (`src/services/file.ts`), never raw `fs`.
 - **Output files**: Use `ensureOutputDir()` + `outputPath(filename)` from
   `src/utils/output.ts` for any tool-generated files.

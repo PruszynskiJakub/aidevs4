@@ -2,7 +2,7 @@ export interface DocumentMetadata {
   source: string | null;
   sessionUuid: string;
   tokens: number;
-  type: "document" | "text" | "image";
+  type: "document" | "text" | "image" | "audio" | "video";
   mimeType: string;
 }
 

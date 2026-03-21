@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { CompositeLogger } from "./composite-logger";
-import type { Logger } from "../types/logger";
+import { createCompositeLogger } from "./composite-logger";
+import type { Logger } from "../../../types/logger";
 
 function mockLogger(): Logger & { calls: Record<string, unknown[][]> } {
   const calls: Record<string, unknown[][]> = {};
@@ -34,11 +34,11 @@ const ALL_METHODS: Array<{ method: keyof Logger; args: unknown[] }> = [
   { method: "debug", args: ["debug msg"] },
 ];
 
-describe("CompositeLogger", () => {
+describe("createCompositeLogger", () => {
   it("delegates step to all targets with correct args", () => {
     const a = mockLogger();
     const b = mockLogger();
-    const logger = new CompositeLogger([a, b]);
+    const logger = createCompositeLogger([a, b]);
 
     logger.step(1, 10, "gpt-4.1", 5);
 
@@ -50,7 +50,7 @@ describe("CompositeLogger", () => {
     for (const { method, args } of ALL_METHODS) {
       const a = mockLogger();
       const b = mockLogger();
-      const logger = new CompositeLogger([a, b]);
+      const logger = createCompositeLogger([a, b]);
 
       (logger[method] as (...a: unknown[]) => void)(...args);
 
@@ -60,7 +60,7 @@ describe("CompositeLogger", () => {
   });
 
   it("works with zero targets (no-op, no throw)", () => {
-    const logger = new CompositeLogger([]);
+    const logger = createCompositeLogger([]);
 
     expect(() => {
       for (const { method, args } of ALL_METHODS) {

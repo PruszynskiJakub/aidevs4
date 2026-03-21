@@ -55,7 +55,7 @@ export const config = deepFreeze({
   },
   keys: {
     openaiApiKey: requireEnv("OPENAI_API_KEY"),
-    geminiApiKey: process.env.GEMINI_API_KEY as string | undefined,
+    geminiApiKey: process.env.GEMINI_API_KEY,
   },
   limits: {
     maxIterations: 40,
@@ -74,7 +74,5 @@ export const config = deepFreeze({
   server: {
     port: Number(process.env.PORT) || 3000,
   },
-  assistant: (process.env.ASSISTANT ?? process.env.PERSONA) as string | undefined,
+  assistant: process.env.ASSISTANT ?? process.env.PERSONA,
 });
-
-export default config;
