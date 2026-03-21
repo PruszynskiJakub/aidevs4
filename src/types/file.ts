@@ -3,6 +3,7 @@
 export interface FileStat {
   isFile: boolean;
   isDirectory: boolean;
+  size: number;
 }
 
 export type WritableData = string | Response;

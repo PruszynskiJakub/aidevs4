@@ -4,7 +4,7 @@ import type { Document } from "../types/document.ts";
 // Mock llm before importing the tool
 const completionMock = mock(() => Promise.resolve("The best approach is to call the API endpoint first."));
 
-mock.module("../services/llm.ts", () => ({
+mock.module("../services/ai/llm.ts", () => ({
   llm: {
     completion: completionMock,
     chatCompletion: mock(),
@@ -30,7 +30,7 @@ describe("think tool", () => {
     expect(result.text).toBe("The best approach is to call the API endpoint first.");
     expect(result.description).toContain("Reasoning about:");
     expect(result.metadata.type).toBe("document");
-    expect(result.metadata.mime_type).toBe("text/plain");
+    expect(result.metadata.mimeType).toBe("text/plain");
     expect(result.metadata.source).toBeNull();
   });
 

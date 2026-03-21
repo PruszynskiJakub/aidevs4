@@ -33,7 +33,7 @@ async function verify(payload: { task: string; answer: string }): Promise<Docume
   return createDocument(text, `Verification result for task '${payload.task}'`, {
     source: "hub.ag3nts.org",
     type: "document",
-    mime_type: "application/json",
+    mimeType: "application/json",
   });
 }
 
@@ -75,7 +75,7 @@ async function apiRequest(payload: {
   return createDocument(text, `Response from /api/${payload.path}`, {
     source: "hub.ag3nts.org",
     type: "document",
-    mime_type: "application/json",
+    mimeType: "application/json",
   });
 }
 
@@ -152,7 +152,7 @@ async function apiBatch(payload: {
     return createDocument(text, `Batch row ${i + 1}/${results.length} from /api/${payload.path}`, {
       source: "hub.ag3nts.org",
       type: "document",
-      mime_type: "application/json",
+      mimeType: "application/json",
     });
   });
 }
@@ -207,7 +207,7 @@ async function verifyBatch(payload: {
     return createDocument(text, `Verify batch item ${r.index} for task '${payload.task}'`, {
       source: "hub.ag3nts.org",
       type: "document",
-      mime_type: "application/json",
+      mimeType: "application/json",
     });
   });
 }

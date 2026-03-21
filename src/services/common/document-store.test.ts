@@ -6,7 +6,7 @@ function makeDoc(text: string, type: "document" | "text" | "image" = "document")
   return createDocument(text, `test: ${text}`, {
     source: null,
     type,
-    mime_type: "text/plain",
+    mimeType: "text/plain",
   });
 }
 

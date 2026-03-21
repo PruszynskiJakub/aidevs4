@@ -27,4 +27,4 @@ register(document_processor, documentProcessorSchema);
 register(prompt_engineer, promptEngineerSchema);
 
 export { getTools, dispatch, reset };
-export type { ToolFilter } from "../types/assistant.ts";
+export type { ToolFilter } from "../types/tool.ts";

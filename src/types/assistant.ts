@@ -1,7 +1,5 @@
-export interface ToolFilter {
-  include?: string[];
-  exclude?: string[];
-}
+export type { ToolFilter } from "./tool.ts";
+import type { ToolFilter } from "./tool.ts";
 
 export interface AssistantConfig {
   name: string;

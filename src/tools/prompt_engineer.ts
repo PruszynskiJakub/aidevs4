@@ -79,7 +79,7 @@ async function promptEngineer(
   return createDocument(text, `Engineered prompt for: ${args.goal.slice(0, 80)}`, {
     source: null,
     type: "document",
-    mime_type: "application/json",
+    mimeType: "application/json",
   });
 }
 

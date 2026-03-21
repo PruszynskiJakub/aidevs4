@@ -11,7 +11,7 @@ export async function parseCsv(filePath: string): Promise<Row[]> {
 export function toCsvLine(row: Row, columns: string[]): string {
   return columns
     .map((col) => {
-      const val = row[col];
+      const val = row[col] ?? "";
       return val.includes(",") || val.includes('"') || val.includes("\n")
         ? `"${val.replace(/"/g, '""')}"`
         : val;

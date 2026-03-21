@@ -39,7 +39,7 @@ async function checkPackage(payload: { packageid: string }): Promise<Document> {
   return createDocument(
     content,
     `Package ${payload.packageid} status. Use shipping__redirect to reroute if needed.`,
-    { source: "hub.ag3nts.org", type: "document", mime_type: "application/json" },
+    { source: "hub.ag3nts.org", type: "document", mimeType: "application/json" },
   );
 }
 
@@ -87,7 +87,7 @@ async function redirectPackage(payload: {
   return createDocument(
     content,
     `Redirect processed for ${payload.packageid}.${confirmNote} IMPORTANT: Always include the confirmation code in your reply.`,
-    { source: "hub.ag3nts.org", type: "document", mime_type: "application/json" },
+    { source: "hub.ag3nts.org", type: "document", mimeType: "application/json" },
   );
 }
 

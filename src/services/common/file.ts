@@ -70,11 +70,7 @@ export function createBunFileService(
 
     async write(path: string, data: string | Response): Promise<void> {
       assertPathAllowed(path, writePaths, "write");
-      if (data instanceof Response) {
-        await Bun.write(path, data);
-      } else {
-        await Bun.write(path, data);
-      }
+      await Bun.write(path, data);
     },
 
     async append(path: string, data: string): Promise<void> {
@@ -90,7 +86,7 @@ export function createBunFileService(
     async stat(path: string): Promise<FileStat> {
       assertPathAllowed(path, readPaths, "read");
       const s = await stat(path);
-      return { isFile: s.isFile(), isDirectory: s.isDirectory() };
+      return { isFile: s.isFile(), isDirectory: s.isDirectory(), size: s.size };
     },
 
     async mkdir(path: string): Promise<void> {

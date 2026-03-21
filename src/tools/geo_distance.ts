@@ -89,7 +89,7 @@ async function findNearby(payload: {
   return createDocument(
     text,
     `${matches.length} matches within ${payload.radius_km} km.${note}`,
-    { source: null, type: "document", mime_type: "application/json" },
+    { source: null, type: "document", mimeType: "application/json" },
   );
 }
 
@@ -105,7 +105,7 @@ function distance(payload: {
   return createDocument(
     JSON.stringify({ distance_km: km }),
     `Distance: ${km} km`,
-    { source: null, type: "document", mime_type: "application/json" },
+    { source: null, type: "document", mimeType: "application/json" },
   );
 }
 

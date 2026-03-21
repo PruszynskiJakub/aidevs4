@@ -31,11 +31,11 @@ function assertHostAllowed(hostname: string): void {
   }
 }
 
-function inferDocType(filename: string): { type: "document" | "text" | "image"; mime_type: string } {
+function inferDocType(filename: string): { type: "document" | "text" | "image"; mimeType: string } {
   const ext = filename.slice(filename.lastIndexOf(".")).toLowerCase();
-  if (IMAGE_EXTENSIONS.has(ext)) return { type: "image", mime_type: `image/${ext.slice(1)}` };
-  if (TEXT_EXTENSIONS.has(ext)) return { type: "text", mime_type: "text/plain" };
-  return { type: "document", mime_type: "application/octet-stream" };
+  if (IMAGE_EXTENSIONS.has(ext)) return { type: "image", mimeType: `image/${ext.slice(1)}` };
+  if (TEXT_EXTENSIONS.has(ext)) return { type: "text", mimeType: "text/plain" };
+  return { type: "document", mimeType: "application/octet-stream" };
 }
 
 async function download(payload: { url: string; filename: string }): Promise<Document> {
@@ -63,7 +63,7 @@ async function download(payload: { url: string; filename: string }): Promise<Doc
   await files.write(path, response);
 
   const contentType = response.headers.get("content-type") || "";
-  const { type, mime_type } = inferDocType(payload.filename);
+  const { type, mimeType } = inferDocType(payload.filename);
 
   // Use session-relative path to save tokens in LLM context.
   // bash cwd is already the session output dir, so relative paths work directly.
@@ -73,7 +73,7 @@ async function download(payload: { url: string; filename: string }): Promise<Doc
   return createDocument(text, `Web download from ${payload.url}`, {
     source: payload.url,
     type,
-    mime_type: contentType || mime_type,
+    mimeType: contentType || mimeType,
   });
 }
 

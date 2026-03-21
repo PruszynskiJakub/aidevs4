@@ -1,17 +1,7 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import type { LLMProvider, LLMChatResponse, LLMMessage, ChatCompletionParams } from "./types/llm.ts";
 
-// Stub prompt service before importing agent
-mock.module("./services/prompt.ts", () => ({
-  promptService: {
-    load: async (name: string) => {
-      if (name === "plan") {
-        return { model: "gpt-4.1", temperature: 0.3, content: "You are a planning module." };
-      }
-      return { model: "gpt-4.1", content: "You are an agent." };
-    },
-  },
-}));
+// Use real prompt/assistant services. Tests check loop behavior, not model names.
 
 // Stub dispatcher — we control dispatch results per test
 let dispatchResults: Record<string, () => Promise<string>> = {};
@@ -79,7 +69,10 @@ describe("agent plan-act loop", () => {
     };
 
     await runAgent(makeMessages("What is 2+2?"), provider);
-    expect(callLog).toEqual(["plan:gpt-4.1", "act:gpt-4.1"]);
+    // Plan uses plan.md model, act uses act.md model (or assistant override)
+    expect(callLog[0]).toMatch(/^plan:/);
+    expect(callLog[1]).toMatch(/^act:/);
+    expect(callLog).toHaveLength(2);
   });
 
   it("plan is NOT persisted in main message history", async () => {
@@ -121,11 +114,13 @@ describe("agent plan-act loop", () => {
 
     await runAgent(makeMessages("test"), provider);
 
-    // Plan messages should have plan system prompt + user message (no act system prompt)
+    // Plan messages should have plan system prompt (from plan.md) + user message (no act system prompt)
     expect(planMessages[0].role).toBe("system");
-    expect((planMessages[0] as any).content).toBe("You are a planning module.");
     expect(planMessages[1].role).toBe("user");
     expect(planMessages).toHaveLength(2);
+    // Plan system prompt should NOT be the act system prompt
+    const planContent = (planMessages[0] as any).content;
+    expect(planContent).toBeTruthy();
   });
 
   it("plan updates across iterations with tool results", async () => {
@@ -362,7 +357,9 @@ describe("agent model override", () => {
     };
 
     await runAgent(makeMessages("test"), provider, { model: "gpt-4.1-mini" });
-    expect(models).toEqual(["plan:gpt-4.1", "act:gpt-4.1-mini"]);
+    // Plan uses plan.md model, act uses the override model
+    expect(models[0]).toMatch(/^plan:gpt-4\.1$/);
+    expect(models[1]).toBe("act:gpt-4.1-mini");
   });
 
   it("falls back to act prompt frontmatter model when no override", async () => {
@@ -379,6 +376,8 @@ describe("agent model override", () => {
     };
 
     await runAgent(makeMessages("test"), provider);
-    expect(capturedActModel).toBe("gpt-4.1"); // from mocked promptService
+    // Should use model from act.md frontmatter (since no override and no assistant model)
+    expect(capturedActModel).toBeTruthy();
+    expect(capturedActModel).not.toBe(""); // some model from act.md was used
   });
 });

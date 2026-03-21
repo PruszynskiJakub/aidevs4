@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "bun:test";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -179,27 +179,41 @@ describe("assertNumericBounds", () => {
 // --------------- checkFileSize ---------------
 
 describe("checkFileSize", () => {
-  let tmp: string;
-
   it("passes for small file", async () => {
-    tmp = await mkdtemp(join(tmpdir(), "parse-test-"));
-    const p = join(tmp, "small.txt");
-    await Bun.write(p, "hello");
-    await expect(checkFileSize(p, 1024)).resolves.toBeUndefined();
-    await rm(tmp, { recursive: true, force: true });
+    let tmp = await mkdtemp(join(tmpdir(), "parse-test-"));
+    _testReadPaths.push(tmp);
+    try {
+      const p = join(tmp, "small.txt");
+      await Bun.write(p, "hello");
+      await expect(checkFileSize(p, 1024)).resolves.toBeUndefined();
+    } finally {
+      _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
+      await rm(tmp, { recursive: true, force: true });
+    }
   });
 
   it("rejects file over limit", async () => {
-    tmp = await mkdtemp(join(tmpdir(), "parse-test-"));
-    const p = join(tmp, "big.txt");
-    // Write a 2 KB file, set limit to 1 KB
-    await Bun.write(p, "x".repeat(2048));
-    await expect(checkFileSize(p, 1024)).rejects.toThrow("exceeds limit");
-    await rm(tmp, { recursive: true, force: true });
+    let tmp = await mkdtemp(join(tmpdir(), "parse-test-"));
+    _testReadPaths.push(tmp);
+    try {
+      const p = join(tmp, "big.txt");
+      await Bun.write(p, "x".repeat(2048));
+      await expect(checkFileSize(p, 1024)).rejects.toThrow("exceeds limit");
+    } finally {
+      _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
+      await rm(tmp, { recursive: true, force: true });
+    }
   });
 
   it("throws on nonexistent file", async () => {
-    await expect(checkFileSize("/tmp/nonexistent-file-xyz.txt")).rejects.toThrow();
+    let tmp = await mkdtemp(join(tmpdir(), "parse-test-"));
+    _testReadPaths.push(tmp);
+    try {
+      await expect(checkFileSize(join(tmp, "nonexistent-file-xyz.txt"))).rejects.toThrow();
+    } finally {
+      _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
+      await rm(tmp, { recursive: true, force: true });
+    }
   });
 });
 

@@ -66,7 +66,7 @@ describe("bash tool", () => {
     expect(result.description).toContain("Bash output for:");
     expect(result.metadata.source).toBeNull();
     expect(result.metadata.type).toBe("document");
-    expect(result.metadata.mime_type).toBe("text/plain");
+    expect(result.metadata.mimeType).toBe("text/plain");
     expect(result.metadata.tokens).toBeGreaterThan(0);
   });
 });

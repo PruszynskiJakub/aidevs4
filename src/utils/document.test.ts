@@ -6,7 +6,7 @@ describe("createDocument", () => {
     const doc = createDocument("hello world", "greeting", {
       source: null,
       type: "document",
-      mime_type: "text/plain",
+      mimeType: "text/plain",
     });
 
     expect(doc.uuid).toBeTruthy();
@@ -15,7 +15,7 @@ describe("createDocument", () => {
     expect(doc.description).toBe("greeting");
     expect(doc.metadata.source).toBeNull();
     expect(doc.metadata.type).toBe("document");
-    expect(doc.metadata.mime_type).toBe("text/plain");
+    expect(doc.metadata.mimeType).toBe("text/plain");
     expect(doc.metadata.tokens).toBe(Math.ceil("hello world".length / 4));
     expect(doc.metadata.sessionUuid).toBeTruthy();
   });
@@ -24,12 +24,12 @@ describe("createDocument", () => {
     const doc = createDocument("content", "desc", {
       source: "https://example.com",
       type: "image",
-      mime_type: "image/png",
+      mimeType: "image/png",
     });
 
     expect(doc.metadata.source).toBe("https://example.com");
     expect(doc.metadata.type).toBe("image");
-    expect(doc.metadata.mime_type).toBe("image/png");
+    expect(doc.metadata.mimeType).toBe("image/png");
   });
 
   it("estimates tokens as ceil(length/4)", () => {
@@ -37,7 +37,7 @@ describe("createDocument", () => {
     const doc = createDocument(text, "test", {
       source: null,
       type: "document",
-      mime_type: "text/plain",
+      mimeType: "text/plain",
     });
     expect(doc.metadata.tokens).toBe(100);
   });
@@ -46,7 +46,7 @@ describe("createDocument", () => {
     const doc = createDocument("", "empty", {
       source: null,
       type: "document",
-      mime_type: "text/plain",
+      mimeType: "text/plain",
     });
     expect(doc.metadata.tokens).toBe(0);
     expect(doc.text).toBe("");
@@ -59,7 +59,7 @@ describe("createErrorDocument", () => {
     expect(doc.text).toBe("Error: command not found");
     expect(doc.description).toBe("Error from bash");
     expect(doc.metadata.type).toBe("document");
-    expect(doc.metadata.mime_type).toBe("text/plain");
+    expect(doc.metadata.mimeType).toBe("text/plain");
     expect(doc.metadata.source).toBeNull();
   });
 });
@@ -69,7 +69,7 @@ describe("formatDocumentXml", () => {
     const doc = createDocument("hello", "greeting", {
       source: null,
       type: "document",
-      mime_type: "text/plain",
+      mimeType: "text/plain",
     });
     const xml = formatDocumentXml(doc);
     expect(xml).toBe(`<document id="${doc.uuid}" description="greeting">hello</document>`);
@@ -81,7 +81,7 @@ describe("formatDocumentsXml", () => {
     const doc = createDocument("single", "test", {
       source: null,
       type: "document",
-      mime_type: "text/plain",
+      mimeType: "text/plain",
     });
     const xml = formatDocumentsXml(doc);
     expect(xml).toContain("single");
@@ -90,8 +90,8 @@ describe("formatDocumentsXml", () => {
 
   it("joins multiple documents with newline", () => {
     const docs = [
-      createDocument("first", "doc1", { source: null, type: "document", mime_type: "text/plain" }),
-      createDocument("second", "doc2", { source: null, type: "document", mime_type: "text/plain" }),
+      createDocument("first", "doc1", { source: null, type: "document", mimeType: "text/plain" }),
+      createDocument("second", "doc2", { source: null, type: "document", mimeType: "text/plain" }),
     ];
     const xml = formatDocumentsXml(docs);
     const lines = xml.split("\n");

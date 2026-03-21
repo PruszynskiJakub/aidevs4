@@ -13,7 +13,7 @@ describe("registry", () => {
       const tool: ToolDefinition = {
         name: "echo",
         handler: async (args: { text: string }) =>
-          createDocument(args.text, "echo result", { source: null, type: "document", mime_type: "text/plain" }),
+          createDocument(args.text, "echo result", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "echo",
@@ -40,7 +40,7 @@ describe("registry", () => {
       const tool: ToolDefinition = {
         name: "multi",
         handler: async ({ action, payload }: { action: string; payload: unknown }) =>
-          createDocument("ok", `${action}`, { source: null, type: "document", mime_type: "text/plain" }),
+          createDocument("ok", `${action}`, { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "multi",
@@ -84,7 +84,7 @@ describe("registry", () => {
       const tool: ToolDefinition = {
         name: "dup",
         handler: async () =>
-          createDocument("ok", "dup", { source: null, type: "document", mime_type: "text/plain" }),
+          createDocument("ok", "dup", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "dup",
@@ -102,7 +102,7 @@ describe("registry", () => {
       const tool: ToolDefinition = {
         name: "greet",
         handler: async (args: { name: string }) =>
-          createDocument(`Hello, ${args.name}!`, "greeting", { source: null, type: "document", mime_type: "text/plain" }),
+          createDocument(`Hello, ${args.name}!`, "greeting", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "greet",
@@ -138,7 +138,7 @@ describe("registry", () => {
         name: "ma",
         handler: async (args: { action: string; payload: unknown }) => {
           received = args;
-          return createDocument("done", "ma result", { source: null, type: "document", mime_type: "text/plain" });
+          return createDocument("done", "ma result", { source: null, type: "document", mimeType: "text/plain" });
         },
       };
       const schema = {
@@ -191,7 +191,7 @@ describe("registry", () => {
       const echo: ToolDefinition = {
         name: "echo",
         handler: async (args: { text: string }) =>
-          createDocument(args.text, "echo", { source: null, type: "document", mime_type: "text/plain" }),
+          createDocument(args.text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const echoSchema = {
         name: "echo",
@@ -207,7 +207,7 @@ describe("registry", () => {
       const multi: ToolDefinition = {
         name: "multi",
         handler: async ({ action, payload }: { action: string; payload: unknown }) =>
-          createDocument("ok", `${action}`, { source: null, type: "document", mime_type: "text/plain" }),
+          createDocument("ok", `${action}`, { source: null, type: "document", mimeType: "text/plain" }),
       };
       const multiSchema = {
         name: "multi",
@@ -275,7 +275,7 @@ describe("registry", () => {
       const tool: ToolDefinition = {
         name: "echo",
         handler: async (args: { text: string }) =>
-          createDocument(args.text, "echo", { source: null, type: "document", mime_type: "text/plain" }),
+          createDocument(args.text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "echo",
@@ -297,7 +297,7 @@ describe("registry", () => {
       const tool: ToolDefinition = {
         name: "echo",
         handler: async (args: { text: string }) =>
-          createDocument(args.text, "echo", { source: null, type: "document", mime_type: "text/plain" }),
+          createDocument(args.text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "echo",
@@ -320,7 +320,7 @@ describe("registry", () => {
       const tool: ToolDefinition = {
         name: "ma",
         handler: async (args: { action: string; payload: unknown }) =>
-          createDocument("done", "ma", { source: null, type: "document", mime_type: "text/plain" }),
+          createDocument("done", "ma", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "ma",
@@ -347,7 +347,7 @@ describe("registry", () => {
       const tool: ToolDefinition = {
         name: "echo",
         handler: async (args: { text: string }) =>
-          createDocument(args.text, "echo", { source: null, type: "document", mime_type: "text/plain" }),
+          createDocument(args.text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "echo",
@@ -371,7 +371,7 @@ describe("registry", () => {
       const tool: ToolDefinition = {
         name: "temp",
         handler: async () =>
-          createDocument("ok", "temp", { source: null, type: "document", mime_type: "text/plain" }),
+          createDocument("ok", "temp", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "temp",

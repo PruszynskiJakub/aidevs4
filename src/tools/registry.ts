@@ -1,7 +1,7 @@
 import type { LLMTool } from "../types/llm.ts";
 import type { Document } from "../types/document.ts";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { ToolFilter } from "../types/assistant.ts";
+import type { ToolFilter } from "../types/tool.ts";
 import { safeParse } from "../utils/parse.ts";
 import { createErrorDocument, formatDocumentsXml } from "../utils/document.ts";
 import { getState } from "../services/agent/session-context.ts";
@@ -91,6 +91,23 @@ function storeDocuments(docs: Document | Document[]): void {
   state.documents.push(...arr);
 }
 
+async function tryDispatch(
+  name: string,
+  tool: ToolDefinition,
+  args: Record<string, unknown>,
+): Promise<string> {
+  try {
+    const result = await tool.handler(args);
+    storeDocuments(result);
+    return formatDocumentsXml(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    const doc = createErrorDocument(name, message);
+    storeDocuments(doc);
+    return formatDocumentsXml(doc);
+  }
+}
+
 export async function dispatch(name: string, argsJson: string, filter?: ToolFilter): Promise<string> {
   if (!matchesFilter(name, filter)) {
     const doc = createErrorDocument(name, `Tool not allowed: ${name}`);
@@ -98,42 +115,19 @@ export async function dispatch(name: string, argsJson: string, filter?: ToolFilt
     return formatDocumentsXml(doc);
   }
 
-  let tool = handlers.get(name);
+  const parsed = safeParse<Record<string, unknown>>(argsJson, name);
 
-  if (tool) {
-    try {
-      const args = safeParse(argsJson, name);
-      const result = await tool.handler(args);
-      storeDocuments(result);
-      return formatDocumentsXml(result);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      const doc = createErrorDocument(name, message);
-      storeDocuments(doc);
-      return formatDocumentsXml(doc);
-    }
-  }
+  const tool = handlers.get(name);
+  if (tool) return tryDispatch(name, tool, parsed);
 
   // Multi-action routing: tool_name__action_name -> handler(tool_name) with { action, payload }
   const sepIdx = name.indexOf(SEPARATOR);
   if (sepIdx !== -1) {
     const toolName = name.slice(0, sepIdx);
     const actionName = name.slice(sepIdx + SEPARATOR.length);
-    tool = handlers.get(toolName);
+    const multiTool = handlers.get(toolName);
 
-    if (tool) {
-      try {
-        const payload = safeParse(argsJson, name);
-        const result = await tool.handler({ action: actionName, payload });
-        storeDocuments(result);
-        return formatDocumentsXml(result);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        const doc = createErrorDocument(name, message);
-        storeDocuments(doc);
-        return formatDocumentsXml(doc);
-      }
-    }
+    if (multiTool) return tryDispatch(name, multiTool, { action: actionName, payload: parsed });
   }
 
   const doc = createErrorDocument(name, `Unknown tool: ${name}`);

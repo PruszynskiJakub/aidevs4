@@ -14,7 +14,7 @@ const mockChatCompletion = mock(
     }),
 );
 
-mock.module("../services/llm.ts", () => ({
+mock.module("../services/ai/llm.ts", () => ({
   llm: {
     chatCompletion: mockChatCompletion,
     completion: mock(() => Promise.resolve("")),
@@ -73,12 +73,12 @@ describe("document_processor ask — text files", () => {
     expect(result.text).toBe("Mocked answer from Gemini");
     expect(result.description).toContain("1 document(s)");
     expect(result.metadata.type).toBe("document");
-    expect(result.metadata.mime_type).toBe("text/plain");
+    expect(result.metadata.mimeType).toBe("text/plain");
 
     // Verify llm.chatCompletion was called with correct params
     expect(mockChatCompletion).toHaveBeenCalledTimes(1);
     const callArgs = mockChatCompletion.mock.calls[0][0] as ChatCompletionParams;
-    expect(callArgs.model).toBe("gemini-2.5-flash");
+    expect(callArgs.model).toBe("gemini-3-flash-preview");
 
     // Content should be ContentPart[]
     const msg = callArgs.messages[0];

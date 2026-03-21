@@ -1,6 +1,6 @@
 import { assistantsService } from "./assistants.ts";
 import { promptService } from "../../ai/prompt.ts";
-import type { ToolFilter } from "../../../types/assistant.ts";
+import type { ToolFilter } from "../../../types/tool.ts";
 
 interface ResolvedAssistant {
   prompt: string;
@@ -39,9 +39,3 @@ export function createAssistantResolverService() {
 }
 
 export const assistantResolverService = createAssistantResolverService();
-
-/** @deprecated Use assistantResolverService.resolve() instead */
-export const resolveAssistant = assistantResolverService.resolve.bind(assistantResolverService);
-
-/** @deprecated Use assistantResolverService.clearCache() instead */
-export const clearPromptCache = assistantResolverService.clearCache.bind(assistantResolverService);

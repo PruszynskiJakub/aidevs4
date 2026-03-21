@@ -1,12 +1,12 @@
 import type { LLMProvider, LLMMessage, LLMChatResponse, LLMTool, LLMToolCall } from "./types/llm.ts";
-import type { ToolFilter } from "./types/assistant.ts";
+import type { ToolFilter } from "./types/tool.ts";
 import type { PromptResult } from "./services/ai/prompt.ts";
 import type { AgentState } from "./types/agent-state.ts";
 import { llm as defaultLLM } from "./services/ai/llm.ts";
 import { config } from "./config/index.ts";
 import { getTools, dispatch } from "./tools/index.ts";
 import { promptService } from "./services/ai/prompt.ts";
-import { elapsed } from "./services/common/logging/logger.ts";
+import { elapsed } from "./utils/timing.ts";
 import { MarkdownLogger } from "./services/common/logging/markdown-logger.ts";
 import { ConsoleLogger } from "./services/common/logging/console-logger.ts";
 import { CompositeLogger } from "./services/common/logging/composite-logger.ts";
@@ -25,14 +25,14 @@ function createLogger(
   return { log, md };
 }
 
-async function resolveActModel(modelOverride?: string): Promise<string> {
+async function resolveActModel(assistantName: string, modelOverride?: string): Promise<string> {
   if (modelOverride) return modelOverride;
-  const assistant = await assistants.get("default");
+  const assistant = await assistants.get(assistantName);
   const act = await promptService.load("act", {
     objective: assistant.objective,
     tone: assistant.tone,
   });
-  return act.model!;
+  return assistant.model ?? act.model!;
 }
 
 async function executePlanPhase(
@@ -169,7 +169,7 @@ async function dispatchTools(
 export async function runAgent(
   messages: LLMMessage[],
   provider: LLMProvider = defaultLLM,
-  options?: { model?: string; sessionId?: string; toolFilter?: ToolFilter },
+  options?: { model?: string; sessionId?: string; toolFilter?: ToolFilter; assistant?: string },
 ): Promise<string> {
   const userPrompt = messages.find((m) => m.role === "user")?.content ?? "";
   const { log, md } = createLogger(userPrompt, options?.sessionId);
@@ -190,7 +190,7 @@ export async function runAgent(
       getTools(options?.toolFilter),
       promptService.load("plan"),
     ]);
-    const actModel = await resolveActModel(options?.model);
+    const actModel = await resolveActModel(options?.assistant ?? "default", options?.model);
 
     for (let i = 0; i < config.limits.maxIterations; i++) {
       state.iteration = i;
@@ -212,56 +212,5 @@ export async function runAgent(
     log.maxIter(config.limits.maxIterations);
     await md.flush();
     return "";
-  });
-}
-
-function extractFlag(args: string[], flag: string): string | undefined {
-  const idx = args.indexOf(flag);
-  if (idx === -1) return undefined;
-  const value = args[idx + 1];
-  if (!value) {
-    console.error(`${flag} requires a value`);
-    process.exit(1);
-  }
-  args.splice(idx, 2);
-  return value;
-}
-
-// CLI entry point
-if (import.meta.main) {
-  const args = process.argv.slice(2);
-  const sessionId = extractFlag(args, "--session");
-  const modelOverride = extractFlag(args, "--model");
-
-  // Remaining args: [assistant] "prompt" or just "prompt"
-  let assistantName: string;
-  let prompt: string;
-
-  if (args.length >= 2) {
-    assistantName = args[0];
-    prompt = args[1];
-  } else if (args.length === 1) {
-    assistantName = config.assistant ?? "default";
-    prompt = args[0];
-  } else {
-    console.error('Usage: bun run agent [assistant] "your prompt" [--session <id>] [--model <model>]');
-    process.exit(1);
-  }
-
-  const assistant = await assistants.get(assistantName);
-  const act = await promptService.load("act", {
-    objective: assistant.objective,
-    tone: assistant.tone,
-  });
-  const agentModel = modelOverride ?? assistant.model ?? act.model!;
-  const messages: LLMMessage[] = [
-    { role: "system", content: act.content },
-    { role: "user", content: prompt },
-  ];
-
-  void runAgent(messages, undefined, {
-    model: agentModel,
-    sessionId,
-    toolFilter: assistant.tools,
   });
 }

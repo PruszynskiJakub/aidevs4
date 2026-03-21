@@ -1,6 +1,13 @@
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
-export interface Logger {
+export interface GeneralLogger {
+  info(message: string): void;
+  success(message: string): void;
+  error(message: string): void;
+  debug(message: string): void;
+}
+
+export interface Logger extends GeneralLogger {
   step(iter: number, max: number, model: string, msgCount: number): void;
   llm(elapsed: string, tokensIn?: number, tokensOut?: number): void;
   plan(planText: string, model: string, elapsed: string, tokensIn?: number, tokensOut?: number): void;
@@ -11,8 +18,4 @@ export interface Logger {
   batchDone(count: number, elapsed: string): void;
   answer(text: string | null): void;
   maxIter(max: number): void;
-  info(message: string): void;
-  success(message: string): void;
-  error(message: string): void;
-  debug(message: string): void;
 }

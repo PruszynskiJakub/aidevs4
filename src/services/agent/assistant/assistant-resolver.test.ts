@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { resolveAssistant, clearPromptCache } from "./assistant-resolver.ts";
+import { assistantResolverService } from "./assistant-resolver.ts";
 
 beforeEach(() => {
-  clearPromptCache();
+  assistantResolverService.clearCache();
 });
 
-describe("resolveAssistant", () => {
+describe("assistantResolverService", () => {
   it("resolves the default assistant with prompt, model, and toolFilter", async () => {
-    const result = await resolveAssistant("default");
+    const result = await assistantResolverService.resolve("default");
     expect(result.prompt).toBeDefined();
     expect(typeof result.prompt).toBe("string");
     expect(result.prompt.length).toBeGreaterThan(0);
@@ -16,12 +16,12 @@ describe("resolveAssistant", () => {
   });
 
   it("throws for unknown assistant name", async () => {
-    await expect(resolveAssistant("nonexistent")).rejects.toThrow(/Unknown assistant/);
+    await expect(assistantResolverService.resolve("nonexistent")).rejects.toThrow(/Unknown assistant/);
   });
 
   it("caches prompts — second call returns same content", async () => {
-    const first = await resolveAssistant("default");
-    const second = await resolveAssistant("default");
+    const first = await assistantResolverService.resolve("default");
+    const second = await assistantResolverService.resolve("default");
     expect(first.prompt).toBe(second.prompt);
   });
 });

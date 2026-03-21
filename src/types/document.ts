@@ -3,7 +3,7 @@ export interface DocumentMetadata {
   sessionUuid: string;
   tokens: number;
   type: "document" | "text" | "image";
-  mime_type: string;
+  mimeType: string;
 }
 
 export interface Document {

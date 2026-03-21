@@ -21,7 +21,7 @@ async function think(args: { thought: string }): Promise<Document> {
   return createDocument(result, `Reasoning about: ${snippet}`, {
     source: null,
     type: "document",
-    mime_type: "text/plain",
+    mimeType: "text/plain",
   });
 }
 

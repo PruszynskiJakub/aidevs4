@@ -1,7 +1,8 @@
 import type { Document, DocumentMetadata } from "../types/document.ts";
 import { getSessionId } from "../services/agent/session-context.ts";
+import { escapeXml } from "./xml.ts";
 
-type CreateDocumentMeta = Pick<DocumentMetadata, "source" | "type" | "mime_type">;
+type CreateDocumentMeta = Pick<DocumentMetadata, "source" | "type" | "mimeType">;
 
 export function createDocument(
   text: string,
@@ -17,7 +18,7 @@ export function createDocument(
       sessionUuid: getSessionId() ?? "unknown",
       tokens: Math.ceil(text.length / 4),
       type: meta.type,
-      mime_type: meta.mime_type,
+      mimeType: meta.mimeType,
     },
   };
 }
@@ -26,12 +27,12 @@ export function createErrorDocument(toolName: string, message: string): Document
   return createDocument(
     `Error: ${message}`,
     `Error from ${toolName}`,
-    { source: null, type: "document", mime_type: "text/plain" },
+    { source: null, type: "document", mimeType: "text/plain" },
   );
 }
 
 export function formatDocumentXml(doc: Document): string {
-  return `<document id="${doc.uuid}" description="${doc.description}">${doc.text}</document>`;
+  return `<document id="${doc.uuid}" description="${escapeXml(doc.description)}">${doc.text}</document>`;
 }
 
 export function formatDocumentsXml(docs: Document | Document[]): string {

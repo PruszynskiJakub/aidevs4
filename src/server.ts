@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { runAgent } from "./agent.ts";
 import { sessionService } from "./services/agent/session.ts";
-import { resolveAssistant } from "./services/agent/assistant/assistant-resolver.ts";
+import { assistantResolverService } from "./services/agent/assistant/assistant-resolver.ts";
 import { log } from "./services/common/logging/logger.ts";
 import { config } from "./config/index.ts";
 import type { LLMMessage } from "./types/llm.ts";
@@ -60,7 +60,7 @@ async function executeChatTurn(
 
   let resolved;
   try {
-    resolved = await resolveAssistant(assistantName);
+    resolved = await assistantResolverService.resolve(assistantName);
   } catch (err) {
     if (err instanceof Error && err.message.includes("Unknown assistant")) {
       throw Object.assign(new Error(err.message), { statusCode: 400 });

@@ -1,6 +1,8 @@
 import { parse } from "yaml";
 import { resolve, basename } from "path";
-import type { AssistantConfig, ToolFilter } from "../../../types/assistant.ts";
+import type { AssistantConfig } from "../../../types/assistant.ts";
+import type { ToolFilter } from "../../../types/tool.ts";
+import { files } from "../../common/file.ts";
 
 const ASSISTANTS_DIR = resolve(import.meta.dir, "../../../assistants");
 
@@ -69,7 +71,7 @@ async function loadAll(): Promise<Map<string, AssistantConfig>> {
 
   for await (const path of glob.scan({ cwd: ASSISTANTS_DIR })) {
     const fullPath = resolve(ASSISTANTS_DIR, path);
-    const text = await Bun.file(fullPath).text();
+    const text = await files.readText(fullPath);
     const raw = parse(text);
     const key = basename(path, ".yaml");
     const config = validate(raw, path);
@@ -112,5 +114,5 @@ export function createAssistantsService() {
 
 export const assistantsService = createAssistantsService();
 
-/** @deprecated Use assistantsService instead */
+/** @deprecated Use assistantsService instead — kept for backward compat with agent.ts and cli.ts */
 export const assistants = assistantsService;

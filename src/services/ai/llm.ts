@@ -9,8 +9,9 @@ export { createOpenAIProvider } from "../../providers/openai.ts";
 export function createLlmService(): LLMProvider {
   const registry = new ProviderRegistry();
 
-  registry.register("gpt-", createOpenAIProvider());
-  registry.register("o", createOpenAIProvider());
+  const openai = createOpenAIProvider();
+  registry.register("gpt-", openai);
+  registry.register(/^o[1-9]/, openai);
 
   const geminiKey = config.keys.geminiApiKey;
   if (geminiKey) {

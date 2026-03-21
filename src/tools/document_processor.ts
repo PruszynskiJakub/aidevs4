@@ -101,7 +101,7 @@ async function ask(payload: {
   return createDocument(answer, `Answer based on ${paths.length} document(s): ${fileNames}`, {
     source: paths[0],
     type: "document",
-    mime_type: "text/plain",
+    mimeType: "text/plain",
   });
 }
 

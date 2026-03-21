@@ -60,7 +60,7 @@ async function bash(args: { command: string }): Promise<Document> {
   return createDocument(output, `Bash output for: ${snippet}`, {
     source: null,
     type: "document",
-    mime_type: "text/plain",
+    mimeType: "text/plain",
   });
 }
 

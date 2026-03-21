@@ -20,8 +20,8 @@ describe("config module", () => {
   it("has correct static values", () => {
     expect(config.models.agent).toBe("gpt-4.1");
     expect(config.models.transform).toBe("gpt-4.1-mini");
-    expect(config.models.gemini).toBe("gemini-2.5-flash");
-    expect(config.limits.maxIterations).toBe(20);
+    expect(config.models.gemini).toBe("gemini-3-flash-preview");
+    expect(config.limits.maxIterations).toBe(40);
     expect(config.limits.fetchTimeout).toBe(30_000);
     expect(config.limits.maxBatchRows).toBe(1000);
     expect(config.limits.maxFileSize).toBe(10 * 1024 * 1024);

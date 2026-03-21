@@ -1,8 +1,7 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import type { Document } from "../types/document.ts";
-import prompt_engineer from "./prompt_engineer.ts";
 
-// Mock the LLM service
+// Mock the LLM service — must come before importing the tool
 const mockCompletion = mock(() =>
   Promise.resolve(
     JSON.stringify({
@@ -13,11 +12,13 @@ const mockCompletion = mock(() =>
   ),
 );
 
-mock.module("../services/llm.ts", () => ({
+mock.module("../services/ai/llm.ts", () => ({
   llm: {
     completion: mockCompletion,
   },
 }));
+
+const { default: prompt_engineer } = await import("./prompt_engineer.ts");
 
 mock.module("../services/prompt.ts", () => ({
   promptService: {

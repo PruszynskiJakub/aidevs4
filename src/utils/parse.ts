@@ -1,4 +1,3 @@
-import { stat } from "fs/promises";
 import { config } from "../config/index.ts";
 import { files } from "../services/common/file.ts";
 
@@ -97,7 +96,7 @@ export async function resolveInput(input: string, label: string): Promise<unknow
  * Uses fs.stat to avoid reading the file contents.
  */
 export async function checkFileSize(path: string, maxBytes: number = config.limits.maxFileSize): Promise<void> {
-  const s = await stat(path);
+  const s = await files.stat(path);
   if (s.size > maxBytes) {
     const sizeMB = (s.size / (1024 * 1024)).toFixed(1);
     const limitMB = (maxBytes / (1024 * 1024)).toFixed(1);

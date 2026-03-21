@@ -5,3 +5,8 @@ export interface ToolDefinition {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handler: (args: Record<string, any>) => Promise<Document | Document[]>;
 }
+
+export interface ToolFilter {
+  include?: string[];
+  exclude?: string[];
+}
