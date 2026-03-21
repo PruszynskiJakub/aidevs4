@@ -2,8 +2,9 @@ import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { files } from "../services/common/file.ts";
 import { config } from "../config/index.ts";
-import { safeParse, assertMaxLength, assertNumericBounds, checkFileSize } from "../utils/parse.ts";
-import { createDocument } from "../utils/document.ts";
+import { safeParse, assertMaxLength, assertNumericBounds } from "../utils/parse.ts";
+import { createDocument } from "../services/common/document-store.ts";
+import { getSessionId } from "../services/agent/session-context.ts";
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -58,8 +59,8 @@ async function findNearby(payload: {
   assertMaxLength(payload.queries_file, "queries_file", 500);
   assertNumericBounds(payload.radius_km, "radius_km", 0.001, 40_075);
 
-  await checkFileSize(payload.references_file, config.limits.maxFileSize);
-  await checkFileSize(payload.queries_file, config.limits.maxFileSize);
+  await files.checkFileSize(payload.references_file, config.limits.maxFileSize);
+  await files.checkFileSize(payload.queries_file, config.limits.maxFileSize);
 
   const refsRaw = await files.readText(payload.references_file);
   const queriesRaw = await files.readText(payload.queries_file);
@@ -90,6 +91,7 @@ async function findNearby(payload: {
     text,
     `${matches.length} matches within ${payload.radius_km} km.${note}`,
     { source: null, type: "document", mimeType: "application/json" },
+    getSessionId(),
   );
 }
 
@@ -106,6 +108,7 @@ function distance(payload: {
     JSON.stringify({ distance_km: km }),
     `Distance: ${km} km`,
     { source: null, type: "document", mimeType: "application/json" },
+    getSessionId(),
   );
 }
 

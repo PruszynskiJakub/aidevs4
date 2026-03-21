@@ -3,7 +3,8 @@ import type { Document } from "../types/document.ts";
 import { llm } from "../services/ai/llm.ts";
 import { promptService } from "../services/ai/prompt.ts";
 import { assertMaxLength, safeParse } from "../utils/parse.ts";
-import { createDocument } from "../utils/document.ts";
+import { createDocument } from "../services/common/document-store.ts";
+import { getSessionId } from "../services/agent/session-context.ts";
 
 const MAX_GOAL = 2_000;
 const MAX_CONSTRAINTS = 1_000;
@@ -80,7 +81,7 @@ async function promptEngineer(
     source: null,
     type: "document",
     mimeType: "application/json",
-  });
+  }, getSessionId());
 }
 
 export default {

@@ -1,3 +1,10 @@
-export { files, createBunFileService, _testReadPaths, _testWritePaths } from "./file.ts";
-// documentService is available via direct import from ./document-store.ts if needed
+export { files, createBunFileService, _setFilesForTest, FileSizeLimitError } from "./file.ts";
+export {
+  documentService,
+  createDocumentService,
+  createDocument,
+  createErrorDocument,
+  formatDocumentXml,
+  formatDocumentsXml,
+} from "./document-store.ts";
 export * from "./logging/index.ts";

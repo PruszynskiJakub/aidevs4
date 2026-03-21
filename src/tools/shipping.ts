@@ -2,8 +2,9 @@ import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { createDocument } from "../utils/document.ts";
+import { createDocument } from "../services/common/document-store.ts";
 import { HUB_DOC_META, hubPost, stringify } from "../utils/hub-fetch.ts";
+import { getSessionId } from "../services/agent/session-context.ts";
 
 const PACKAGEID_RE = /^[A-Za-z0-9]+$/;
 const PACKAGES_URL = `${config.hub.baseUrl}/api/packages`;
@@ -22,12 +23,14 @@ async function checkPackage(payload: { packageid: string }): Promise<Document> {
     PACKAGES_URL,
     { apikey: config.hub.apiKey, action: "check", packageid: payload.packageid },
     "Package check failed",
+    config.limits.fetchTimeout,
   );
 
   return createDocument(
     stringify(response),
     `Package ${payload.packageid} status. Use shipping__redirect to reroute if needed.`,
     HUB_DOC_META,
+    getSessionId(),
   );
 }
 
@@ -52,6 +55,7 @@ async function redirectPackage(payload: {
       code: payload.code,
     },
     "Package redirect failed",
+    config.limits.fetchTimeout,
   );
 
   const confirmationCode = typeof response === "object" && response !== null && "confirmation" in response
@@ -63,6 +67,7 @@ async function redirectPackage(payload: {
     stringify(response),
     `Redirect processed for ${payload.packageid}.${confirmNote} IMPORTANT: Always include the confirmation code in your reply.`,
     HUB_DOC_META,
+    getSessionId(),
   );
 }
 

@@ -5,22 +5,26 @@ import { tmpdir } from "os";
 import type { Document } from "../types/document.ts";
 import agentsHub from "./agents_hub.ts";
 import { config } from "../config/index.ts";
-import { _testReadPaths, _testWritePaths } from "../services/common/file.ts";
+import { createBunFileService, _setFilesForTest } from "../services/common/file.ts";
 
 const handler = agentsHub.handler;
 
 let tmp: string;
+let restoreFiles: () => void;
 const originalFetch = globalThis.fetch;
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "agents-hub-test-"));
-  _testReadPaths.push(tmp);
-  _testWritePaths.push(tmp);
+  restoreFiles = _setFilesForTest(
+    createBunFileService(
+      [...config.sandbox.allowedReadPaths, tmp],
+      [...config.sandbox.allowedWritePaths, tmp],
+    ),
+  );
 });
 
 afterAll(async () => {
-  _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
-  _testWritePaths.splice(_testWritePaths.indexOf(tmp), 1);
+  restoreFiles();
   await rm(tmp, { recursive: true, force: true });
   globalThis.fetch = originalFetch;
 });
@@ -265,7 +269,7 @@ describe("agents_hub api_request", () => {
   });
 });
 
-// --------------- api_batch (unchanged) ---------------
+// --------------- api_batch ---------------
 
 describe("agents_hub api_batch", () => {
   it("sends each JSON row with field mapping and returns Document[]", async () => {
@@ -335,31 +339,6 @@ describe("agents_hub api_batch", () => {
 
     expect(capturedBodies[0].x).toBe(1);
     expect(capturedBodies[1].x).toBe(2);
-  });
-
-  it("parses CSV input and sends each row", async () => {
-    const dataFile = join(tmp, "batch_data.csv");
-    const outputFile = join(tmp, "batch_csv_out.json");
-    await Bun.write(dataFile, "name,age\nAlice,30\nBob,25\n");
-
-    const capturedBodies: any[] = [];
-
-    globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
-      capturedBodies.push(JSON.parse(init?.body as string));
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }) as any;
-
-    const result = await handler({
-      action: "api_batch",
-      payload: { path: "people", data_file: dataFile, field_map_json: "{}", output_file: outputFile },
-    }) as Document[];
-
-    expect(result).toHaveLength(2);
-    expect(capturedBodies[0].name).toBe("Alice");
-    expect(capturedBodies[0].apikey).toBe(config.hub.apiKey);
   });
 
   it("throws on non-array JSON file", async () => {

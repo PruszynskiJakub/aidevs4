@@ -18,4 +18,6 @@ export interface FileProvider {
   readdir(path: string): Promise<string[]>;
   stat(path: string): Promise<FileStat>;
   mkdir(path: string): Promise<void>; // always recursive
+  checkFileSize(path: string, maxBytes?: number): Promise<void>;
+  resolveInput(input: string, label: string): Promise<unknown>;
 }

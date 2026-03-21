@@ -1,17 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "bun:test";
-import { mkdtemp, rm } from "fs/promises";
-import { join } from "path";
-import { tmpdir } from "os";
+import { describe, it, expect } from "bun:test";
 import {
   safeParse,
   safeFilename,
   validateKeys,
   assertMaxLength,
   assertNumericBounds,
-  checkFileSize,
-  resolveInput,
 } from "./parse.ts";
-import { _testReadPaths } from "../services/common/file.ts";
 
 // --------------- safeParse ---------------
 
@@ -111,7 +105,6 @@ describe("validateKeys", () => {
   });
 
   it("rejects constructor", () => {
-    // Use Object.fromEntries to actually set 'constructor' as own key
     const obj = Object.fromEntries([["constructor", "x"], ["ok", 1]]);
     expect(() => validateKeys(obj)).toThrow('Forbidden key: "constructor"');
   });
@@ -173,94 +166,5 @@ describe("assertNumericBounds", () => {
 
   it("rejects value above max", () => {
     expect(() => assertNumericBounds(91, "lat", -90, 90)).toThrow("between -90 and 90");
-  });
-});
-
-// --------------- checkFileSize ---------------
-
-describe("checkFileSize", () => {
-  it("passes for small file", async () => {
-    let tmp = await mkdtemp(join(tmpdir(), "parse-test-"));
-    _testReadPaths.push(tmp);
-    try {
-      const p = join(tmp, "small.txt");
-      await Bun.write(p, "hello");
-      await expect(checkFileSize(p, 1024)).resolves.toBeUndefined();
-    } finally {
-      _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
-      await rm(tmp, { recursive: true, force: true });
-    }
-  });
-
-  it("rejects file over limit", async () => {
-    let tmp = await mkdtemp(join(tmpdir(), "parse-test-"));
-    _testReadPaths.push(tmp);
-    try {
-      const p = join(tmp, "big.txt");
-      await Bun.write(p, "x".repeat(2048));
-      await expect(checkFileSize(p, 1024)).rejects.toThrow("exceeds limit");
-    } finally {
-      _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
-      await rm(tmp, { recursive: true, force: true });
-    }
-  });
-
-  it("throws on nonexistent file", async () => {
-    let tmp = await mkdtemp(join(tmpdir(), "parse-test-"));
-    _testReadPaths.push(tmp);
-    try {
-      await expect(checkFileSize(join(tmp, "nonexistent-file-xyz.txt"))).rejects.toThrow();
-    } finally {
-      _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
-      await rm(tmp, { recursive: true, force: true });
-    }
-  });
-});
-
-// --------------- resolveInput ---------------
-
-describe("resolveInput", () => {
-  let tmp: string;
-
-  beforeAll(async () => {
-    tmp = await mkdtemp(join(tmpdir(), "resolve-input-test-"));
-    _testReadPaths.push(tmp);
-  });
-
-  afterAll(async () => {
-    _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
-    await rm(tmp, { recursive: true, force: true });
-  });
-
-  it("reads and parses a JSON file", async () => {
-    const p = join(tmp, "data.json");
-    await Bun.write(p, JSON.stringify({ city: "Krakow" }));
-    const result = await resolveInput(p, "test");
-    expect(result).toEqual({ city: "Krakow" });
-  });
-
-  it("parses inline JSON object", async () => {
-    const result = await resolveInput('{"city":"Krakow"}', "test");
-    expect(result).toEqual({ city: "Krakow" });
-  });
-
-  it("parses inline JSON array", async () => {
-    const result = await resolveInput("[1,2,3]", "test");
-    expect(result).toEqual([1, 2, 3]);
-  });
-
-  it("parses inline JSON number", async () => {
-    const result = await resolveInput("42", "test");
-    expect(result).toBe(42);
-  });
-
-  it("returns raw string for non-JSON, non-file input", async () => {
-    const result = await resolveInput("KRAKOW", "test");
-    expect(result).toBe("KRAKOW");
-  });
-
-  it("returns raw string for invalid JSON that is not a file", async () => {
-    const result = await resolveInput("not/a/file/{bad", "test");
-    expect(result).toBe("not/a/file/{bad");
   });
 });

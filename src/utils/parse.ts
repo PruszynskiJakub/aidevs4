@@ -1,10 +1,3 @@
-import { config } from "../config/index.ts";
-import { files } from "../services/common/file.ts";
-
-export class FileSizeLimitError extends Error {
-  override readonly name = "FileSizeLimitError";
-}
-
 /**
  * Safe JSON.parse wrapper — returns typed result or throws a labelled error
  * that never echoes raw input (prevents stack trace leakage).
@@ -73,45 +66,5 @@ export function assertNumericBounds(value: number, name: string, min: number, ma
   }
   if (value < min || value > max) {
     throw new Error(`${name} must be between ${min} and ${max}`);
-  }
-}
-
-/**
- * Resolves a dual-purpose input: file path → JSON string → raw string.
- * Resolution order: try to read as file (& parse JSON); if file not found,
- * try JSON.parse on the raw string; otherwise return the raw string.
- */
-export async function resolveInput(input: string, label: string): Promise<unknown> {
-  try {
-    const stat = await files.stat(input);
-    if (stat.size > config.limits.maxFileSize) {
-      const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
-      const limitMB = (config.limits.maxFileSize / (1024 * 1024)).toFixed(1);
-      throw new FileSizeLimitError(`File ${input} is ${sizeMB} MB — exceeds limit of ${limitMB} MB`);
-    }
-    const content = await files.readText(input);
-    return safeParse(content, label);
-  } catch (err) {
-    // Re-throw size limit errors; fall through for file-not-found / inaccessible.
-    if (err instanceof FileSizeLimitError) throw err;
-  }
-
-  try {
-    return JSON.parse(input);
-  } catch {
-    return input;
-  }
-}
-
-/**
- * Checks that a file does not exceed the configured max size.
- * Uses fs.stat to avoid reading the file contents.
- */
-export async function checkFileSize(path: string, maxBytes: number = config.limits.maxFileSize): Promise<void> {
-  const s = await files.stat(path);
-  if (s.size > maxBytes) {
-    const sizeMB = (s.size / (1024 * 1024)).toFixed(1);
-    const limitMB = (maxBytes / (1024 * 1024)).toFixed(1);
-    throw new FileSizeLimitError(`File ${path} is ${sizeMB} MB — exceeds limit of ${limitMB} MB`);
   }
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { register, getTools, dispatch, reset } from "./registry.ts";
 import type { ToolDefinition } from "../types/tool.ts";
-import { createDocument } from "../utils/document.ts";
+import { createDocument } from "../services/common/document-store.ts";
 
 beforeEach(() => {
   reset();

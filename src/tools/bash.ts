@@ -3,7 +3,7 @@ import { $ } from "bun";
 import { config } from "../config/index.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
-import { createDocument } from "../utils/document.ts";
+import { createDocument } from "../services/common/document-store.ts";
 import { getSessionId } from "../services/agent/session-context.ts";
 
 const MAX_OUTPUT = 20_000;
@@ -61,7 +61,7 @@ async function bash(args: { command: string }): Promise<Document> {
     source: null,
     type: "document",
     mimeType: "text/plain",
-  });
+  }, getSessionId());
 }
 
 export default {

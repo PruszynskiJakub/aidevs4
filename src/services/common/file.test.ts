@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { createBunFileService } from "./file.ts";
+import { createBunFileService, FileSizeLimitError } from "./file.ts";
 
 let allowedDir: string;
 let siblingDir: string;
@@ -122,6 +122,42 @@ describe("File service sandbox", () => {
         expect(e.message).toContain("Allowed read directories:");
         expect(e.message).toContain(allowedDir);
       }
+    });
+  });
+
+  describe("checkFileSize", () => {
+    it("passes for small file", async () => {
+      const svc = createBunFileService([allowedDir], []);
+      await expect(svc.checkFileSize(join(allowedDir, "hello.txt"), 1024)).resolves.toBeUndefined();
+    });
+
+    it("rejects file over limit", async () => {
+      const svc = createBunFileService([allowedDir], [allowedDir]);
+      const p = join(allowedDir, "big.txt");
+      await Bun.write(p, "x".repeat(2048));
+      await expect(svc.checkFileSize(p, 1024)).rejects.toThrow("exceeds limit");
+    });
+  });
+
+  describe("resolveInput", () => {
+    it("reads and parses a JSON file", async () => {
+      const svc = createBunFileService([allowedDir], [allowedDir]);
+      const p = join(allowedDir, "data.json");
+      await Bun.write(p, JSON.stringify({ city: "Krakow" }));
+      const result = await svc.resolveInput(p, "test");
+      expect(result).toEqual({ city: "Krakow" });
+    });
+
+    it("parses inline JSON object", async () => {
+      const svc = createBunFileService([allowedDir], []);
+      const result = await svc.resolveInput('{"city":"Krakow"}', "test");
+      expect(result).toEqual({ city: "Krakow" });
+    });
+
+    it("returns raw string for non-JSON, non-file input", async () => {
+      const svc = createBunFileService([allowedDir], []);
+      const result = await svc.resolveInput("KRAKOW", "test");
+      expect(result).toBe("KRAKOW");
     });
   });
 });

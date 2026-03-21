@@ -1,4 +1,5 @@
-export { sessionService } from "./session.ts";
+export { sessionService, createSessionService } from "./session.ts";
+export type { SessionService } from "./session.ts";
 export {
   runWithContext,
   getState,

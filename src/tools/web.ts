@@ -1,10 +1,11 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { files } from "../services/common/file.ts";
-import { outputPath, toSessionPath } from "../utils/output.ts";
+import { sessionService } from "../services/agent/session.ts";
 import { config } from "../config";
 import { safeFilename, assertMaxLength } from "../utils/parse.ts";
-import { createDocument } from "../utils/document.ts";
+import { createDocument } from "../services/common/document-store.ts";
+import { getSessionId } from "../services/agent/session-context.ts";
 import { inferCategory, inferMimeType } from "../utils/media-types.ts";
 
 const PLACEHOLDER_RE = /\{\{(\w+)\}\}/g;
@@ -54,7 +55,7 @@ async function download(payload: { url: string; filename: string }): Promise<Doc
     throw new Error(`Download failed (${response.status}): ${payload.filename}`);
   }
 
-  const path = await outputPath(payload.filename);
+  const path = await sessionService.outputPath(payload.filename);
   await files.write(path, response);
 
   const contentTypeHeader = response.headers.get("content-type");
@@ -63,14 +64,14 @@ async function download(payload: { url: string; filename: string }): Promise<Doc
 
   // Use session-relative path to save tokens in LLM context.
   // bash cwd is already the session output dir, so relative paths work directly.
-  const relativePath = toSessionPath(path);
+  const relativePath = sessionService.toSessionPath(path);
   const text = `File saved to ${relativePath}. Inspect with bash: head -20 ${relativePath}`;
 
   return createDocument(text, `Web download from ${payload.url}`, {
     source: payload.url,
     type,
     mimeType,
-  });
+  }, getSessionId());
 }
 
 async function web({ action, payload }: { action: string; payload: Record<string, unknown> }): Promise<Document> {

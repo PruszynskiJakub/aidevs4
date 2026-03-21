@@ -3,7 +3,8 @@ import type { Document } from "../types/document.ts";
 import { llm } from "../services/ai/llm.ts";
 import { promptService } from "../services/ai/prompt.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { createDocument } from "../utils/document.ts";
+import { createDocument } from "../services/common/document-store.ts";
+import { getSessionId } from "../services/agent/session-context.ts";
 
 async function think(args: { thought: string }): Promise<Document> {
   assertMaxLength(args.thought, "question", 5_000);
@@ -22,7 +23,7 @@ async function think(args: { thought: string }): Promise<Document> {
     source: null,
     type: "document",
     mimeType: "text/plain",
-  });
+  }, getSessionId());
 }
 
 export default {

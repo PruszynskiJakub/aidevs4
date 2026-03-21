@@ -3,10 +3,11 @@ import { join, resolve } from "path";
 import type { FileProvider, FileStat } from "../../types/file.ts";
 import { config } from "../../config/index.ts";
 import { getSessionId } from "../agent/session-context.ts";
+import { safeParse } from "../../utils/parse.ts";
 
-// Mutable copies of config paths — tests push/splice these for temp dir access
-export const _testReadPaths: string[] = [...config.sandbox.allowedReadPaths];
-export const _testWritePaths: string[] = [...config.sandbox.allowedWritePaths];
+export class FileSizeLimitError extends Error {
+  override readonly name = "FileSizeLimitError";
+}
 
 function narrowOutputPaths(allowedDirs: string[]): string[] {
   const sessionId = getSessionId();
@@ -39,10 +40,10 @@ function assertPathAllowed(
 }
 
 export function createBunFileService(
-  readPaths: string[] = _testReadPaths,
-  writePaths: string[] = _testWritePaths,
+  readPaths: string[] = [...config.sandbox.allowedReadPaths],
+  writePaths: string[] = [...config.sandbox.allowedWritePaths],
 ): FileProvider {
-  return {
+  const svc: FileProvider = {
     async exists(path: string): Promise<boolean> {
       try {
         assertPathAllowed(path, readPaths, "read");
@@ -97,7 +98,46 @@ export function createBunFileService(
       assertPathAllowed(path, writePaths, "write");
       await mkdir(path, { recursive: true });
     },
+
+    async checkFileSize(path: string, maxBytes: number = config.limits.maxFileSize): Promise<void> {
+      const s = await svc.stat(path);
+      if (s.size > maxBytes) {
+        const sizeMB = (s.size / (1024 * 1024)).toFixed(1);
+        const limitMB = (maxBytes / (1024 * 1024)).toFixed(1);
+        throw new FileSizeLimitError(`File ${path} is ${sizeMB} MB — exceeds limit of ${limitMB} MB`);
+      }
+    },
+
+    async resolveInput(input: string, label: string): Promise<unknown> {
+      try {
+        const s = await svc.stat(input);
+        if (s.size > config.limits.maxFileSize) {
+          const sizeMB = (s.size / (1024 * 1024)).toFixed(1);
+          const limitMB = (config.limits.maxFileSize / (1024 * 1024)).toFixed(1);
+          throw new FileSizeLimitError(`File ${input} is ${sizeMB} MB — exceeds limit of ${limitMB} MB`);
+        }
+        const content = await svc.readText(input);
+        return safeParse(content, label);
+      } catch (err) {
+        if (err instanceof FileSizeLimitError) throw err;
+      }
+
+      try {
+        return JSON.parse(input);
+      } catch {
+        return input;
+      }
+    },
   };
+
+  return svc;
 }
 
-export const files: FileProvider = createBunFileService();
+export let files: FileProvider = createBunFileService();
+
+/** @internal Replace the files singleton for testing. Returns a restore function. */
+export function _setFilesForTest(custom: FileProvider): () => void {
+  const prev = files;
+  files = custom;
+  return () => { files = prev; };
+}

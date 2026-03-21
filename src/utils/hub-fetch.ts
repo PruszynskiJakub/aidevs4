@@ -1,4 +1,3 @@
-import { config } from "../config/index.ts";
 import type { DocumentMetadata } from "../types/document.ts";
 
 /** Shared document metadata for hub.ag3nts.org API responses. */
@@ -23,12 +22,13 @@ export async function hubPost(
   url: string,
   body: Record<string, unknown>,
   label: string,
+  timeout: number = 30_000,
 ): Promise<unknown> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(config.limits.fetchTimeout),
+    signal: AbortSignal.timeout(timeout),
   });
 
   const contentType = res.headers.get("content-type") || "";

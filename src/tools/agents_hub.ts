@@ -2,23 +2,24 @@ import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { files } from "../services/common/file.ts";
 import { config } from "../config/index.ts";
-import { parseCsv } from "../utils/csv.ts";
-import { safeParse, validateKeys, assertMaxLength, checkFileSize, resolveInput } from "../utils/parse.ts";
-import { createDocument } from "../utils/document.ts";
+import { safeParse, validateKeys, assertMaxLength } from "../utils/parse.ts";
+import { createDocument } from "../services/common/document-store.ts";
 import { HUB_DOC_META, hubPost, stringify } from "../utils/hub-fetch.ts";
+import { getSessionId } from "../services/agent/session-context.ts";
 
 async function verify(payload: { task: string; answer: string }): Promise<Document> {
   assertMaxLength(payload.task, "task", 100);
   assertMaxLength(payload.answer, "answer", 100_000);
 
-  const answer = await resolveInput(payload.answer, "answer");
+  const answer = await files.resolveInput(payload.answer, "answer");
   const response = await hubPost(
     config.hub.verifyUrl,
     { apikey: config.hub.apiKey, task: payload.task, answer },
     "Verify failed",
+    config.limits.fetchTimeout,
   );
 
-  return createDocument(stringify(response), `Verification result for task '${payload.task}'`, HUB_DOC_META);
+  return createDocument(stringify(response), `Verification result for task '${payload.task}'`, HUB_DOC_META, getSessionId());
 }
 
 async function apiRequest(payload: {
@@ -28,7 +29,7 @@ async function apiRequest(payload: {
   assertMaxLength(payload.path, "path", 200);
   assertMaxLength(payload.body, "body", 100_000);
 
-  const resolved = await resolveInput(payload.body, "body");
+  const resolved = await files.resolveInput(payload.body, "body");
   if (typeof resolved !== "object" || resolved === null || Array.isArray(resolved)) {
     throw new Error("body must resolve to a JSON object");
   }
@@ -38,9 +39,10 @@ async function apiRequest(payload: {
     url,
     { ...(resolved as Record<string, unknown>), apikey: config.hub.apiKey },
     "API request failed",
+    config.limits.fetchTimeout,
   );
 
-  return createDocument(stringify(response), `Response from /api/${payload.path}`, HUB_DOC_META);
+  return createDocument(stringify(response), `Response from /api/${payload.path}`, HUB_DOC_META, getSessionId());
 }
 
 async function apiBatch(payload: {
@@ -57,19 +59,15 @@ async function apiBatch(payload: {
   const fieldMap: Record<string, string> = safeParse(payload.field_map_json, "field_map_json");
   validateKeys(fieldMap);
 
-  await checkFileSize(payload.data_file, config.limits.maxFileSize);
+  await files.checkFileSize(payload.data_file, config.limits.maxFileSize);
 
   let rows: Record<string, unknown>[];
-  if (payload.data_file.endsWith(".csv")) {
-    rows = await parseCsv(payload.data_file);
-  } else {
-    const content = await files.readText(payload.data_file);
-    const parsed = safeParse<unknown>(content, "data_file");
-    if (!Array.isArray(parsed)) {
-      throw new Error("JSON data file must contain an array");
-    }
-    rows = parsed;
+  const content = await files.readText(payload.data_file);
+  const parsed = safeParse<unknown>(content, "data_file");
+  if (!Array.isArray(parsed)) {
+    throw new Error("JSON data file must contain an array");
   }
+  rows = parsed;
 
   if (rows.length > config.limits.maxBatchRows) {
     throw new Error(`Batch size ${rows.length} exceeds maximum of ${config.limits.maxBatchRows} rows`);
@@ -87,7 +85,7 @@ async function apiBatch(payload: {
     mapped.apikey = config.hub.apiKey;
 
     try {
-      const response = await hubPost(url, mapped, "API batch request failed");
+      const response = await hubPost(url, mapped, "API batch request failed", config.limits.fetchTimeout);
       results.push({ input: row, response });
     } catch (err) {
       results.push({ input: row, response: err instanceof Error ? err.message : String(err) });
@@ -99,7 +97,7 @@ async function apiBatch(payload: {
   await files.write(payload.output_file, JSON.stringify(results, null, 2));
 
   return results.map((r, i) =>
-    createDocument(stringify(r.response), `Batch row ${i + 1}/${results.length} from /api/${payload.path}`, HUB_DOC_META),
+    createDocument(stringify(r.response), `Batch row ${i + 1}/${results.length} from /api/${payload.path}`, HUB_DOC_META, getSessionId()),
   );
 }
 
@@ -112,7 +110,7 @@ async function verifyBatch(payload: {
   assertMaxLength(payload.answers, "answers", 100_000);
   assertMaxLength(payload.output_file, "output_file", 500);
 
-  const answers = await resolveInput(payload.answers, "answers");
+  const answers = await files.resolveInput(payload.answers, "answers");
 
   if (!Array.isArray(answers)) {
     throw new Error("answers must resolve to a JSON array of answer objects");
@@ -129,6 +127,7 @@ async function verifyBatch(payload: {
         config.hub.verifyUrl,
         { apikey: config.hub.apiKey, task: payload.task, answer: answers[i] },
         "Verify batch failed",
+        config.limits.fetchTimeout,
       );
       results.push({ index: i, answer: answers[i], response });
     } catch (err) {
@@ -141,7 +140,7 @@ async function verifyBatch(payload: {
   await files.write(payload.output_file, JSON.stringify(results, null, 2));
 
   return results.map((r) =>
-    createDocument(stringify(r.response), `Verify batch item ${r.index} for task '${payload.task}'`, HUB_DOC_META),
+    createDocument(stringify(r.response), `Verify batch item ${r.index} for task '${payload.task}'`, HUB_DOC_META, getSessionId()),
   );
 }
 

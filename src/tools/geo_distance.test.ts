@@ -5,19 +5,26 @@ import { tmpdir } from "os";
 import type { Document } from "../types/document.ts";
 import geoDistance from "./geo_distance.ts";
 import { haversine } from "./geo_distance.ts";
-import { _testReadPaths } from "../services/common/file.ts";
+import { createBunFileService, _setFilesForTest } from "../services/common/file.ts";
+import { config } from "../config/index.ts";
 
 const handler = geoDistance.handler;
 
 let tmp: string;
+let restoreFiles: () => void;
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "geo-distance-test-"));
-  _testReadPaths.push(tmp);
+  restoreFiles = _setFilesForTest(
+    createBunFileService(
+      [...config.sandbox.allowedReadPaths, tmp],
+      [...config.sandbox.allowedWritePaths, tmp],
+    ),
+  );
 });
 
 afterAll(async () => {
-  _testReadPaths.splice(_testReadPaths.indexOf(tmp), 1);
+  restoreFiles();
   await rm(tmp, { recursive: true, force: true });
 });
 
@@ -82,12 +89,10 @@ describe("geo_distance find_nearby", () => {
     const data = JSON.parse(result.text);
     expect(data.count).toBe(2);
     expect(result.description).toContain("2 matches");
-    // Sorted ascending by distance — closest first
     expect(data.matches[0].query.person).toBe("Bob");
     expect(data.matches[0].reference.name).toBe("Kraków");
     expect(data.matches[1].query.person).toBe("Alice");
     expect(data.matches[1].reference.name).toBe("Warsaw");
-    // Charlie should not appear
     expect(data.matches.every((m: any) => m.query.person !== "Charlie")).toBe(true);
   });
 

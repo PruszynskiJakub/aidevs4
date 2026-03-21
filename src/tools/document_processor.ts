@@ -4,9 +4,10 @@ import type { Document } from "../types/document.ts";
 import type { ContentPart } from "../types/llm.ts";
 import { files } from "../services/common/file.ts";
 import { llm } from "../services/ai/llm.ts";
-import { assertMaxLength, checkFileSize } from "../utils/parse.ts";
-import { createDocument } from "../utils/document.ts";
-import { resolveSessionPath } from "../utils/output.ts";
+import { assertMaxLength } from "../utils/parse.ts";
+import { createDocument } from "../services/common/document-store.ts";
+import { sessionService } from "../services/agent/session.ts";
+import { getSessionId } from "../services/agent/session-context.ts";
 import { config } from "../config";
 import { IMAGE_EXTENSIONS, TEXT_EXTENSIONS, ALL_SUPPORTED_EXTENSIONS, inferMimeType } from "../utils/media-types.ts";
 
@@ -23,7 +24,7 @@ async function buildContentParts(paths: string[]): Promise<ContentPart[]> {
   // Validate all paths synchronously before any I/O
   const resolved = paths.map((rawPath) => {
     validatePath(rawPath);
-    const path = resolveSessionPath(rawPath);
+    const path = sessionService.resolveSessionPath(rawPath);
     const ext = extname(path).toLowerCase();
     if (!IMAGE_EXTENSIONS.has(ext) && !TEXT_EXTENSIONS.has(ext)) {
       throw new Error(
@@ -36,7 +37,7 @@ async function buildContentParts(paths: string[]): Promise<ContentPart[]> {
   // Read all files concurrently
   return Promise.all(
     resolved.map(async ({ path, ext }): Promise<ContentPart> => {
-      await checkFileSize(path, config.limits.maxFileSize);
+      await files.checkFileSize(path, config.limits.maxFileSize);
       if (IMAGE_EXTENSIONS.has(ext)) {
         const buffer = await files.readBinary(path);
         return { type: "image", data: buffer.toString("base64"), mimeType: inferMimeType(path) };
@@ -79,7 +80,7 @@ async function ask(payload: {
     source: paths[0],
     type: "document",
     mimeType: "text/plain",
-  });
+  }, getSessionId());
 }
 
 async function documentProcessor({

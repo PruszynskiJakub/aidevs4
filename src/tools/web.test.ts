@@ -5,20 +5,26 @@ import { tmpdir } from "os";
 import type { Document } from "../types/document.ts";
 import web from "./web.ts";
 import { config } from "../config/index.ts";
-import { _testWritePaths } from "../services/common/file.ts";
+import { createBunFileService, _setFilesForTest } from "../services/common/file.ts";
 
 const handler = web.handler;
 
 let tmp: string;
+let restoreFiles: () => void;
 const originalFetch = globalThis.fetch;
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "web-test-"));
-  _testWritePaths.push(tmp);
+  restoreFiles = _setFilesForTest(
+    createBunFileService(
+      [...config.sandbox.allowedReadPaths, tmp],
+      [...config.sandbox.allowedWritePaths, tmp],
+    ),
+  );
 });
 
 afterAll(async () => {
-  _testWritePaths.splice(_testWritePaths.indexOf(tmp), 1);
+  restoreFiles();
   await rm(tmp, { recursive: true, force: true });
   globalThis.fetch = originalFetch;
 });
