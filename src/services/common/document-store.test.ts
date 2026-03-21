@@ -1,5 +1,5 @@
-import { describe, it, expect } from "bun:test";
-import { DocumentStore } from "./document-store.ts";
+import { describe, it, expect, beforeEach } from "bun:test";
+import { createDocumentService } from "./document-store.ts";
 import { createDocument } from "../../utils/document.ts";
 
 function makeDoc(text: string, type: "document" | "text" | "image" = "document") {
@@ -10,58 +10,57 @@ function makeDoc(text: string, type: "document" | "text" | "image" = "document")
   });
 }
 
-describe("DocumentStore", () => {
+describe("documentService", () => {
+  let service: ReturnType<typeof createDocumentService>;
+
+  beforeEach(() => {
+    service = createDocumentService();
+  });
+
   it("add() stores and get() retrieves by uuid", () => {
-    const store = new DocumentStore();
     const doc = makeDoc("hello");
-    const uuid = store.add(doc);
+    const uuid = service.add(doc);
     expect(uuid).toBe(doc.uuid);
-    expect(store.get(uuid)).toBe(doc);
+    expect(service.get(uuid)).toBe(doc);
   });
 
   it("get() returns undefined for unknown uuid", () => {
-    const store = new DocumentStore();
-    expect(store.get("nonexistent")).toBeUndefined();
+    expect(service.get("nonexistent")).toBeUndefined();
   });
 
   it("list() returns all documents", () => {
-    const store = new DocumentStore();
-    store.add(makeDoc("a"));
-    store.add(makeDoc("b"));
-    store.add(makeDoc("c"));
-    expect(store.list()).toHaveLength(3);
+    service.add(makeDoc("a"));
+    service.add(makeDoc("b"));
+    service.add(makeDoc("c"));
+    expect(service.list()).toHaveLength(3);
   });
 
   it("remove() deletes a document", () => {
-    const store = new DocumentStore();
     const doc = makeDoc("to-delete");
-    store.add(doc);
-    expect(store.remove(doc.uuid)).toBe(true);
-    expect(store.get(doc.uuid)).toBeUndefined();
+    service.add(doc);
+    expect(service.remove(doc.uuid)).toBe(true);
+    expect(service.get(doc.uuid)).toBeUndefined();
   });
 
   it("remove() returns false for unknown uuid", () => {
-    const store = new DocumentStore();
-    expect(store.remove("nonexistent")).toBe(false);
+    expect(service.remove("nonexistent")).toBe(false);
   });
 
   it("findByMetadata() filters by type", () => {
-    const store = new DocumentStore();
-    store.add(makeDoc("text-doc", "document"));
-    store.add(makeDoc("image-ref", "image"));
-    store.add(makeDoc("another-doc", "document"));
+    service.add(makeDoc("text-doc", "document"));
+    service.add(makeDoc("image-ref", "image"));
+    service.add(makeDoc("another-doc", "document"));
 
-    const images = store.findByMetadata("type", "image");
+    const images = service.findByMetadata("type", "image");
     expect(images).toHaveLength(1);
     expect(images[0].text).toBe("image-ref");
 
-    const docs = store.findByMetadata("type", "document");
+    const docs = service.findByMetadata("type", "document");
     expect(docs).toHaveLength(2);
   });
 
   it("findByMetadata() returns empty array when no match", () => {
-    const store = new DocumentStore();
-    store.add(makeDoc("doc"));
-    expect(store.findByMetadata("type", "image")).toHaveLength(0);
+    service.add(makeDoc("doc"));
+    expect(service.findByMetadata("type", "image")).toHaveLength(0);
   });
 });

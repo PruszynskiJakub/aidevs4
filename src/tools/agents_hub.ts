@@ -1,7 +1,6 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { files } from "../services/common/file.ts";
-import { getApiKey } from "../utils/hub.ts";
 import { config } from "../config/index.ts";
 import { parseCsv } from "../utils/csv.ts";
 import { safeParse, validateKeys, assertMaxLength, checkFileSize, resolveInput } from "../utils/parse.ts";
@@ -11,7 +10,7 @@ async function verify(payload: { task: string; answer: string }): Promise<Docume
   assertMaxLength(payload.task, "task", 100);
   assertMaxLength(payload.answer, "answer", 100_000);
 
-  const apiKey = getApiKey();
+  const apiKey = config.hub.apiKey;
   const answer = await resolveInput(payload.answer, "answer");
 
   const body = { apikey: apiKey, task: payload.task, answer };
@@ -51,7 +50,7 @@ async function apiRequest(payload: {
   }
 
   const body = { ...(resolved as Record<string, any>) };
-  const apiKey = getApiKey();
+  const apiKey = config.hub.apiKey;
   body.apikey = apiKey;
 
   const url = `${config.hub.baseUrl}/api/${payload.path}`;
@@ -112,7 +111,7 @@ async function apiBatch(payload: {
     throw new Error(`Batch size ${rows.length} exceeds maximum of ${config.limits.maxBatchRows} rows`);
   }
 
-  const apiKey = getApiKey();
+  const apiKey = config.hub.apiKey;
   const url = `${config.hub.baseUrl}/api/${payload.path}`;
   const results: { input: Record<string, any>; response: unknown }[] = [];
 
@@ -176,7 +175,7 @@ async function verifyBatch(payload: {
     throw new Error(`Batch size ${answers.length} exceeds maximum of ${config.limits.maxBatchRows}`);
   }
 
-  const apiKey = getApiKey();
+  const apiKey = config.hub.apiKey;
   const results: { index: number; answer: unknown; response: unknown }[] = [];
 
   for (let i = 0; i < answers.length; i++) {

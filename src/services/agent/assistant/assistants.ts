@@ -4,8 +4,6 @@ import type { AssistantConfig, ToolFilter } from "../../../types/assistant.ts";
 
 const ASSISTANTS_DIR = resolve(import.meta.dir, "../../../assistants");
 
-let cache: Map<string, AssistantConfig> | null = null;
-
 function validate(raw: unknown, filename: string): AssistantConfig {
   if (typeof raw !== "object" || raw === null) {
     throw new Error(`Invalid assistant file "${filename}": must be a YAML object`);
@@ -85,25 +83,34 @@ async function loadAll(): Promise<Map<string, AssistantConfig>> {
   return map;
 }
 
-export async function get(name: string): Promise<AssistantConfig> {
-  if (!cache) {
-    cache = await loadAll();
-  }
+export function createAssistantsService() {
+  let cache: Map<string, AssistantConfig> | null = null;
 
-  const config = cache.get(name);
-  if (!config) {
-    const available = Array.from(cache.keys()).join(", ");
-    throw new Error(
-      `Unknown assistant: "${name}". Available: ${available}`,
-    );
-  }
+  return {
+    async get(name: string): Promise<AssistantConfig> {
+      if (!cache) {
+        cache = await loadAll();
+      }
 
-  return config;
+      const config = cache.get(name);
+      if (!config) {
+        const available = Array.from(cache.keys()).join(", ");
+        throw new Error(
+          `Unknown assistant: "${name}". Available: ${available}`,
+        );
+      }
+
+      return config;
+    },
+
+    /** Reset cache — for testing only. */
+    resetCache(): void {
+      cache = null;
+    },
+  };
 }
 
-/** Reset cache — for testing only. */
-export function resetCache(): void {
-  cache = null;
-}
+export const assistantsService = createAssistantsService();
 
-export const assistants = { get, resetCache };
+/** @deprecated Use assistantsService instead */
+export const assistants = assistantsService;

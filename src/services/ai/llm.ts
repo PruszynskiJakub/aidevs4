@@ -6,14 +6,18 @@ import { config } from "../../config/index.ts";
 
 export { createOpenAIProvider } from "../../providers/openai.ts";
 
-const registry = new ProviderRegistry();
+export function createLlmService(): LLMProvider {
+  const registry = new ProviderRegistry();
 
-registry.register("gpt-", createOpenAIProvider());
-registry.register("o", createOpenAIProvider());
+  registry.register("gpt-", createOpenAIProvider());
+  registry.register("o", createOpenAIProvider());
 
-const geminiKey = config.keys.geminiApiKey;
-if (geminiKey) {
-  registry.register("gemini-", createGeminiProvider(geminiKey));
+  const geminiKey = config.keys.geminiApiKey;
+  if (geminiKey) {
+    registry.register("gemini-", createGeminiProvider(geminiKey));
+  }
+
+  return registry;
 }
 
-export const llm: LLMProvider = registry;
+export const llm: LLMProvider = createLlmService();

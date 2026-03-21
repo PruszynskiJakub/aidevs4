@@ -1,6 +1,5 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
-import { getApiKey } from "../utils/hub.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 import { createDocument } from "../utils/document.ts";
@@ -18,7 +17,7 @@ async function checkPackage(payload: { packageid: string }): Promise<Document> {
   assertMaxLength(payload.packageid, "packageid", 20);
   validateAlphanumeric(payload.packageid, "packageid");
 
-  const apiKey = getApiKey();
+  const apiKey = config.hub.apiKey;
 
   const res = await fetch(PACKAGES_URL, {
     method: "POST",
@@ -55,7 +54,7 @@ async function redirectPackage(payload: {
   validateAlphanumeric(payload.destination, "destination");
   assertMaxLength(payload.code, "code", 100);
 
-  const apiKey = getApiKey();
+  const apiKey = config.hub.apiKey;
 
   const res = await fetch(PACKAGES_URL, {
     method: "POST",

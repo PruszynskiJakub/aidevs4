@@ -1,4 +1,4 @@
-import { assistants } from "./assistants.ts";
+import { assistantsService } from "./assistants.ts";
 import { promptService } from "../../ai/prompt.ts";
 import type { ToolFilter } from "../../../types/assistant.ts";
 
@@ -8,28 +8,40 @@ interface ResolvedAssistant {
   toolFilter?: ToolFilter;
 }
 
-const promptCache = new Map<string, ResolvedAssistant>();
+export function createAssistantResolverService() {
+  const promptCache = new Map<string, ResolvedAssistant>();
 
-export async function resolveAssistant(name: string): Promise<ResolvedAssistant> {
-  const cached = promptCache.get(name);
-  if (cached) return cached;
+  return {
+    async resolve(name: string): Promise<ResolvedAssistant> {
+      const cached = promptCache.get(name);
+      if (cached) return cached;
 
-  const assistant = await assistants.get(name);
-  const actPrompt = await promptService.load("act", {
-    objective: assistant.objective,
-    tone: assistant.tone,
-  });
+      const assistant = await assistantsService.get(name);
+      const actPrompt = await promptService.load("act", {
+        objective: assistant.objective,
+        tone: assistant.tone,
+      });
 
-  const resolved: ResolvedAssistant = {
-    prompt: actPrompt.content,
-    model: assistant.model ?? actPrompt.model!,
-    toolFilter: assistant.tools,
+      const resolved: ResolvedAssistant = {
+        prompt: actPrompt.content,
+        model: assistant.model ?? actPrompt.model!,
+        toolFilter: assistant.tools,
+      };
+
+      promptCache.set(name, resolved);
+      return resolved;
+    },
+
+    clearCache(): void {
+      promptCache.clear();
+    },
   };
-
-  promptCache.set(name, resolved);
-  return resolved;
 }
 
-export function clearPromptCache(): void {
-  promptCache.clear();
-}
+export const assistantResolverService = createAssistantResolverService();
+
+/** @deprecated Use assistantResolverService.resolve() instead */
+export const resolveAssistant = assistantResolverService.resolve.bind(assistantResolverService);
+
+/** @deprecated Use assistantResolverService.clearCache() instead */
+export const clearPromptCache = assistantResolverService.clearCache.bind(assistantResolverService);

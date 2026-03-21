@@ -1,2 +1,2 @@
-export { assistants } from "./assistants.ts";
-export { resolveAssistant, clearPromptCache } from "./assistant-resolver.ts";
+export { assistantsService, assistants, createAssistantsService } from "./assistants.ts";
+export { assistantResolverService, resolveAssistant, clearPromptCache, createAssistantResolverService } from "./assistant-resolver.ts";
