@@ -1,7 +1,5 @@
-import type { LLMMessage } from "./types/llm.ts";
 import { config } from "./config/index.ts";
-import { runAgent } from "./agent.ts";
-import { assistantResolverService } from "./services/agent/assistant/assistant-resolver.ts";
+import { executeTurn } from "./services/agent/orchestrator.ts";
 
 function extractFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
@@ -34,16 +32,12 @@ if (args.length >= 2) {
   process.exit(1);
 }
 
-const resolved = await assistantResolverService.resolve(assistantName);
-const agentModel = modelOverride ?? resolved.model;
-const messages: LLMMessage[] = [
-  { role: "system", content: resolved.prompt },
-  { role: "user", content: prompt },
-];
-
-void runAgent(messages, undefined, {
-  model: agentModel,
+const { answer, sessionId: resolvedSessionId } = await executeTurn({
   sessionId,
-  toolFilter: resolved.toolFilter,
+  prompt,
   assistant: assistantName,
+  model: modelOverride,
 });
+
+console.log(`\nSession: ${resolvedSessionId}`);
+if (answer) console.log(answer);

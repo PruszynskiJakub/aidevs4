@@ -13,7 +13,6 @@ describe("config module", () => {
     expect(config.hub).toBeDefined();
     expect(config.keys).toBeDefined();
     expect(config.limits).toBeDefined();
-    expect(config.web).toBeDefined();
     expect(config.server).toBeDefined();
   });
 

@@ -1,15 +1,5 @@
-import { join, resolve } from "path";
-
-// src/config/index.ts lives in src/config/ — project root is two levels up
-const PROJECT_ROOT = resolve(import.meta.dir, "../..");
-const OUTPUT_DIR = join(PROJECT_ROOT, "output");
-const LOGS_DIR = join(PROJECT_ROOT, "logs");
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
-  return value;
-}
+import { PROJECT_ROOT, OUTPUT_DIR, LOGS_DIR } from "./paths.ts";
+import { env } from "./env.ts";
 
 function deepFreeze<T extends object>(obj: T): T {
   Object.freeze(obj);
@@ -19,15 +9,6 @@ function deepFreeze<T extends object>(obj: T): T {
     }
   }
   return obj;
-}
-
-// Validate all required env vars upfront — collect all missing, don't fail on first
-const REQUIRED_VARS = ["HUB_API_KEY", "OPENAI_API_KEY"] as const;
-const missing = REQUIRED_VARS.filter((name) => !process.env[name]);
-if (missing.length > 0) {
-  throw new Error(
-    `Missing required environment variable(s): ${missing.join(", ")}`,
-  );
 }
 
 const HUB_BASE_URL = "https://hub.ag3nts.org";
@@ -51,11 +32,11 @@ export const config = deepFreeze({
   hub: {
     baseUrl: HUB_BASE_URL,
     verifyUrl: `${HUB_BASE_URL}/verify`,
-    apiKey: requireEnv("HUB_API_KEY"),
+    apiKey: env.hubApiKey,
   },
   keys: {
-    openaiApiKey: requireEnv("OPENAI_API_KEY"),
-    geminiApiKey: process.env.GEMINI_API_KEY,
+    openaiApiKey: env.openaiApiKey,
+    geminiApiKey: env.geminiApiKey,
   },
   limits: {
     maxIterations: 40,
@@ -66,13 +47,8 @@ export const config = deepFreeze({
     geminiTimeout: 60_000,
     docMaxFiles: 10,
   },
-  web: {
-    placeholderMap: {
-      hub_api_key: () => config.hub.apiKey,
-    } as Record<string, () => string>,
-  },
   server: {
-    port: Number(process.env.PORT) || 3000,
+    port: env.port,
   },
-  assistant: process.env.ASSISTANT ?? process.env.PERSONA,
+  assistant: env.assistant,
 });

@@ -9,11 +9,15 @@ import { inferCategory, inferMimeType } from "../utils/media-types.ts";
 
 const PLACEHOLDER_RE = /\{\{(\w+)\}\}/g;
 
+const placeholderMap: Record<string, () => string> = {
+  hub_api_key: () => config.hub.apiKey,
+};
+
 function resolvePlaceholders(url: string): string {
   return url.replace(PLACEHOLDER_RE, (_match, name: string) => {
-    const resolver = config.web.placeholderMap[name];
+    const resolver = placeholderMap[name];
     if (!resolver) {
-      const available = Object.keys(config.web.placeholderMap).join(", ");
+      const available = Object.keys(placeholderMap).join(", ");
       throw new Error(`Unknown placeholder "{{${name}}}". Available: ${available}`);
     }
     return resolver();
