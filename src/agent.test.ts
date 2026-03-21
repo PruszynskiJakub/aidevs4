@@ -338,7 +338,7 @@ describe("agent parallel tool calling", () => {
     ]);
 
     const result = await runAgent(makeMessages("test"), provider);
-    expect(result).toBe("Hello!");
+    expect(result.answer).toBe("Hello!");
   });
 });
 

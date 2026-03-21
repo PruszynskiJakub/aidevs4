@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { mkdtemp, rm, readFile, readdir } from "node:fs/promises";
 import { join, basename, dirname } from "node:path";
 import { tmpdir } from "node:os";
-import { MarkdownLogger, formatJson, randomSessionId } from "./markdown-logger.ts";
+import { MarkdownLogger, formatJson } from "./markdown-logger.ts";
+import { randomSessionId } from "../../../utils/id.ts";
 import { createBunFileService } from "../file.ts";
 
 function makeLogger(dir: string, sessionId?: string) {

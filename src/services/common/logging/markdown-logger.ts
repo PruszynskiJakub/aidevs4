@@ -1,9 +1,9 @@
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
 import type { FileProvider } from "../../../types/file.ts";
 import type { Logger } from "../../../types/logger.ts";
 import { createBunFileService } from "../file.ts";
 import { config } from "../../../config/index.ts";
+import { randomSessionId } from "../../../utils/id.ts";
 
 const SAFE_ID = /^[a-zA-Z0-9_\-]+$/;
 const MAX_INLINE_SIZE = 10_240;
@@ -15,11 +15,6 @@ function utcTimestamp(): { folder: string; stamp: string; display: string } {
     stamp: iso.slice(11, 19).replace(/:/g, "-"),         // 14-30-05
     display: iso.replace("T", " ").slice(0, 19),         // 2026-03-17 14:30:05
   };
-}
-
-/** Generate a UUID v4 string for anonymous sessions */
-export function randomSessionId(): string {
-  return randomUUID();
 }
 
 /** Pretty-print JSON with 2-space indent; fall back to raw string on parse failure */

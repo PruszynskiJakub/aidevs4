@@ -2,6 +2,7 @@ import { runAgent } from "../../agent.ts";
 import { sessionService } from "./session.ts";
 import { assistantResolverService } from "./assistant/assistant-resolver.ts";
 import { log } from "../common/logging/logger.ts";
+import { randomSessionId } from "../../utils/id.ts";
 import type { LLMMessage } from "../../types/llm.ts";
 import type { Session } from "../../types/session.ts";
 
@@ -34,7 +35,7 @@ function pickAssistantName(
 }
 
 export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnResult> {
-  const sessionId = opts.sessionId ?? crypto.randomUUID();
+  const sessionId = opts.sessionId ?? randomSessionId();
   const session = sessionService.getOrCreate(sessionId);
   const assistantName = pickAssistantName(session, sessionId, opts.assistant);
 
@@ -50,17 +51,16 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
   sessionService.appendMessage(sessionId, { role: "user", content: opts.prompt });
 
   const messages: LLMMessage[] = [...session.messages];
-  const answer = await runAgent(messages, undefined, {
+  const result = await runAgent(messages, undefined, {
     model: opts.model ?? resolved.model,
     sessionId,
     toolFilter: resolved.toolFilter,
     assistant: assistantName,
   });
 
-  const newMessages = messages.slice(session.messages.length);
-  for (const m of newMessages) {
+  for (const m of result.messages) {
     sessionService.appendMessage(sessionId, m);
   }
 
-  return { answer, sessionId };
+  return { answer: result.answer, sessionId };
 }

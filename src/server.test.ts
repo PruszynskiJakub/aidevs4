@@ -3,13 +3,12 @@ import { sessionService } from "./services/agent/session.ts";
 
 // Mock runAgent before importing server
 mock.module("./agent.ts", () => ({
-  runAgent: async (messages: unknown[]) => {
-    // Simulate agent appending an assistant message
-    (messages as unknown[]).push({
-      role: "assistant",
-      content: "mock answer",
-    });
-    return "mock answer";
+  runAgent: async (_messages: unknown[]) => {
+    // Return AgentResult — no mutation of input array
+    return {
+      answer: "mock answer",
+      messages: [{ role: "assistant", content: "mock answer" }],
+    };
   },
 }));
 

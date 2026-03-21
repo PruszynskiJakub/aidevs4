@@ -162,17 +162,25 @@ async function dispatchTools(
   }
 }
 
+export interface AgentResult {
+  answer: string;
+  messages: LLMMessage[];
+}
+
 export async function runAgent(
   messages: LLMMessage[],
   provider: LLMProvider = defaultLLM,
   options?: { model?: string; sessionId?: string; toolFilter?: ToolFilter; assistant?: string },
-): Promise<string> {
+): Promise<AgentResult> {
   const userPrompt = messages.find((m) => m.role === "user")?.content ?? "";
   const { log, md } = createLogger(userPrompt, options?.sessionId);
 
+  const internalMessages = [...messages];
+  const inputLength = messages.length;
+
   const state: AgentState = {
     sessionId: md.sessionId,
-    messages,
+    messages: internalMessages,
     tokens: {
       plan: { promptTokens: 0, completionTokens: 0 },
       act: { promptTokens: 0, completionTokens: 0 },
@@ -197,7 +205,7 @@ export async function runAgent(
 
         if (response.finishReason === "stop" || !response.toolCalls.length) {
           log.answer(response.content);
-          return response.content ?? "";
+          return { answer: response.content ?? "", messages: internalMessages.slice(inputLength) };
         }
 
         const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
@@ -205,7 +213,7 @@ export async function runAgent(
       }
 
       log.maxIter(config.limits.maxIterations);
-      return "";
+      return { answer: "", messages: internalMessages.slice(inputLength) };
     } finally {
       await md.flush();
       md.dispose();
