@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
+import type { Document } from "../types/document.ts";
 import geoDistance from "./geo_distance.ts";
 import { haversine } from "./geo_distance.ts";
 import { _testReadPaths } from "../services/common/file.ts";
@@ -35,22 +36,24 @@ describe("haversine", () => {
 
 describe("geo_distance distance", () => {
   it("returns correct distance for inline points", async () => {
-    const result = (await handler({
+    const result = await handler({
       action: "distance",
       payload: { lat1: 52.23, lon1: 21.01, lat2: 50.06, lon2: 19.94 },
-    })) as any;
+    }) as Document;
 
-    expect(result.distance_km).toBeGreaterThan(247);
-    expect(result.distance_km).toBeLessThan(257);
+    const data = JSON.parse(result.text);
+    expect(data.distance_km).toBeGreaterThan(247);
+    expect(data.distance_km).toBeLessThan(257);
   });
 
   it("returns 0.000 for same point", async () => {
-    const result = (await handler({
+    const result = await handler({
       action: "distance",
       payload: { lat1: 50.0, lon1: 20.0, lat2: 50.0, lon2: 20.0 },
-    })) as any;
+    }) as Document;
 
-    expect(result.distance_km).toBe(0);
+    const data = JSON.parse(result.text);
+    expect(data.distance_km).toBe(0);
   });
 });
 
@@ -71,21 +74,21 @@ describe("geo_distance find_nearby", () => {
     await Bun.write(refsFile, JSON.stringify(refs));
     await Bun.write(queriesFile, JSON.stringify(queries));
 
-    const result = (await handler({
+    const result = await handler({
       action: "find_nearby",
       payload: { references_file: refsFile, queries_file: queriesFile, radius_km: 10 },
-    })) as any;
+    }) as Document;
 
-    expect(result.status).toBe("ok");
-    expect(result.data.count).toBe(2);
-    expect(result.hints).toContain("2 matches found within 10 km.");
+    const data = JSON.parse(result.text);
+    expect(data.count).toBe(2);
+    expect(result.description).toContain("2 matches");
     // Sorted ascending by distance — closest first
-    expect(result.data.matches[0].query.person).toBe("Bob");
-    expect(result.data.matches[0].reference.name).toBe("Kraków");
-    expect(result.data.matches[1].query.person).toBe("Alice");
-    expect(result.data.matches[1].reference.name).toBe("Warsaw");
+    expect(data.matches[0].query.person).toBe("Bob");
+    expect(data.matches[0].reference.name).toBe("Kraków");
+    expect(data.matches[1].query.person).toBe("Alice");
+    expect(data.matches[1].reference.name).toBe("Warsaw");
     // Charlie should not appear
-    expect(result.data.matches.every((m: any) => m.query.person !== "Charlie")).toBe(true);
+    expect(data.matches.every((m: any) => m.query.person !== "Charlie")).toBe(true);
   });
 
   it("returns empty matches when nothing is within radius", async () => {
@@ -97,14 +100,14 @@ describe("geo_distance find_nearby", () => {
     await Bun.write(refsFile, JSON.stringify(refs));
     await Bun.write(queriesFile, JSON.stringify(queries));
 
-    const result = (await handler({
+    const result = await handler({
       action: "find_nearby",
       payload: { references_file: refsFile, queries_file: queriesFile, radius_km: 1 },
-    })) as any;
+    }) as Document;
 
-    expect(result.status).toBe("ok");
-    expect(result.data.count).toBe(0);
-    expect(result.data.matches).toEqual([]);
+    const data = JSON.parse(result.text);
+    expect(data.count).toBe(0);
+    expect(data.matches).toEqual([]);
   });
 
   it("preserves metadata fields in output", async () => {
@@ -116,16 +119,17 @@ describe("geo_distance find_nearby", () => {
     await Bun.write(refsFile, JSON.stringify(refs));
     await Bun.write(queriesFile, JSON.stringify(queries));
 
-    const result = (await handler({
+    const result = await handler({
       action: "find_nearby",
       payload: { references_file: refsFile, queries_file: queriesFile, radius_km: 1 },
-    })) as any;
+    }) as Document;
 
-    expect(result.data.count).toBe(1);
-    expect(result.data.matches[0].reference.code).toBe("PL-01");
-    expect(result.data.matches[0].reference.type).toBe("plant");
-    expect(result.data.matches[0].query.name).toBe("John");
-    expect(result.data.matches[0].query.surname).toBe("Doe");
+    const data = JSON.parse(result.text);
+    expect(data.count).toBe(1);
+    expect(data.matches[0].reference.code).toBe("PL-01");
+    expect(data.matches[0].reference.type).toBe("plant");
+    expect(data.matches[0].query.name).toBe("John");
+    expect(data.matches[0].query.surname).toBe("Doe");
   });
 
   it("throws when item lacks latitude/longitude", async () => {

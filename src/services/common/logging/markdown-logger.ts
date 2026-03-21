@@ -118,15 +118,15 @@ export class MarkdownLogger implements Logger {
     );
   }
 
-  toolOk(name: string, elapsed: string, rawResult: string, hints?: string[]): void {
+  toolOk(name: string, elapsed: string, rawResult: string): void {
     let text: string;
     if (rawResult.length > MAX_INLINE_SIZE) {
       const ts = utcTimestamp();
       const rand = Math.random().toString(36).slice(2, 6);
-      const sidecarName = `${name}_${ts.stamp}_${rand}.json`;
+      const sidecarName = `${name}_${ts.stamp}_${rand}.txt`;
       const sidecarPath = join(this.sessionDir, sidecarName);
       this.chain = this.chain.then(() =>
-        this.fs.write(sidecarPath, formatJson(rawResult)).catch(() => {}),
+        this.fs.write(sidecarPath, rawResult).catch(() => {}),
       );
       text =
         `**Result** (${elapsed}) — OK\n\n` +
@@ -134,14 +134,7 @@ export class MarkdownLogger implements Logger {
     } else {
       text =
         `**Result** (${elapsed}) — OK\n\n` +
-        `\`\`\`json\n${formatJson(rawResult)}\n\`\`\`\n\n`;
-    }
-    if (hints?.length) {
-      text += `> **Hints:**\n`;
-      for (const hint of hints) {
-        text += `> - ${hint}\n`;
-      }
-      text += `\n`;
+        `\`\`\`xml\n${rawResult}\n\`\`\`\n\n`;
     }
     this.append(text);
   }

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { register, getTools, dispatch, reset } from "./registry.ts";
 import type { ToolDefinition } from "../types/tool.ts";
+import { createDocument } from "../utils/document.ts";
 
 beforeEach(() => {
   reset();
@@ -11,7 +12,8 @@ describe("registry", () => {
     it("registers a simple tool and returns it via getTools", async () => {
       const tool: ToolDefinition = {
         name: "echo",
-        handler: async (args: { text: string }) => args.text,
+        handler: async (args: { text: string }) =>
+          createDocument(args.text, "echo result", { source: null, type: "document", mime_type: "text/plain" }),
       };
       const schema = {
         name: "echo",
@@ -37,7 +39,8 @@ describe("registry", () => {
     it("expands multi-action schemas with __ separator", async () => {
       const tool: ToolDefinition = {
         name: "multi",
-        handler: async ({ action, payload }: { action: string; payload: unknown }) => ({ action, payload }),
+        handler: async ({ action, payload }: { action: string; payload: unknown }) =>
+          createDocument("ok", `${action}`, { source: null, type: "document", mime_type: "text/plain" }),
       };
       const schema = {
         name: "multi",
@@ -80,7 +83,8 @@ describe("registry", () => {
     it("rejects duplicate registration", () => {
       const tool: ToolDefinition = {
         name: "dup",
-        handler: async () => "ok",
+        handler: async () =>
+          createDocument("ok", "dup", { source: null, type: "document", mime_type: "text/plain" }),
       };
       const schema = {
         name: "dup",
@@ -94,10 +98,11 @@ describe("registry", () => {
   });
 
   describe("dispatch (simple)", () => {
-    it("dispatches to registered handler and wraps result", async () => {
+    it("dispatches to registered handler and returns XML document", async () => {
       const tool: ToolDefinition = {
         name: "greet",
-        handler: async (args: { name: string }) => `Hello, ${args.name}!`,
+        handler: async (args: { name: string }) =>
+          createDocument(`Hello, ${args.name}!`, "greeting", { source: null, type: "document", mime_type: "text/plain" }),
       };
       const schema = {
         name: "greet",
@@ -111,17 +116,18 @@ describe("registry", () => {
       };
 
       register(tool, schema);
-      const result = JSON.parse(await dispatch("greet", '{"name":"World"}'));
+      const result = await dispatch("greet", '{"name":"World"}');
 
-      expect(result.status).toBe("ok");
-      expect(result.data).toBe("Hello, World!");
+      expect(result).toContain("<document");
+      expect(result).toContain("Hello, World!");
+      expect(result).toContain("</document>");
     });
 
-    it("returns error for unknown tool", async () => {
-      const result = JSON.parse(await dispatch("nonexistent", "{}"));
+    it("returns error document for unknown tool", async () => {
+      const result = await dispatch("nonexistent", "{}");
 
-      expect(result.status).toBe("error");
-      expect(result.data.error).toContain("Unknown tool");
+      expect(result).toContain("<document");
+      expect(result).toContain("Error: Unknown tool: nonexistent");
     });
   });
 
@@ -132,7 +138,7 @@ describe("registry", () => {
         name: "ma",
         handler: async (args: { action: string; payload: unknown }) => {
           received = args;
-          return "done";
+          return createDocument("done", "ma result", { source: null, type: "document", mime_type: "text/plain" });
         },
       };
       const schema = {
@@ -152,16 +158,15 @@ describe("registry", () => {
       };
 
       register(tool, schema);
-      const result = JSON.parse(await dispatch("ma__run", '{"x":42}'));
+      const result = await dispatch("ma__run", '{"x":42}');
 
-      expect(result.status).toBe("ok");
-      expect(result.data).toBe("done");
+      expect(result).toContain("done");
       expect(received).toEqual({ action: "run", payload: { x: 42 } });
     });
   });
 
   describe("dispatch error handling", () => {
-    it("wraps handler errors as error response", async () => {
+    it("wraps handler errors as error document", async () => {
       const tool: ToolDefinition = {
         name: "fail",
         handler: async () => { throw new Error("boom"); },
@@ -173,10 +178,11 @@ describe("registry", () => {
       };
 
       register(tool, schema);
-      const result = JSON.parse(await dispatch("fail", "{}"));
+      const result = await dispatch("fail", "{}");
 
-      expect(result.status).toBe("error");
-      expect(result.data.error).toBe("boom");
+      expect(result).toContain("<document");
+      expect(result).toContain("Error: boom");
+      expect(result).toContain("Error from fail");
     });
   });
 
@@ -184,7 +190,8 @@ describe("registry", () => {
     function registerEchoAndMulti() {
       const echo: ToolDefinition = {
         name: "echo",
-        handler: async (args: { text: string }) => args.text,
+        handler: async (args: { text: string }) =>
+          createDocument(args.text, "echo", { source: null, type: "document", mime_type: "text/plain" }),
       };
       const echoSchema = {
         name: "echo",
@@ -199,7 +206,8 @@ describe("registry", () => {
 
       const multi: ToolDefinition = {
         name: "multi",
-        handler: async ({ action, payload }: { action: string; payload: unknown }) => ({ action, payload }),
+        handler: async ({ action, payload }: { action: string; payload: unknown }) =>
+          createDocument("ok", `${action}`, { source: null, type: "document", mime_type: "text/plain" }),
       };
       const multiSchema = {
         name: "multi",
@@ -266,7 +274,8 @@ describe("registry", () => {
     it("rejects tool not in include list", async () => {
       const tool: ToolDefinition = {
         name: "echo",
-        handler: async (args: { text: string }) => args.text,
+        handler: async (args: { text: string }) =>
+          createDocument(args.text, "echo", { source: null, type: "document", mime_type: "text/plain" }),
       };
       const schema = {
         name: "echo",
@@ -280,15 +289,15 @@ describe("registry", () => {
       };
 
       register(tool, schema);
-      const result = JSON.parse(await dispatch("echo", '{"text":"hi"}', { include: ["other"] }));
-      expect(result.status).toBe("error");
-      expect(result.data.error).toContain("Tool not allowed");
+      const result = await dispatch("echo", '{"text":"hi"}', { include: ["other"] });
+      expect(result).toContain("Error: Tool not allowed");
     });
 
     it("allows tool in include list", async () => {
       const tool: ToolDefinition = {
         name: "echo",
-        handler: async (args: { text: string }) => args.text,
+        handler: async (args: { text: string }) =>
+          createDocument(args.text, "echo", { source: null, type: "document", mime_type: "text/plain" }),
       };
       const schema = {
         name: "echo",
@@ -302,15 +311,16 @@ describe("registry", () => {
       };
 
       register(tool, schema);
-      const result = JSON.parse(await dispatch("echo", '{"text":"hi"}', { include: ["echo"] }));
-      expect(result.status).toBe("ok");
-      expect(result.data).toBe("hi");
+      const result = await dispatch("echo", '{"text":"hi"}', { include: ["echo"] });
+      expect(result).toContain("hi");
+      expect(result).not.toContain("Error");
     });
 
     it("rejects multi-action tool not in include list", async () => {
       const tool: ToolDefinition = {
         name: "ma",
-        handler: async (args: { action: string; payload: unknown }) => "done",
+        handler: async (args: { action: string; payload: unknown }) =>
+          createDocument("done", "ma", { source: null, type: "document", mime_type: "text/plain" }),
       };
       const schema = {
         name: "ma",
@@ -329,15 +339,15 @@ describe("registry", () => {
       };
 
       register(tool, schema);
-      const result = JSON.parse(await dispatch("ma__run", '{"x":1}', { include: ["other"] }));
-      expect(result.status).toBe("error");
-      expect(result.data.error).toContain("Tool not allowed");
+      const result = await dispatch("ma__run", '{"x":1}', { include: ["other"] });
+      expect(result).toContain("Error: Tool not allowed");
     });
 
     it("dispatch without filter works (backward compat)", async () => {
       const tool: ToolDefinition = {
         name: "echo",
-        handler: async (args: { text: string }) => args.text,
+        handler: async (args: { text: string }) =>
+          createDocument(args.text, "echo", { source: null, type: "document", mime_type: "text/plain" }),
       };
       const schema = {
         name: "echo",
@@ -351,8 +361,8 @@ describe("registry", () => {
       };
 
       register(tool, schema);
-      const result = JSON.parse(await dispatch("echo", '{"text":"hi"}'));
-      expect(result.status).toBe("ok");
+      const result = await dispatch("echo", '{"text":"hi"}');
+      expect(result).toContain("hi");
     });
   });
 
@@ -360,7 +370,8 @@ describe("registry", () => {
     it("clears all registered tools", async () => {
       const tool: ToolDefinition = {
         name: "temp",
-        handler: async () => "ok",
+        handler: async () =>
+          createDocument("ok", "temp", { source: null, type: "document", mime_type: "text/plain" }),
       };
       const schema = {
         name: "temp",

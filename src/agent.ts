@@ -11,18 +11,7 @@ import { MarkdownLogger } from "./services/common/logging/markdown-logger.ts";
 import { ConsoleLogger } from "./services/common/logging/console-logger.ts";
 import { CompositeLogger } from "./services/common/logging/composite-logger.ts";
 import { assistants } from "./services/agent/assistant/assistants.ts";
-import { isToolResponse } from "./utils/tool-response.ts";
 import { runWithContext, requireState, requireLogger } from "./services/agent/session-context.ts";
-
-function parseToolResponse(raw: string): { data: unknown; hints?: string[] } {
-  try {
-    const parsed = JSON.parse(raw);
-    if (isToolResponse(parsed)) {
-      return { data: parsed.data, hints: parsed.hints };
-    }
-  } catch { /* not JSON — return raw */ }
-  return { data: raw };
-}
 
 function createLogger(
   userPrompt: string | unknown,
@@ -137,8 +126,8 @@ async function dispatchTools(
   const settled = await Promise.allSettled(
     functionCalls.map(async (tc) => {
       const start = performance.now();
-      const result = await dispatch(tc.function.name, tc.function.arguments, toolFilter);
-      return { result, elapsed: elapsed(start) };
+      const xmlResult = await dispatch(tc.function.name, tc.function.arguments, toolFilter);
+      return { xmlResult, elapsed: elapsed(start) };
     })
   );
 
@@ -147,23 +136,27 @@ async function dispatchTools(
     const outcome = settled[j];
 
     if (outcome.status === "fulfilled") {
-      const { result, elapsed } = outcome.value;
-      const parsed = parseToolResponse(result);
-      const llmContent = JSON.stringify(parsed.data);
-      log.toolOk(tc.function.name, elapsed, llmContent, parsed.hints);
+      const { xmlResult, elapsed } = outcome.value;
+      const isError = xmlResult.includes(">Error: ");
+      if (isError) {
+        log.toolErr(tc.function.name, xmlResult);
+      } else {
+        log.toolOk(tc.function.name, elapsed, xmlResult);
+      }
       state.messages.push({
         role: "tool",
         toolCallId: tc.id,
-        content: llmContent,
+        content: xmlResult,
       });
     } else {
+      // Promise.allSettled rejection — should not happen since dispatch catches errors,
+      // but handle defensively
       const errorMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
-      const errorResult = JSON.stringify({ error: errorMsg });
       log.toolErr(tc.function.name, errorMsg);
       state.messages.push({
         role: "tool",
         toolCallId: tc.id,
-        content: errorResult,
+        content: `<document id="error" description="Error from ${tc.function.name}">Error: ${errorMsg}</document>`,
       });
     }
   }
@@ -189,6 +182,7 @@ export async function runAgent(
       act: { promptTokens: 0, completionTokens: 0 },
     },
     iteration: 0,
+    documents: [],
   };
 
   return runWithContext(state, log, async () => {

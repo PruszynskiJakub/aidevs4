@@ -6,7 +6,7 @@ export interface Logger {
   plan(planText: string, model: string, elapsed: string, tokensIn?: number, tokensOut?: number): void;
   toolHeader(count: number): void;
   toolCall(name: string, rawArgs: string): void;
-  toolOk(name: string, elapsed: string, rawResult: string, hints?: string[]): void;
+  toolOk(name: string, elapsed: string, rawResult: string): void;
   toolErr(name: string, errorMsg: string): void;
   batchDone(count: number, elapsed: string): void;
   answer(text: string | null): void;

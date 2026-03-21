@@ -1,9 +1,9 @@
 import type { ToolDefinition } from "../types/tool.ts";
-import type { ToolResponse } from "../types/tool.ts";
+import type { Document } from "../types/document.ts";
 import { getApiKey } from "../utils/hub.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { toolOk } from "../utils/tool-response.ts";
+import { createDocument } from "../utils/document.ts";
 
 const PACKAGEID_RE = /^[A-Za-z0-9]+$/;
 const PACKAGES_URL = `${config.hub.baseUrl}/api/packages`;
@@ -14,7 +14,7 @@ function validateAlphanumeric(value: string, name: string): void {
   }
 }
 
-async function checkPackage(payload: { packageid: string }): Promise<ToolResponse> {
+async function checkPackage(payload: { packageid: string }): Promise<Document> {
   assertMaxLength(payload.packageid, "packageid", 20);
   validateAlphanumeric(payload.packageid, "packageid");
 
@@ -36,9 +36,11 @@ async function checkPackage(payload: { packageid: string }): Promise<ToolRespons
     throw new Error(`Package check failed (${res.status}): ${detail}`);
   }
 
-  return toolOk(
-    { packageid: payload.packageid, response },
-    [`Package ${payload.packageid} status retrieved. Use shipping__redirect to reroute if needed.`],
+  const content = typeof response === "string" ? response : JSON.stringify(response);
+  return createDocument(
+    content,
+    `Package ${payload.packageid} status. Use shipping__redirect to reroute if needed.`,
+    { source: "hub.ag3nts.org", type: "document", mime_type: "application/json" },
   );
 }
 
@@ -46,7 +48,7 @@ async function redirectPackage(payload: {
   packageid: string;
   destination: string;
   code: string;
-}): Promise<ToolResponse> {
+}): Promise<Document> {
   assertMaxLength(payload.packageid, "packageid", 20);
   validateAlphanumeric(payload.packageid, "packageid");
   assertMaxLength(payload.destination, "destination", 20);
@@ -81,16 +83,16 @@ async function redirectPackage(payload: {
     ? (response as Record<string, unknown>).confirmation
     : undefined;
 
-  return toolOk(
-    { packageid: payload.packageid, confirmation: response },
-    [
-      `Redirect processed. IMPORTANT: Always include the confirmation code in your reply to the operator.`,
-      ...(confirmationCode ? [`Confirmation code: ${confirmationCode}`] : []),
-    ],
+  const content = typeof response === "string" ? response : JSON.stringify(response);
+  const confirmNote = confirmationCode ? ` Confirmation code: ${confirmationCode}.` : "";
+  return createDocument(
+    content,
+    `Redirect processed for ${payload.packageid}.${confirmNote} IMPORTANT: Always include the confirmation code in your reply.`,
+    { source: "hub.ag3nts.org", type: "document", mime_type: "application/json" },
   );
 }
 
-async function shipping({ action, payload }: { action: string; payload: Record<string, any> }): Promise<unknown> {
+async function shipping({ action, payload }: { action: string; payload: Record<string, any> }): Promise<Document> {
   switch (action) {
     case "check":
       return checkPackage(payload as { packageid: string });

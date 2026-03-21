@@ -1,9 +1,9 @@
 import type { ToolDefinition } from "../types/tool.ts";
-import type { ToolResponse } from "../types/tool.ts";
+import type { Document } from "../types/document.ts";
 import { llm } from "../services/ai/llm.ts";
 import { promptService } from "../services/ai/prompt.ts";
 import { assertMaxLength, safeParse } from "../utils/parse.ts";
-import { toolOk, toolError } from "../utils/tool-response.ts";
+import { createDocument } from "../utils/document.ts";
 
 const MAX_GOAL = 2_000;
 const MAX_CONSTRAINTS = 1_000;
@@ -21,7 +21,7 @@ interface PromptEngineerArgs {
 
 async function promptEngineer(
   args: PromptEngineerArgs,
-): Promise<ToolResponse> {
+): Promise<Document> {
   assertMaxLength(args.goal, "goal", MAX_GOAL);
   assertMaxLength(args.constraints, "constraints", MAX_CONSTRAINTS);
   assertMaxLength(args.context, "context", MAX_CONTEXT);
@@ -67,15 +67,19 @@ async function promptEngineer(
   const parsed = safeParse(cleaned, "prompt_engineer response");
 
   if (!parsed.prompt || typeof parsed.prompt !== "string") {
-    return toolError("LLM did not return a valid prompt field", [
-      "Try again with more specific goal and constraints.",
-    ]);
+    throw new Error("LLM did not return a valid prompt field. Try again with more specific goal and constraints.");
   }
 
-  return toolOk({
+  const text = JSON.stringify({
     prompt: parsed.prompt,
     token_estimate: parsed.token_estimate ?? null,
     reasoning: parsed.reasoning ?? null,
+  });
+
+  return createDocument(text, `Engineered prompt for: ${args.goal.slice(0, 80)}`, {
+    source: null,
+    type: "document",
+    mime_type: "application/json",
   });
 }
 

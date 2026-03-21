@@ -19,7 +19,7 @@ mock.module("./tools/index.ts", () => ({
   getTools: async () => [],
   dispatch: async (name: string, _argsJson: string) => {
     const fn = dispatchResults[name];
-    if (!fn) return JSON.stringify({ status: "error", data: { error: `Unknown tool: ${name}` } });
+    if (!fn) return `<document id="err" description="Error from ${name}">Error: Unknown tool: ${name}</document>`;
     return fn();
   },
 }));
@@ -50,6 +50,10 @@ function makeMessages(prompt: string): LLMMessage[] {
     { role: "system", content: "You are an agent." },
     { role: "user", content: prompt },
   ];
+}
+
+function xmlDoc(id: string, desc: string, text: string): string {
+  return `<document id="${id}" description="${desc}">${text}</document>`;
 }
 
 beforeEach(() => {
@@ -128,7 +132,7 @@ describe("agent plan-act loop", () => {
     const planCalls: LLMMessage[][] = [];
 
     dispatchResults = {
-      tool_a: async () => JSON.stringify({ status: "ok", data: { result: "A" } }),
+      tool_a: async () => xmlDoc("a1", "Tool A result", "result A"),
     };
 
     let callIndex = 0;
@@ -179,13 +183,13 @@ describe("agent parallel tool calling", () => {
         order.push("a_start");
         await Bun.sleep(50);
         order.push("a_end");
-        return JSON.stringify({ status: "ok", data: { result: "A" } });
+        return xmlDoc("a1", "A", "result A");
       },
       tool_b: async () => {
         order.push("b_start");
         await Bun.sleep(10);
         order.push("b_end");
-        return JSON.stringify({ status: "ok", data: { result: "B" } });
+        return xmlDoc("b1", "B", "result B");
       },
     };
 
@@ -215,10 +219,10 @@ describe("agent parallel tool calling", () => {
     dispatchResults = {
       slow: async () => {
         await Bun.sleep(40);
-        return JSON.stringify({ status: "ok", data: { result: "slow" } });
+        return xmlDoc("s1", "slow", "slow result");
       },
       fast: async () => {
-        return JSON.stringify({ status: "ok", data: { result: "fast" } });
+        return xmlDoc("f1", "fast", "fast result");
       },
     };
 
@@ -257,7 +261,7 @@ describe("agent parallel tool calling", () => {
 
   it("handles mixed success and failure", async () => {
     dispatchResults = {
-      good: async () => JSON.stringify({ status: "ok", data: { result: "ok" } }),
+      good: async () => xmlDoc("g1", "good", "ok result"),
       bad: async () => { throw new Error("boom"); },
     };
 
@@ -290,17 +294,16 @@ describe("agent parallel tool calling", () => {
     const toolMessages = capturedMessages.filter(m => m.role === "tool");
     expect(toolMessages).toHaveLength(2);
 
-    // First tool succeeded — agent extracts data from ToolResponse
-    expect(JSON.parse((toolMessages[0] as any).content)).toEqual({ result: "ok" });
+    // First tool succeeded — contains XML document
+    expect((toolMessages[0] as any).content).toContain("ok result");
 
     // Second tool failed — Promise.allSettled catches the thrown error
-    const secondResult = JSON.parse((toolMessages[1] as any).content);
-    expect(secondResult.error).toBeDefined();
+    expect((toolMessages[1] as any).content).toContain("Error: boom");
   });
 
   it("handles single tool call unchanged", async () => {
     dispatchResults = {
-      solo: async () => JSON.stringify({ status: "ok", data: { result: "solo" } }),
+      solo: async () => xmlDoc("s1", "solo", "solo result"),
     };
 
     let capturedMessages: LLMMessage[] = [];
@@ -330,7 +333,7 @@ describe("agent parallel tool calling", () => {
 
     const toolMessages = capturedMessages.filter(m => m.role === "tool");
     expect(toolMessages).toHaveLength(1);
-    expect(JSON.parse((toolMessages[0] as any).content)).toEqual({ result: "solo" });
+    expect((toolMessages[0] as any).content).toContain("solo result");
   });
 
   it("handles no tool calls — prints response and exits", async () => {

@@ -1,9 +1,9 @@
 import type { ToolDefinition } from "../types/tool.ts";
-import type { ToolResponse } from "../types/tool.ts";
+import type { Document } from "../types/document.ts";
 import { files } from "../services/common/file.ts";
 import { config } from "../config/index.ts";
 import { safeParse, assertMaxLength, assertNumericBounds, checkFileSize } from "../utils/parse.ts";
-import { toolOk } from "../utils/tool-response.ts";
+import { createDocument } from "../utils/document.ts";
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -53,7 +53,7 @@ async function findNearby(payload: {
   references_file: string;
   queries_file: string;
   radius_km: number;
-}): Promise<ToolResponse> {
+}): Promise<Document> {
   assertMaxLength(payload.references_file, "references_file", 500);
   assertMaxLength(payload.queries_file, "queries_file", 500);
   assertNumericBounds(payload.radius_km, "radius_km", 0.001, 40_075);
@@ -84,14 +84,13 @@ async function findNearby(payload: {
 
   matches.sort((a, b) => a.distance_km - b.distance_km);
 
-  const hints: string[] = [
-    `${matches.length} matches found within ${payload.radius_km} km.`,
-  ];
-  if (matches.length > 50) {
-    hints.push("Many matches returned. Consider narrowing the radius.");
-  }
-
-  return toolOk({ count: matches.length, matches }, hints);
+  const text = JSON.stringify({ count: matches.length, matches });
+  const note = matches.length > 50 ? " Many matches — consider narrowing the radius." : "";
+  return createDocument(
+    text,
+    `${matches.length} matches within ${payload.radius_km} km.${note}`,
+    { source: null, type: "document", mime_type: "application/json" },
+  );
 }
 
 function distance(payload: {
@@ -99,13 +98,18 @@ function distance(payload: {
   lon1: number;
   lat2: number;
   lon2: number;
-}): { distance_km: number } {
+}): Document {
   validateCoord(payload.lat1, payload.lon1, "");
   validateCoord(payload.lat2, payload.lon2, "");
-  return { distance_km: roundTo3(haversine(payload.lat1, payload.lon1, payload.lat2, payload.lon2)) };
+  const km = roundTo3(haversine(payload.lat1, payload.lon1, payload.lat2, payload.lon2));
+  return createDocument(
+    JSON.stringify({ distance_km: km }),
+    `Distance: ${km} km`,
+    { source: null, type: "document", mime_type: "application/json" },
+  );
 }
 
-async function geoDistance({ action, payload }: { action: string; payload: Record<string, any> }): Promise<unknown> {
+async function geoDistance({ action, payload }: { action: string; payload: Record<string, any> }): Promise<Document> {
   switch (action) {
     case "find_nearby":
       return findNearby(payload as { references_file: string; queries_file: string; radius_km: number });

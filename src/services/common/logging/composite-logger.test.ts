@@ -23,7 +23,7 @@ const ALL_METHODS: Array<{ method: keyof Logger; args: unknown[] }> = [
   { method: "plan", args: ["do stuff", "gpt-4.1", "0.5s", 50, 60] },
   { method: "toolHeader", args: [3] },
   { method: "toolCall", args: ["my_tool", '{"key":"val"}'] },
-  { method: "toolOk", args: ["my_tool", "0.1s", '{"status":"ok"}', ["hint"]] },
+  { method: "toolOk", args: ["my_tool", "0.1s", '<document id="x" description="test">ok</document>'] },
   { method: "toolErr", args: ["my_tool", "something failed"] },
   { method: "batchDone", args: [5, "2.0s"] },
   { method: "answer", args: ["final answer"] },

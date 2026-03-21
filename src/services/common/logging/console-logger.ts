@@ -127,16 +127,11 @@ export class ConsoleLogger implements Logger {
     console.log(`     ${DIM}→${RESET} ${BOLD}${name}${RESET}${DIM}(${summarizeArgs(rawArgs, this.truncateArgsLen)})${RESET}`);
   }
 
-  toolOk(name: string, elapsed: string, rawResult: string, hints?: string[]): void {
+  toolOk(name: string, elapsed: string, rawResult: string): void {
     console.log(`  ${GREEN}✔ ${name}${RESET} ${DIM}${elapsed}${RESET}`);
     const summary = summarizeResult(rawResult, this.truncateResultLen);
     if (summary) {
       console.log(`     ${DIM}${summary}${RESET}`);
-    }
-    if (hints?.length) {
-      for (const hint of hints) {
-        console.log(`     ${YELLOW}💡 ${hint}${RESET}`);
-      }
     }
   }
 

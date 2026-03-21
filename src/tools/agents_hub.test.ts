@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, mock, beforeEach } from "bun
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
+import type { Document } from "../types/document.ts";
 import agentsHub from "./agents_hub.ts";
 import { config } from "../config/index.ts";
 import { _testReadPaths, _testWritePaths } from "../services/common/file.ts";
@@ -42,15 +43,16 @@ describe("agents_hub verify", () => {
       });
     }) as any;
 
-    const result = (await handler({
+    const result = await handler({
       action: "verify",
       payload: { task: "test", answer: '{"city":"Krakow"}' },
-    })) as any;
+    }) as Document;
 
     expect(capturedBody.answer).toEqual({ city: "Krakow" });
     expect(capturedBody.apikey).toBe(config.hub.apiKey);
     expect(capturedBody.task).toBe("test");
-    expect(result.status).toBe("ok");
+    expect(result.text).toContain("OK");
+    expect(result.metadata.type).toBe("document");
   });
 
   it("submits inline raw string as answer", async () => {
@@ -98,7 +100,7 @@ describe("agents_hub verify", () => {
 // --------------- verify_batch ---------------
 
 describe("agents_hub verify_batch", () => {
-  it("submits inline JSON array", async () => {
+  it("submits inline JSON array and returns Document[]", async () => {
     const capturedBodies: any[] = [];
     const outputFile = join(tmp, "vb_inline_out.json");
 
@@ -110,16 +112,17 @@ describe("agents_hub verify_batch", () => {
       });
     }) as any;
 
-    const result = (await handler({
+    const result = await handler({
       action: "verify_batch",
       payload: {
         task: "test",
         answers: '[{"a":1},{"a":2}]',
         output_file: outputFile,
       },
-    })) as any;
+    }) as Document[];
 
-    expect(result.data.count).toBe(2);
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(2);
     expect(capturedBodies[0].answer).toEqual({ a: 1 });
     expect(capturedBodies[1].answer).toEqual({ a: 2 });
   });
@@ -139,12 +142,12 @@ describe("agents_hub verify_batch", () => {
       });
     }) as any;
 
-    const result = (await handler({
+    const result = await handler({
       action: "verify_batch",
       payload: { task: "test", answers: answersFile, output_file: outputFile },
-    })) as any;
+    }) as Document[];
 
-    expect(result.data.count).toBe(2);
+    expect(result).toHaveLength(2);
     expect(capturedBodies[0].answer).toEqual({ a: 1 });
   });
 
@@ -174,16 +177,15 @@ describe("agents_hub api_request", () => {
       });
     }) as any;
 
-    const result = (await handler({
+    const result = await handler({
       action: "api_request",
       payload: { path: "location", body: '{"query":"test"}' },
-    })) as any;
+    }) as Document;
 
     expect(capturedBody.query).toBe("test");
     expect(capturedBody.apikey).toBe(config.hub.apiKey);
-    expect(result.status).toBe("ok");
-    expect(result.data.path).toBe("location");
-    expect(result.hints).toContain("Response from /api/location received.");
+    expect(result.text).toContain("ok");
+    expect(result.description).toContain("/api/location");
   });
 
   it("reads body from file with apikey merged", async () => {
@@ -200,15 +202,15 @@ describe("agents_hub api_request", () => {
       });
     }) as any;
 
-    const result = (await handler({
+    const result = await handler({
       action: "api_request",
       payload: { path: "search", body: bodyFile },
-    })) as any;
+    }) as Document;
 
     expect(capturedBody.query).toBe("from-file");
     expect(capturedBody.limit).toBe(5);
     expect(capturedBody.apikey).toBe(config.hub.apiKey);
-    expect(result.status).toBe("ok");
+    expect(result.metadata.type).toBe("document");
   });
 
   it("rejects non-object body (raw string)", async () => {
@@ -254,19 +256,19 @@ describe("agents_hub api_request", () => {
       });
     }) as any;
 
-    const result = (await handler({
+    const result = await handler({
       action: "api_request",
       payload: { path: "echo", body: '{"msg":"hi"}' },
-    })) as any;
+    }) as Document;
 
-    expect(result.data.response).toBe("plain text response");
+    expect(result.text).toBe("plain text response");
   });
 });
 
 // --------------- api_batch (unchanged) ---------------
 
 describe("agents_hub api_batch", () => {
-  it("sends each JSON row with field mapping and writes results", async () => {
+  it("sends each JSON row with field mapping and returns Document[]", async () => {
     const dataFile = join(tmp, "batch_data.json");
     const outputFile = join(tmp, "batch_output.json");
     await Bun.write(
@@ -289,7 +291,7 @@ describe("agents_hub api_batch", () => {
       });
     }) as any;
 
-    const result = (await handler({
+    const result = await handler({
       action: "api_batch",
       payload: {
         path: "location",
@@ -297,10 +299,10 @@ describe("agents_hub api_batch", () => {
         field_map_json: '{"born":"birthYear"}',
         output_file: outputFile,
       },
-    })) as any;
+    }) as Document[];
 
-    expect(result.status).toBe("ok");
-    expect(result.data.count).toBe(3);
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(3);
 
     expect(capturedBodies[0].birthYear).toBe("1990");
     expect(capturedBodies[0].born).toBeUndefined();
@@ -350,12 +352,12 @@ describe("agents_hub api_batch", () => {
       });
     }) as any;
 
-    const result = (await handler({
+    const result = await handler({
       action: "api_batch",
       payload: { path: "people", data_file: dataFile, field_map_json: "{}", output_file: outputFile },
-    })) as any;
+    }) as Document[];
 
-    expect(result.data.count).toBe(2);
+    expect(result).toHaveLength(2);
     expect(capturedBodies[0].name).toBe("Alice");
     expect(capturedBodies[0].apikey).toBe(config.hub.apiKey);
   });

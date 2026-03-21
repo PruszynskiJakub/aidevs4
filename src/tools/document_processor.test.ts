@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, mock } from "bun
 import { join } from "path";
 import { mkdirSync, writeFileSync, rmSync } from "fs";
 import type { ChatCompletionParams, LLMChatResponse } from "../types/llm.ts";
+import type { Document } from "../types/document.ts";
 
 // Mock llm service before importing the tool
 const mockChatCompletion = mock(
@@ -63,15 +64,16 @@ beforeEach(() => {
 });
 
 describe("document_processor ask — text files", () => {
-  it("processes a single text file and returns an answer", async () => {
-    const result = (await handler({
+  it("processes a single text file and returns a Document", async () => {
+    const result = await handler({
       action: "ask",
       payload: { paths: [TEXT_FILE], question: "What is this about?" },
-    })) as any;
+    }) as Document;
 
-    expect(result.status).toBe("ok");
-    expect(result.data.answer).toBe("Mocked answer from Gemini");
-    expect(result.hints[0]).toContain("1 document(s)");
+    expect(result.text).toBe("Mocked answer from Gemini");
+    expect(result.description).toContain("1 document(s)");
+    expect(result.metadata.type).toBe("document");
+    expect(result.metadata.mime_type).toBe("text/plain");
 
     // Verify llm.chatCompletion was called with correct params
     expect(mockChatCompletion).toHaveBeenCalledTimes(1);
@@ -92,16 +94,15 @@ describe("document_processor ask — text files", () => {
   });
 
   it("processes multiple text files", async () => {
-    const result = (await handler({
+    const result = await handler({
       action: "ask",
       payload: {
         paths: [TEXT_FILE, TEXT_FILE_2, CSV_FILE],
         question: "Summarize everything",
       },
-    })) as any;
+    }) as Document;
 
-    expect(result.status).toBe("ok");
-    expect(result.hints[0]).toContain("3 document(s)");
+    expect(result.description).toContain("3 document(s)");
 
     const callArgs = mockChatCompletion.mock.calls[0][0] as ChatCompletionParams;
     const content = callArgs.messages[0].content as any[];
@@ -114,12 +115,12 @@ describe("document_processor ask — text files", () => {
 
 describe("document_processor ask — image files", () => {
   it("sends image as base64 ImagePart with correct mimeType", async () => {
-    const result = (await handler({
+    const result = await handler({
       action: "ask",
       payload: { paths: [IMAGE_FILE], question: "Describe this image" },
-    })) as any;
+    }) as Document;
 
-    expect(result.status).toBe("ok");
+    expect(result.text).toBe("Mocked answer from Gemini");
 
     const callArgs = mockChatCompletion.mock.calls[0][0] as ChatCompletionParams;
     const content = callArgs.messages[0].content as any[];
@@ -134,16 +135,15 @@ describe("document_processor ask — image files", () => {
 
 describe("document_processor ask — mixed files", () => {
   it("handles text and image files together", async () => {
-    const result = (await handler({
+    const result = await handler({
       action: "ask",
       payload: {
         paths: [TEXT_FILE, IMAGE_FILE],
         question: "Cross-reference text and image",
       },
-    })) as any;
+    }) as Document;
 
-    expect(result.status).toBe("ok");
-    expect(result.hints[0]).toContain("2 document(s)");
+    expect(result.description).toContain("2 document(s)");
 
     const callArgs = mockChatCompletion.mock.calls[0][0] as ChatCompletionParams;
     const content = callArgs.messages[0].content as any[];

@@ -1,11 +1,11 @@
 import type { ToolDefinition } from "../types/tool.ts";
-import type { ToolResponse } from "../types/tool.ts";
+import type { Document } from "../types/document.ts";
 import { llm } from "../services/ai/llm.ts";
 import { promptService } from "../services/ai/prompt.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { toolOk } from "../utils/tool-response.ts";
+import { createDocument } from "../utils/document.ts";
 
-async function think(args: { thought: string }): Promise<ToolResponse> {
+async function think(args: { thought: string }): Promise<Document> {
   assertMaxLength(args.thought, "question", 5_000);
 
   const prompt = await promptService.load("think");
@@ -17,7 +17,12 @@ async function think(args: { thought: string }): Promise<ToolResponse> {
     ...(prompt.temperature !== undefined && { temperature: prompt.temperature }),
   });
 
-  return toolOk({ reasoning: result });
+  const snippet = args.thought.slice(0, 80);
+  return createDocument(result, `Reasoning about: ${snippet}`, {
+    source: null,
+    type: "document",
+    mime_type: "text/plain",
+  });
 }
 
 export default {

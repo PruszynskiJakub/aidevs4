@@ -1,13 +1,13 @@
 import type { ToolDefinition } from "../types/tool.ts";
-import type { ToolResponse } from "../types/tool.ts";
+import type { Document } from "../types/document.ts";
 import { files } from "../services/common/file.ts";
 import { getApiKey } from "../utils/hub.ts";
 import { config } from "../config/index.ts";
 import { parseCsv } from "../utils/csv.ts";
 import { safeParse, validateKeys, assertMaxLength, checkFileSize, resolveInput } from "../utils/parse.ts";
-import { toolOk } from "../utils/tool-response.ts";
+import { createDocument } from "../utils/document.ts";
 
-async function verify(payload: { task: string; answer: string }): Promise<ToolResponse> {
+async function verify(payload: { task: string; answer: string }): Promise<Document> {
   assertMaxLength(payload.task, "task", 100);
   assertMaxLength(payload.answer, "answer", 100_000);
 
@@ -30,16 +30,18 @@ async function verify(payload: { task: string; answer: string }): Promise<ToolRe
     throw new Error(`Verify failed (${res.status}): ${detail}`);
   }
 
-  return toolOk(
-    { task: payload.task, response },
-    [`Verification submitted for task '${payload.task}'.`],
-  );
+  const text = typeof response === "string" ? response : JSON.stringify(response);
+  return createDocument(text, `Verification result for task '${payload.task}'`, {
+    source: "hub.ag3nts.org",
+    type: "document",
+    mime_type: "application/json",
+  });
 }
 
 async function apiRequest(payload: {
   path: string;
   body: string;
-}): Promise<ToolResponse> {
+}): Promise<Document> {
   assertMaxLength(payload.path, "path", 200);
   assertMaxLength(payload.body, "body", 100_000);
 
@@ -70,10 +72,12 @@ async function apiRequest(payload: {
     throw new Error(`API request failed (${res.status}): ${detail}`);
   }
 
-  return toolOk(
-    { path: payload.path, response },
-    [`Response from /api/${payload.path} received.`],
-  );
+  const text = typeof response === "string" ? response : JSON.stringify(response);
+  return createDocument(text, `Response from /api/${payload.path}`, {
+    source: "hub.ag3nts.org",
+    type: "document",
+    mime_type: "application/json",
+  });
 }
 
 async function apiBatch(payload: {
@@ -81,7 +85,7 @@ async function apiBatch(payload: {
   data_file: string;
   field_map_json: string;
   output_file: string;
-}): Promise<ToolResponse> {
+}): Promise<Document[]> {
   assertMaxLength(payload.path, "path", 200);
   assertMaxLength(payload.data_file, "data_file", 500);
   assertMaxLength(payload.field_map_json, "field_map_json", 100_000);
@@ -144,17 +148,21 @@ async function apiBatch(payload: {
 
   await files.write(payload.output_file, JSON.stringify(results, null, 2));
 
-  return toolOk(
-    { path: payload.path, count: results.length, output_file: payload.output_file },
-    [`Processed ${results.length} rows. Results written to ${payload.output_file}.`],
-  );
+  return results.map((r, i) => {
+    const text = typeof r.response === "string" ? r.response : JSON.stringify(r.response);
+    return createDocument(text, `Batch row ${i + 1}/${results.length} from /api/${payload.path}`, {
+      source: "hub.ag3nts.org",
+      type: "document",
+      mime_type: "application/json",
+    });
+  });
 }
 
 async function verifyBatch(payload: {
   task: string;
   answers: string;
   output_file: string;
-}): Promise<ToolResponse> {
+}): Promise<Document[]> {
   assertMaxLength(payload.task, "task", 100);
   assertMaxLength(payload.answers, "answers", 100_000);
   assertMaxLength(payload.output_file, "output_file", 500);
@@ -195,13 +203,17 @@ async function verifyBatch(payload: {
 
   await files.write(payload.output_file, JSON.stringify(results, null, 2));
 
-  return toolOk(
-    { task: payload.task, count: results.length, output_file: payload.output_file },
-    [`Verified ${results.length} items sequentially for task '${payload.task}'. Results written to ${payload.output_file}.`],
-  );
+  return results.map((r) => {
+    const text = typeof r.response === "string" ? r.response : JSON.stringify(r.response);
+    return createDocument(text, `Verify batch item ${r.index} for task '${payload.task}'`, {
+      source: "hub.ag3nts.org",
+      type: "document",
+      mime_type: "application/json",
+    });
+  });
 }
 
-async function agentsHub({ action, payload }: { action: string; payload: Record<string, any> }): Promise<unknown> {
+async function agentsHub({ action, payload }: { action: string; payload: Record<string, any> }): Promise<Document | Document[]> {
   switch (action) {
     case "verify":
       return verify(payload as { task: string; answer: string });

@@ -178,9 +178,23 @@ async function main() {
 
   // Compress each line
   const compressed = unique.map(compress);
-  let logsStr = compressed.join("\n");
+
+  // Drop redundant WARN lines to fit budget (keep CRIT/ERRO, trim WARN)
+  // Lines that are redundant with nearby ERRO/CRIT events:
+  const dropPatterns = [
+    "ECCS8 param drift at init",         // minor, already have many ECCS8 events
+    "WSTPOOL2 param drift at init",       // minor init drift
+    "WTANK07 advisory threshold",         // redundant with WTANK07 CRIT/ERRO
+    "WTANK07 trend outside envelope",     // redundant
+    "WTANK07 unstable readings",          // redundant with ERRO unstable refill
+  ];
+  const filtered = compressed.filter(
+    (line) => !dropPatterns.some((p) => line.includes(p)),
+  );
+
+  let logsStr = filtered.join("\n");
   let tokens = estimateTokens(logsStr);
-  console.log(`Compressed tokens: ${tokens}, lines: ${compressed.length}`);
+  console.log(`Compressed tokens: ${tokens}, lines: ${filtered.length}`);
   console.log(`Chars: ${logsStr.length}`);
 
   // Save

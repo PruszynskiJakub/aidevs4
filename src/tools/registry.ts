@@ -1,8 +1,10 @@
 import type { LLMTool } from "../types/llm.ts";
+import type { Document } from "../types/document.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolFilter } from "../types/assistant.ts";
 import { safeParse } from "../utils/parse.ts";
-import { toolOk, toolError, isToolResponse } from "../utils/tool-response.ts";
+import { createErrorDocument, formatDocumentsXml } from "../utils/document.ts";
+import { getState } from "../services/agent/session-context.ts";
 
 const SEPARATOR = "__";
 
@@ -82,35 +84,18 @@ export async function getTools(filter?: ToolFilter): Promise<LLMTool[]> {
   return expandedTools.filter((t) => matchesFilter(t.function.name, filter));
 }
 
-function wrapResult(result: unknown): string {
-  if (isToolResponse(result)) return JSON.stringify(result);
-  return JSON.stringify(toolOk(result));
-}
-
-function wrapError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  const hints = buildErrorHints(message);
-  return JSON.stringify(toolError(message, hints.length ? hints : undefined));
-}
-
-function buildErrorHints(message: string): string[] {
-  const hints: string[] = [];
-  const lower = message.toLowerCase();
-  if (lower.includes("no such file") || lower.includes("not found") || lower.includes("enoent")) {
-    hints.push("Hint: check the path or download it first with agents_hub__download.");
-  }
-  if (lower.includes("json") && (lower.includes("parse") || lower.includes("invalid") || lower.includes("unexpected"))) {
-    hints.push("Hint: the value must be valid JSON. Check for unescaped quotes.");
-  }
-  if (lower.includes("fetch") || lower.includes("network") || lower.includes("econnrefused") || lower.includes("timeout")) {
-    hints.push("Hint: the hub may be unreachable. Retry in a moment.");
-  }
-  return hints;
+function storeDocuments(docs: Document | Document[]): void {
+  const state = getState();
+  if (!state) return;
+  const arr = Array.isArray(docs) ? docs : [docs];
+  state.documents.push(...arr);
 }
 
 export async function dispatch(name: string, argsJson: string, filter?: ToolFilter): Promise<string> {
   if (!matchesFilter(name, filter)) {
-    return JSON.stringify(toolError(`Tool not allowed: ${name}`));
+    const doc = createErrorDocument(name, `Tool not allowed: ${name}`);
+    storeDocuments(doc);
+    return formatDocumentsXml(doc);
   }
 
   let tool = handlers.get(name);
@@ -119,9 +104,13 @@ export async function dispatch(name: string, argsJson: string, filter?: ToolFilt
     try {
       const args = safeParse(argsJson, name);
       const result = await tool.handler(args);
-      return wrapResult(result);
+      storeDocuments(result);
+      return formatDocumentsXml(result);
     } catch (err: unknown) {
-      return wrapError(err);
+      const message = err instanceof Error ? err.message : String(err);
+      const doc = createErrorDocument(name, message);
+      storeDocuments(doc);
+      return formatDocumentsXml(doc);
     }
   }
 
@@ -136,14 +125,20 @@ export async function dispatch(name: string, argsJson: string, filter?: ToolFilt
       try {
         const payload = safeParse(argsJson, name);
         const result = await tool.handler({ action: actionName, payload });
-        return wrapResult(result);
+        storeDocuments(result);
+        return formatDocumentsXml(result);
       } catch (err: unknown) {
-        return wrapError(err);
+        const message = err instanceof Error ? err.message : String(err);
+        const doc = createErrorDocument(name, message);
+        storeDocuments(doc);
+        return formatDocumentsXml(doc);
       }
     }
   }
 
-  return JSON.stringify(toolError(`Unknown tool: ${name}`));
+  const doc = createErrorDocument(name, `Unknown tool: ${name}`);
+  storeDocuments(doc);
+  return formatDocumentsXml(doc);
 }
 
 export function reset(): void {

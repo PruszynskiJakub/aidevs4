@@ -1,30 +1,29 @@
 import { describe, it, expect } from "bun:test";
 import { resolve } from "path";
 import { config } from "../config/index.ts";
+import type { Document } from "../types/document.ts";
 import bash from "./bash.ts";
 
 describe("bash tool", () => {
   it("executes a simple command", async () => {
-    const result = await bash.handler({ command: "echo hello" });
-    expect(result).toBe("hello");
+    const result = await bash.handler({ command: "echo hello" }) as Document;
+    expect(result.text).toBe("hello");
+    expect(result.metadata.type).toBe("document");
   });
 
   it("reports non-zero exit codes without throwing", async () => {
-    const result = await bash.handler({ command: "exit 42" });
-    expect(result).toContain("[exit code 42]");
+    const result = await bash.handler({ command: "exit 42" }) as Document;
+    expect(result.text).toContain("[exit code 42]");
   });
 
-  it("truncates output longer than 20,000 characters with ToolResponse hint", async () => {
-    const result = (await bash.handler({ command: "seq 1 100000" })) as any;
-    // When truncated, bash returns a ToolResponse with hint
-    expect(result.status).toBe("ok");
-    expect(result.data).toEndWith("...(truncated)");
-    expect(result.hints).toContain("Output truncated to 20 KB. Full output not available.");
+  it("truncates output longer than 20,000 characters", async () => {
+    const result = await bash.handler({ command: "seq 1 100000" }) as Document;
+    expect(result.text).toEndWith("...(truncated)");
   });
 
   it("runs with CWD set to output directory", async () => {
-    const result = await bash.handler({ command: "pwd" });
-    expect(result).toBe(resolve(config.paths.outputDir));
+    const result = await bash.handler({ command: "pwd" }) as Document;
+    expect(result.text).toBe(resolve(config.paths.outputDir));
   });
 
   it("blocks redirect writes to absolute paths outside session dir", async () => {
@@ -52,12 +51,22 @@ describe("bash tool", () => {
   });
 
   it("allows redirects to relative paths within cwd", async () => {
-    const result = await bash.handler({ command: "echo hi > test_output.txt && cat test_output.txt" });
-    expect(result).toBe("hi");
+    const result = await bash.handler({ command: "echo hi > test_output.txt && cat test_output.txt" }) as Document;
+    expect(result.text).toBe("hi");
   });
 
   it("allows /dev/null redirects", async () => {
-    const result = await bash.handler({ command: "echo hi > /dev/null" });
-    expect(result).toBe("(no output)");
+    const result = await bash.handler({ command: "echo hi > /dev/null" }) as Document;
+    expect(result.text).toBe("(no output)");
+  });
+
+  it("returns Document with correct metadata", async () => {
+    const result = await bash.handler({ command: "echo test" }) as Document;
+    expect(result.uuid).toBeTruthy();
+    expect(result.description).toContain("Bash output for:");
+    expect(result.metadata.source).toBeNull();
+    expect(result.metadata.type).toBe("document");
+    expect(result.metadata.mime_type).toBe("text/plain");
+    expect(result.metadata.tokens).toBeGreaterThan(0);
   });
 });

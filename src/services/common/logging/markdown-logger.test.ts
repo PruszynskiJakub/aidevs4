@@ -61,15 +61,15 @@ describe("MarkdownLogger", () => {
     expect(content).toContain(longString);
   });
 
-  it("pretty-prints JSON in tool calls and results", async () => {
+  it("pretty-prints JSON in tool calls and XML in results", async () => {
     const md = makeLogger(dir, "test4");
     md.toolCall("my_tool", '{"key":"value","nested":{"a":1}}');
-    md.toolOk("my_tool", "0.50s", '{"result":"ok"}');
+    md.toolOk("my_tool", "0.50s", '<document id="x" description="test">ok</document>');
     await md.flush();
 
     const content = await readFile(md.filePath, "utf-8");
     expect(content).toContain('"key": "value"');
-    expect(content).toContain('"result": "ok"');
+    expect(content).toContain('<document id="x"');
   });
 
   it("logs tool errors", async () => {
@@ -245,7 +245,7 @@ describe("MarkdownLogger", () => {
 
   it("writes sidecar file for large tool results", async () => {
     const md = makeLogger(dir, "sidecar-test");
-    const largePayload = JSON.stringify({ data: "x".repeat(20_000) });
+    const largePayload = '<document id="x" description="big">' + "x".repeat(20_000) + '</document>';
     md.toolOk("big_tool", "2.00s", largePayload);
     await md.flush();
     const content = await readFile(md.filePath, "utf-8");
@@ -253,16 +253,16 @@ describe("MarkdownLogger", () => {
     expect(content).toMatch(/\[full output\]/);
     const sessionDir = dirname(md.filePath);
     const files = await readdir(sessionDir);
-    const sidecar = files.find(f => f.startsWith("big_tool_") && f.endsWith(".json"));
+    const sidecar = files.find(f => f.startsWith("big_tool_") && f.endsWith(".txt"));
     expect(sidecar).toBeDefined();
   });
 
   it("inlines small tool results as before", async () => {
     const md = makeLogger(dir, "inline-test");
-    md.toolOk("small_tool", "0.50s", '{"result":"ok"}');
+    md.toolOk("small_tool", "0.50s", '<document id="x" description="test">ok</document>');
     await md.flush();
     const content = await readFile(md.filePath, "utf-8");
-    expect(content).toContain('"result": "ok"');
+    expect(content).toContain('<document id="x"');
     expect(content).not.toContain("[full output]");
   });
 });

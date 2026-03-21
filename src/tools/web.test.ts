@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, mock, beforeEach } from "bun
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
+import type { Document } from "../types/document.ts";
 import web from "./web.ts";
 import { config } from "../config/index.ts";
 import { _testWritePaths } from "../services/common/file.ts";
@@ -35,19 +36,19 @@ describe("web download", () => {
       return new Response("file-content", { status: 200 });
     }) as any;
 
-    const result = (await handler({
+    const result = await handler({
       action: "download",
       payload: {
         url: "https://hub.ag3nts.org/data/{{hub_api_key}}/people.csv",
         filename: "people.csv",
       },
-    })) as any;
+    }) as Document;
 
     expect(capturedUrl).toBe(`https://hub.ag3nts.org/data/${config.hub.apiKey}/people.csv`);
-    expect(result.status).toBe("ok");
-    expect(result.data.filename).toBe("people.csv");
-    expect(result.data.path).toContain("people.csv");
-    expect(result.hints?.length).toBeGreaterThan(0);
+    expect(result.text).toContain("File saved to");
+    expect(result.text).toContain("people.csv");
+    expect(result.description).toContain("Web download from");
+    expect(result.metadata.source).toContain("hub.ag3nts.org");
   });
 
   it("downloads without placeholders", async () => {
@@ -58,16 +59,16 @@ describe("web download", () => {
       return new Response("data", { status: 200 });
     }) as any;
 
-    const result = (await handler({
+    const result = await handler({
       action: "download",
       payload: {
         url: "https://centrala.ag3nts.org/files/report.txt",
         filename: "report.txt",
       },
-    })) as any;
+    }) as Document;
 
     expect(capturedUrl).toBe("https://centrala.ag3nts.org/files/report.txt");
-    expect(result.status).toBe("ok");
+    expect(result.text).toContain("File saved to");
   });
 
   it("throws on unknown placeholder", async () => {

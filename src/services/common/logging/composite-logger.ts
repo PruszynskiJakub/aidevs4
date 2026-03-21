@@ -23,8 +23,8 @@ export class CompositeLogger implements Logger {
     for (const t of this.targets) t.toolCall(name, rawArgs);
   }
 
-  toolOk(name: string, elapsed: string, rawResult: string, hints?: string[]): void {
-    for (const t of this.targets) t.toolOk(name, elapsed, rawResult, hints);
+  toolOk(name: string, elapsed: string, rawResult: string): void {
+    for (const t of this.targets) t.toolOk(name, elapsed, rawResult);
   }
 
   toolErr(name: string, errorMsg: string): void {

@@ -1,4 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
+import type { Document } from "../types/document.ts";
 import prompt_engineer from "./prompt_engineer.ts";
 
 // Mock the LLM service
@@ -36,18 +37,19 @@ describe("prompt_engineer tool", () => {
   });
 
   it("crafts a new prompt from scratch", async () => {
-    const result = (await prompt_engineer.handler({
+    const result = await prompt_engineer.handler({
       goal: "Classify items as dangerous or neutral",
       constraints: "Max 100 tokens, output DNG or NEU only",
       context: "Items have {id} and {description} placeholders",
       current_prompt: "",
       feedback: "",
-    })) as any;
+    }) as Document;
 
-    expect(result.status).toBe("ok");
-    expect(result.data.prompt).toContain("Classify");
-    expect(result.data.token_estimate).toBe(18);
-    expect(result.data.reasoning).toBeTruthy();
+    const data = JSON.parse(result.text);
+    expect(data.prompt).toContain("Classify");
+    expect(data.token_estimate).toBe(18);
+    expect(data.reasoning).toBeTruthy();
+    expect(result.metadata.type).toBe("document");
     expect(mockCompletion).toHaveBeenCalledTimes(1);
   });
 
@@ -115,7 +117,7 @@ describe("prompt_engineer tool", () => {
     ).rejects.toThrow();
   });
 
-  it("throws on invalid JSON from LLM (caught by dispatcher)", async () => {
+  it("throws on invalid JSON from LLM", async () => {
     mockCompletion.mockImplementationOnce(() =>
       Promise.resolve("This is not JSON"),
     );
@@ -131,21 +133,20 @@ describe("prompt_engineer tool", () => {
     ).rejects.toThrow("Invalid JSON");
   });
 
-  it("handles LLM returning JSON without prompt field", async () => {
+  it("throws when LLM returns JSON without prompt field", async () => {
     mockCompletion.mockImplementationOnce(() =>
       Promise.resolve(JSON.stringify({ reasoning: "no prompt here" })),
     );
 
-    const result = (await prompt_engineer.handler({
-      goal: "Classify items",
-      constraints: "Max 100 tokens",
-      context: "Some context",
-      current_prompt: "",
-      feedback: "",
-    })) as any;
-
-    expect(result.status).toBe("error");
-    expect(result.hints).toBeTruthy();
+    await expect(
+      prompt_engineer.handler({
+        goal: "Classify items",
+        constraints: "Max 100 tokens",
+        context: "Some context",
+        current_prompt: "",
+        feedback: "",
+      }),
+    ).rejects.toThrow("LLM did not return a valid prompt field");
   });
 
   it("has correct tool name", () => {
