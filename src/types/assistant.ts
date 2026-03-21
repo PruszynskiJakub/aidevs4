@@ -1,4 +1,3 @@
-export type { ToolFilter } from "./tool.ts";
 import type { ToolFilter } from "./tool.ts";
 
 export interface AssistantConfig {

@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { assistants } from "./assistants.ts";
+import { assistantsService } from "./assistants.ts";
 
 beforeEach(() => {
-  assistants.resetCache();
+  assistantsService.resetCache();
 });
 
 describe("assistants service", () => {
   describe("get", () => {
     it("loads default assistant with expected fields", async () => {
-      const config = await assistants.get("default");
+      const config = await assistantsService.get("default");
       expect(config.name).toBe("default");
       expect(config.objective).toContain("autonomous agent");
       expect(config.objective).toContain("AG3NTS hub");
@@ -18,7 +18,7 @@ describe("assistants service", () => {
     });
 
     it("loads proxy assistant with model and tool filter", async () => {
-      const config = await assistants.get("proxy");
+      const config = await assistantsService.get("proxy");
       expect(config.name).toBe("proxy");
       expect(config.objective).toContain("logistics");
       expect(config.tone).toContain("colleague");
@@ -29,14 +29,14 @@ describe("assistants service", () => {
     });
 
     it("throws on unknown assistant with available names", async () => {
-      await expect(assistants.get("nonexistent")).rejects.toThrow(
+      await expect(assistantsService.get("nonexistent")).rejects.toThrow(
         /Unknown assistant: "nonexistent". Available:/,
       );
     });
 
     it("caches results across multiple get calls", async () => {
-      const first = await assistants.get("default");
-      const second = await assistants.get("default");
+      const first = await assistantsService.get("default");
+      const second = await assistantsService.get("default");
       expect(first).toBe(second);
     });
   });

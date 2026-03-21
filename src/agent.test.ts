@@ -9,8 +9,8 @@ mock.module("./tools/index.ts", () => ({
   getTools: async () => [],
   dispatch: async (name: string, _argsJson: string) => {
     const fn = dispatchResults[name];
-    if (!fn) return `<document id="err" description="Error from ${name}">Error: Unknown tool: ${name}</document>`;
-    return fn();
+    if (!fn) return { xml: `<document id="err" description="Error from ${name}">Error: Unknown tool: ${name}</document>`, isError: true };
+    return { xml: await fn(), isError: false };
   },
 }));
 

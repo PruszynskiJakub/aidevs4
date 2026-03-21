@@ -30,44 +30,32 @@ function validatePath(path: string): void {
   }
 }
 
-function getExtension(path: string): string {
-  return extname(path).toLowerCase();
-}
-
 async function buildContentParts(paths: string[]): Promise<ContentPart[]> {
-  const parts: ContentPart[] = [];
-
-  for (const rawPath of paths) {
+  // Validate all paths synchronously before any I/O
+  const resolved = paths.map((rawPath) => {
     validatePath(rawPath);
     const path = resolveSessionPath(rawPath);
-    const ext = getExtension(path);
-
+    const ext = extname(path).toLowerCase();
     if (!IMAGE_EXTENSIONS.has(ext) && !TEXT_EXTENSIONS.has(ext)) {
       throw new Error(
         `Unsupported file extension "${ext}". Supported: ${ALL_SUPPORTED.join(", ")}`,
       );
     }
+    return { path, ext };
+  });
 
-    await checkFileSize(path, config.limits.maxFileSize);
-
-    if (IMAGE_EXTENSIONS.has(ext)) {
-      const buffer = await files.readBinary(path);
-      const base64 = buffer.toString("base64");
-      parts.push({
-        type: "image",
-        data: base64,
-        mimeType: MIME_TYPES[ext],
-      });
-    } else {
+  // Read all files concurrently
+  return Promise.all(
+    resolved.map(async ({ path, ext }): Promise<ContentPart> => {
+      await checkFileSize(path, config.limits.maxFileSize);
+      if (IMAGE_EXTENSIONS.has(ext)) {
+        const buffer = await files.readBinary(path);
+        return { type: "image", data: buffer.toString("base64"), mimeType: MIME_TYPES[ext] };
+      }
       const content = await files.readText(path);
-      parts.push({
-        type: "text",
-        text: `--- FILE: ${basename(path)} ---\n${content}`,
-      });
-    }
-  }
-
-  return parts;
+      return { type: "text", text: `--- FILE: ${basename(path)} ---\n${content}` };
+    }),
+  );
 }
 
 async function ask(payload: {
@@ -110,7 +98,7 @@ async function documentProcessor({
   payload,
 }: {
   action: string;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
 }): Promise<Document> {
   switch (action) {
     case "ask":

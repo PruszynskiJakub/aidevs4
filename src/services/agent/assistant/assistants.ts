@@ -113,6 +113,3 @@ export function createAssistantsService() {
 }
 
 export const assistantsService = createAssistantsService();
-
-/** @deprecated Use assistantsService instead — kept for backward compat with agent.ts and cli.ts */
-export const assistants = assistantsService;

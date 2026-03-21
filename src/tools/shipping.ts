@@ -3,6 +3,7 @@ import type { Document } from "../types/document.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 import { createDocument } from "../utils/document.ts";
+import { hubPost, stringify } from "../utils/hub-fetch.ts";
 
 const PACKAGEID_RE = /^[A-Za-z0-9]+$/;
 const PACKAGES_URL = `${config.hub.baseUrl}/api/packages`;
@@ -17,27 +18,14 @@ async function checkPackage(payload: { packageid: string }): Promise<Document> {
   assertMaxLength(payload.packageid, "packageid", 20);
   validateAlphanumeric(payload.packageid, "packageid");
 
-  const apiKey = config.hub.apiKey;
+  const response = await hubPost(
+    PACKAGES_URL,
+    { apikey: config.hub.apiKey, action: "check", packageid: payload.packageid },
+    "Package check failed",
+  );
 
-  const res = await fetch(PACKAGES_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ apikey: apiKey, action: "check", packageid: payload.packageid }),
-    signal: AbortSignal.timeout(config.limits.fetchTimeout),
-  });
-
-  const text = await res.text();
-  let response: unknown;
-  try { response = JSON.parse(text); } catch { response = text; }
-
-  if (!res.ok) {
-    const detail = typeof response === "string" ? response : JSON.stringify(response);
-    throw new Error(`Package check failed (${res.status}): ${detail}`);
-  }
-
-  const content = typeof response === "string" ? response : JSON.stringify(response);
   return createDocument(
-    content,
+    stringify(response),
     `Package ${payload.packageid} status. Use shipping__redirect to reroute if needed.`,
     { source: "hub.ag3nts.org", type: "document", mimeType: "application/json" },
   );
@@ -54,44 +42,31 @@ async function redirectPackage(payload: {
   validateAlphanumeric(payload.destination, "destination");
   assertMaxLength(payload.code, "code", 100);
 
-  const apiKey = config.hub.apiKey;
-
-  const res = await fetch(PACKAGES_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      apikey: apiKey,
+  const response = await hubPost(
+    PACKAGES_URL,
+    {
+      apikey: config.hub.apiKey,
       action: "redirect",
       packageid: payload.packageid,
       destination: payload.destination,
       code: payload.code,
-    }),
-    signal: AbortSignal.timeout(config.limits.fetchTimeout),
-  });
-
-  const text = await res.text();
-  let response: unknown;
-  try { response = JSON.parse(text); } catch { response = text; }
-
-  if (!res.ok) {
-    const detail = typeof response === "string" ? response : JSON.stringify(response);
-    throw new Error(`Package redirect failed (${res.status}): ${detail}`);
-  }
+    },
+    "Package redirect failed",
+  );
 
   const confirmationCode = typeof response === "object" && response !== null && "confirmation" in response
     ? (response as Record<string, unknown>).confirmation
     : undefined;
 
-  const content = typeof response === "string" ? response : JSON.stringify(response);
   const confirmNote = confirmationCode ? ` Confirmation code: ${confirmationCode}.` : "";
   return createDocument(
-    content,
+    stringify(response),
     `Redirect processed for ${payload.packageid}.${confirmNote} IMPORTANT: Always include the confirmation code in your reply.`,
     { source: "hub.ag3nts.org", type: "document", mimeType: "application/json" },
   );
 }
 
-async function shipping({ action, payload }: { action: string; payload: Record<string, any> }): Promise<Document> {
+async function shipping({ action, payload }: { action: string; payload: Record<string, unknown> }): Promise<Document> {
   switch (action) {
     case "check":
       return checkPackage(payload as { packageid: string });

@@ -118,16 +118,18 @@ describe("registry", () => {
       register(tool, schema);
       const result = await dispatch("greet", '{"name":"World"}');
 
-      expect(result).toContain("<document");
-      expect(result).toContain("Hello, World!");
-      expect(result).toContain("</document>");
+      expect(result.isError).toBe(false);
+      expect(result.xml).toContain("<document");
+      expect(result.xml).toContain("Hello, World!");
+      expect(result.xml).toContain("</document>");
     });
 
     it("returns error document for unknown tool", async () => {
       const result = await dispatch("nonexistent", "{}");
 
-      expect(result).toContain("<document");
-      expect(result).toContain("Error: Unknown tool: nonexistent");
+      expect(result.isError).toBe(true);
+      expect(result.xml).toContain("<document");
+      expect(result.xml).toContain("Error: Unknown tool: nonexistent");
     });
   });
 
@@ -160,7 +162,7 @@ describe("registry", () => {
       register(tool, schema);
       const result = await dispatch("ma__run", '{"x":42}');
 
-      expect(result).toContain("done");
+      expect(result.xml).toContain("done");
       expect(received).toEqual({ action: "run", payload: { x: 42 } });
     });
   });
@@ -180,9 +182,10 @@ describe("registry", () => {
       register(tool, schema);
       const result = await dispatch("fail", "{}");
 
-      expect(result).toContain("<document");
-      expect(result).toContain("Error: boom");
-      expect(result).toContain("Error from fail");
+      expect(result.isError).toBe(true);
+      expect(result.xml).toContain("<document");
+      expect(result.xml).toContain("Error: boom");
+      expect(result.xml).toContain("Error from fail");
     });
   });
 
@@ -290,7 +293,8 @@ describe("registry", () => {
 
       register(tool, schema);
       const result = await dispatch("echo", '{"text":"hi"}', { include: ["other"] });
-      expect(result).toContain("Error: Tool not allowed");
+      expect(result.isError).toBe(true);
+      expect(result.xml).toContain("Error: Tool not allowed");
     });
 
     it("allows tool in include list", async () => {
@@ -312,8 +316,8 @@ describe("registry", () => {
 
       register(tool, schema);
       const result = await dispatch("echo", '{"text":"hi"}', { include: ["echo"] });
-      expect(result).toContain("hi");
-      expect(result).not.toContain("Error");
+      expect(result.isError).toBe(false);
+      expect(result.xml).toContain("hi");
     });
 
     it("rejects multi-action tool not in include list", async () => {
@@ -340,7 +344,8 @@ describe("registry", () => {
 
       register(tool, schema);
       const result = await dispatch("ma__run", '{"x":1}', { include: ["other"] });
-      expect(result).toContain("Error: Tool not allowed");
+      expect(result.isError).toBe(true);
+      expect(result.xml).toContain("Error: Tool not allowed");
     });
 
     it("dispatch without filter works (backward compat)", async () => {
@@ -362,7 +367,7 @@ describe("registry", () => {
 
       register(tool, schema);
       const result = await dispatch("echo", '{"text":"hi"}');
-      expect(result).toContain("hi");
+      expect(result.xml).toContain("hi");
     });
   });
 

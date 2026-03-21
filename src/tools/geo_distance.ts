@@ -109,7 +109,7 @@ function distance(payload: {
   );
 }
 
-async function geoDistance({ action, payload }: { action: string; payload: Record<string, any> }): Promise<Document> {
+async function geoDistance({ action, payload }: { action: string; payload: Record<string, unknown> }): Promise<Document> {
   switch (action) {
     case "find_nearby":
       return findNearby(payload as { references_file: string; queries_file: string; radius_km: number });

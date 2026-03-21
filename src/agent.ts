@@ -1,4 +1,5 @@
 import type { LLMProvider, LLMMessage, LLMChatResponse, LLMTool, LLMToolCall } from "./types/llm.ts";
+import type { Logger } from "./types/logger.ts";
 import type { ToolFilter } from "./types/tool.ts";
 import type { PromptResult } from "./services/ai/prompt.ts";
 import type { AgentState } from "./types/agent-state.ts";
@@ -9,17 +10,17 @@ import { promptService } from "./services/ai/prompt.ts";
 import { elapsed } from "./utils/timing.ts";
 import { MarkdownLogger } from "./services/common/logging/markdown-logger.ts";
 import { ConsoleLogger } from "./services/common/logging/console-logger.ts";
-import { CompositeLogger } from "./services/common/logging/composite-logger.ts";
-import { assistants } from "./services/agent/assistant/assistants.ts";
+import { createCompositeLogger } from "./services/common/logging/composite-logger.ts";
+import { assistantResolverService } from "./services/agent/assistant/assistant-resolver.ts";
 import { runWithContext, requireState, requireLogger } from "./services/agent/session-context.ts";
 
 function createLogger(
   userPrompt: string | unknown,
   sessionId?: string,
-): { log: CompositeLogger; md: MarkdownLogger } {
+): { log: Logger; md: MarkdownLogger } {
   const md = new MarkdownLogger({ sessionId });
   md.init(typeof userPrompt === "string" ? userPrompt : "(structured)");
-  const log = new CompositeLogger([new ConsoleLogger(), md]);
+  const log = createCompositeLogger([new ConsoleLogger(), md]);
   log.info(`Session: ${md.sessionId}`);
   log.info(`Log: ${md.filePath}`);
   return { log, md };
@@ -27,12 +28,8 @@ function createLogger(
 
 async function resolveActModel(assistantName: string, modelOverride?: string): Promise<string> {
   if (modelOverride) return modelOverride;
-  const assistant = await assistants.get(assistantName);
-  const act = await promptService.load("act", {
-    objective: assistant.objective,
-    tone: assistant.tone,
-  });
-  return assistant.model ?? act.model!;
+  const resolved = await assistantResolverService.resolve(assistantName);
+  return resolved.model;
 }
 
 async function executePlanPhase(
@@ -126,8 +123,8 @@ async function dispatchTools(
   const settled = await Promise.allSettled(
     functionCalls.map(async (tc) => {
       const start = performance.now();
-      const xmlResult = await dispatch(tc.function.name, tc.function.arguments, toolFilter);
-      return { xmlResult, elapsed: elapsed(start) };
+      const result = await dispatch(tc.function.name, tc.function.arguments, toolFilter);
+      return { ...result, elapsed: elapsed(start) };
     })
   );
 
@@ -136,17 +133,16 @@ async function dispatchTools(
     const outcome = settled[j];
 
     if (outcome.status === "fulfilled") {
-      const { xmlResult, elapsed } = outcome.value;
-      const isError = xmlResult.includes(">Error: ");
+      const { xml, isError, elapsed } = outcome.value;
       if (isError) {
-        log.toolErr(tc.function.name, xmlResult);
+        log.toolErr(tc.function.name, xml);
       } else {
-        log.toolOk(tc.function.name, elapsed, xmlResult);
+        log.toolOk(tc.function.name, elapsed, xml);
       }
       state.messages.push({
         role: "tool",
         toolCallId: tc.id,
-        content: xmlResult,
+        content: xml,
       });
     } else {
       // Promise.allSettled rejection — should not happen since dispatch catches errors,
@@ -186,31 +182,34 @@ export async function runAgent(
   };
 
   return runWithContext(state, log, async () => {
-    const [tools, planPrompt] = await Promise.all([
-      getTools(options?.toolFilter),
-      promptService.load("plan"),
-    ]);
-    const actModel = await resolveActModel(options?.assistant ?? "default", options?.model);
+    try {
+      const [tools, planPrompt] = await Promise.all([
+        getTools(options?.toolFilter),
+        promptService.load("plan"),
+      ]);
+      const actModel = await resolveActModel(options?.assistant ?? "default", options?.model);
 
-    for (let i = 0; i < config.limits.maxIterations; i++) {
-      state.iteration = i;
-      log.step(i + 1, config.limits.maxIterations, actModel, state.messages.length);
+      for (let i = 0; i < config.limits.maxIterations; i++) {
+        state.iteration = i;
+        log.step(i + 1, config.limits.maxIterations, actModel, state.messages.length);
 
-      const planText = await executePlanPhase(planPrompt, provider);
-      const response = await executeActPhase(planText, actModel, tools, provider);
+        const planText = await executePlanPhase(planPrompt, provider);
+        const response = await executeActPhase(planText, actModel, tools, provider);
 
-      if (response.finishReason === "stop" || !response.toolCalls.length) {
-        log.answer(response.content);
-        await md.flush();
-        return response.content ?? "";
+        if (response.finishReason === "stop" || !response.toolCalls.length) {
+          log.answer(response.content);
+          return response.content ?? "";
+        }
+
+        const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
+        await dispatchTools(functionCalls, options?.toolFilter);
       }
 
-      const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
-      await dispatchTools(functionCalls, options?.toolFilter);
+      log.maxIter(config.limits.maxIterations);
+      return "";
+    } finally {
+      await md.flush();
+      md.dispose();
     }
-
-    log.maxIter(config.limits.maxIterations);
-    await md.flush();
-    return "";
   });
 }

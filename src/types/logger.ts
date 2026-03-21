@@ -7,7 +7,7 @@ export interface GeneralLogger {
   debug(message: string): void;
 }
 
-export interface Logger extends GeneralLogger {
+export interface AgentLogger {
   step(iter: number, max: number, model: string, msgCount: number): void;
   llm(elapsed: string, tokensIn?: number, tokensOut?: number): void;
   plan(planText: string, model: string, elapsed: string, tokensIn?: number, tokensOut?: number): void;
@@ -19,3 +19,5 @@ export interface Logger extends GeneralLogger {
   answer(text: string | null): void;
   maxIter(max: number): void;
 }
+
+export interface Logger extends GeneralLogger, AgentLogger {}

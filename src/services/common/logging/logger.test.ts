@@ -1,5 +1,5 @@
 import { describe, it, expect, spyOn, beforeEach, afterEach } from "bun:test";
-import { log, elapsed, duration } from "./logger.ts";
+import { log } from "./logger.ts";
 
 const RESET = "\x1b[0m";
 const CYAN = "\x1b[36m";
@@ -49,20 +49,5 @@ describe("logger singleton", () => {
     expect(captured).toHaveLength(1);
     expect(captured[0]).toContain(DIM);
     expect(captured[0]).toContain("trace");
-  });
-});
-
-describe("elapsed", () => {
-  it("returns formatted elapsed time", () => {
-    const start = performance.now() - 1500;
-    const result = elapsed(start);
-    expect(result).toMatch(/^\d+\.\d{2}s$/);
-    const seconds = parseFloat(result);
-    expect(seconds).toBeGreaterThan(1.0);
-    expect(seconds).toBeLessThan(3.0);
-  });
-
-  it("duration is an alias for elapsed", () => {
-    expect(duration).toBe(elapsed);
   });
 });

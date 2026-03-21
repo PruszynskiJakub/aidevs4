@@ -5,32 +5,20 @@ import { config } from "../config/index.ts";
 import { parseCsv } from "../utils/csv.ts";
 import { safeParse, validateKeys, assertMaxLength, checkFileSize, resolveInput } from "../utils/parse.ts";
 import { createDocument } from "../utils/document.ts";
+import { hubPost, stringify } from "../utils/hub-fetch.ts";
 
 async function verify(payload: { task: string; answer: string }): Promise<Document> {
   assertMaxLength(payload.task, "task", 100);
   assertMaxLength(payload.answer, "answer", 100_000);
 
-  const apiKey = config.hub.apiKey;
   const answer = await resolveInput(payload.answer, "answer");
+  const response = await hubPost(
+    config.hub.verifyUrl,
+    { apikey: config.hub.apiKey, task: payload.task, answer },
+    "Verify failed",
+  );
 
-  const body = { apikey: apiKey, task: payload.task, answer };
-
-  const res = await fetch(config.hub.verifyUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(config.limits.fetchTimeout),
-  });
-
-  const response = await res.json().catch(() => res.text());
-
-  if (!res.ok) {
-    const detail = typeof response === "string" ? response : JSON.stringify(response);
-    throw new Error(`Verify failed (${res.status}): ${detail}`);
-  }
-
-  const text = typeof response === "string" ? response : JSON.stringify(response);
-  return createDocument(text, `Verification result for task '${payload.task}'`, {
+  return createDocument(stringify(response), `Verification result for task '${payload.task}'`, {
     source: "hub.ag3nts.org",
     type: "document",
     mimeType: "application/json",
@@ -49,30 +37,14 @@ async function apiRequest(payload: {
     throw new Error("body must resolve to a JSON object");
   }
 
-  const body = { ...(resolved as Record<string, any>) };
-  const apiKey = config.hub.apiKey;
-  body.apikey = apiKey;
-
   const url = `${config.hub.baseUrl}/api/${payload.path}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(config.limits.fetchTimeout),
-  });
+  const response = await hubPost(
+    url,
+    { ...(resolved as Record<string, unknown>), apikey: config.hub.apiKey },
+    "API request failed",
+  );
 
-  const contentType = res.headers.get("content-type") || "";
-  const response = contentType.includes("application/json")
-    ? await res.json()
-    : await res.text();
-
-  if (!res.ok) {
-    const detail = typeof response === "string" ? response : JSON.stringify(response);
-    throw new Error(`API request failed (${res.status}): ${detail}`);
-  }
-
-  const text = typeof response === "string" ? response : JSON.stringify(response);
-  return createDocument(text, `Response from /api/${payload.path}`, {
+  return createDocument(stringify(response), `Response from /api/${payload.path}`, {
     source: "hub.ag3nts.org",
     type: "document",
     mimeType: "application/json",
@@ -95,7 +67,7 @@ async function apiBatch(payload: {
 
   await checkFileSize(payload.data_file, config.limits.maxFileSize);
 
-  let rows: Record<string, any>[];
+  let rows: Record<string, unknown>[];
   if (payload.data_file.endsWith(".csv")) {
     rows = await parseCsv(payload.data_file);
   } else {
@@ -111,50 +83,36 @@ async function apiBatch(payload: {
     throw new Error(`Batch size ${rows.length} exceeds maximum of ${config.limits.maxBatchRows} rows`);
   }
 
-  const apiKey = config.hub.apiKey;
   const url = `${config.hub.baseUrl}/api/${payload.path}`;
-  const results: { input: Record<string, any>; response: unknown }[] = [];
+  const results: { input: Record<string, unknown>; response: unknown }[] = [];
 
   for (const row of rows) {
-    const mapped: Record<string, any> = {};
+    const mapped: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(row)) {
       const targetKey = fieldMap[key] ?? key;
       mapped[targetKey] = value;
     }
-    mapped.apikey = apiKey;
+    mapped.apikey = config.hub.apiKey;
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(mapped),
-      signal: AbortSignal.timeout(config.limits.fetchTimeout),
-    });
-
-    const contentType = res.headers.get("content-type") || "";
-    const response = contentType.includes("application/json")
-      ? await res.json()
-      : await res.text();
-
-    if (!res.ok) {
+    try {
+      const response = await hubPost(url, mapped, "API batch request failed");
       results.push({ input: row, response });
+    } catch (err) {
+      results.push({ input: row, response: err instanceof Error ? err.message : String(err) });
       await files.write(payload.output_file, JSON.stringify(results, null, 2));
-      const detail = typeof response === "string" ? response : JSON.stringify(response);
-      throw new Error(`API batch request failed at row ${results.length} (${res.status}): ${detail}`);
+      throw new Error(`API batch request failed at row ${results.length} — ${err instanceof Error ? err.message : String(err)}`);
     }
-
-    results.push({ input: row, response });
   }
 
   await files.write(payload.output_file, JSON.stringify(results, null, 2));
 
-  return results.map((r, i) => {
-    const text = typeof r.response === "string" ? r.response : JSON.stringify(r.response);
-    return createDocument(text, `Batch row ${i + 1}/${results.length} from /api/${payload.path}`, {
+  return results.map((r, i) =>
+    createDocument(stringify(r.response), `Batch row ${i + 1}/${results.length} from /api/${payload.path}`, {
       source: "hub.ag3nts.org",
       type: "document",
       mimeType: "application/json",
-    });
-  });
+    }),
+  );
 }
 
 async function verifyBatch(payload: {
@@ -175,44 +133,35 @@ async function verifyBatch(payload: {
     throw new Error(`Batch size ${answers.length} exceeds maximum of ${config.limits.maxBatchRows}`);
   }
 
-  const apiKey = config.hub.apiKey;
   const results: { index: number; answer: unknown; response: unknown }[] = [];
 
   for (let i = 0; i < answers.length; i++) {
-    const answer = answers[i];
-    const body = { apikey: apiKey, task: payload.task, answer };
-
-    const res = await fetch(config.hub.verifyUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(config.limits.fetchTimeout),
-    });
-
-    const response = await res.json().catch(() => res.text());
-
-    results.push({ index: i, answer, response });
-
-    if (!res.ok) {
+    try {
+      const response = await hubPost(
+        config.hub.verifyUrl,
+        { apikey: config.hub.apiKey, task: payload.task, answer: answers[i] },
+        "Verify batch failed",
+      );
+      results.push({ index: i, answer: answers[i], response });
+    } catch (err) {
+      results.push({ index: i, answer: answers[i], response: err instanceof Error ? err.message : String(err) });
       await files.write(payload.output_file, JSON.stringify(results, null, 2));
-      const detail = typeof response === "string" ? response : JSON.stringify(response);
-      throw new Error(`Verify batch failed at item ${i} (${res.status}): ${detail}`);
+      throw new Error(`Verify batch failed at item ${i} — ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   await files.write(payload.output_file, JSON.stringify(results, null, 2));
 
-  return results.map((r) => {
-    const text = typeof r.response === "string" ? r.response : JSON.stringify(r.response);
-    return createDocument(text, `Verify batch item ${r.index} for task '${payload.task}'`, {
+  return results.map((r) =>
+    createDocument(stringify(r.response), `Verify batch item ${r.index} for task '${payload.task}'`, {
       source: "hub.ag3nts.org",
       type: "document",
       mimeType: "application/json",
-    });
-  });
+    }),
+  );
 }
 
-async function agentsHub({ action, payload }: { action: string; payload: Record<string, any> }): Promise<Document | Document[]> {
+async function agentsHub({ action, payload }: { action: string; payload: Record<string, unknown> }): Promise<Document | Document[]> {
   switch (action) {
     case "verify":
       return verify(payload as { task: string; answer: string });

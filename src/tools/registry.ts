@@ -91,28 +91,33 @@ function storeDocuments(docs: Document | Document[]): void {
   state.documents.push(...arr);
 }
 
+export interface DispatchResult {
+  xml: string;
+  isError: boolean;
+}
+
 async function tryDispatch(
   name: string,
   tool: ToolDefinition,
   args: Record<string, unknown>,
-): Promise<string> {
+): Promise<DispatchResult> {
   try {
     const result = await tool.handler(args);
     storeDocuments(result);
-    return formatDocumentsXml(result);
+    return { xml: formatDocumentsXml(result), isError: false };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     const doc = createErrorDocument(name, message);
     storeDocuments(doc);
-    return formatDocumentsXml(doc);
+    return { xml: formatDocumentsXml(doc), isError: true };
   }
 }
 
-export async function dispatch(name: string, argsJson: string, filter?: ToolFilter): Promise<string> {
+export async function dispatch(name: string, argsJson: string, filter?: ToolFilter): Promise<DispatchResult> {
   if (!matchesFilter(name, filter)) {
     const doc = createErrorDocument(name, `Tool not allowed: ${name}`);
     storeDocuments(doc);
-    return formatDocumentsXml(doc);
+    return { xml: formatDocumentsXml(doc), isError: true };
   }
 
   const parsed = safeParse<Record<string, unknown>>(argsJson, name);
@@ -132,7 +137,7 @@ export async function dispatch(name: string, argsJson: string, filter?: ToolFilt
 
   const doc = createErrorDocument(name, `Unknown tool: ${name}`);
   storeDocuments(doc);
-  return formatDocumentsXml(doc);
+  return { xml: formatDocumentsXml(doc), isError: true };
 }
 
 export function reset(): void {

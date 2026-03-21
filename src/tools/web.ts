@@ -77,7 +77,7 @@ async function download(payload: { url: string; filename: string }): Promise<Doc
   });
 }
 
-async function web({ action, payload }: { action: string; payload: Record<string, any> }): Promise<Document> {
+async function web({ action, payload }: { action: string; payload: Record<string, unknown> }): Promise<Document> {
   switch (action) {
     case "download":
       return download(payload as { url: string; filename: string });

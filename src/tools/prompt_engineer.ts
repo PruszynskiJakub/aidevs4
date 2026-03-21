@@ -64,7 +64,7 @@ async function promptEngineer(
 
   // Strip markdown code fences if present (LLMs often wrap JSON in ```json ... ```)
   const cleaned = result.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
-  const parsed = safeParse(cleaned, "prompt_engineer response");
+  const parsed = safeParse<Record<string, unknown>>(cleaned, "prompt_engineer response");
 
   if (!parsed.prompt || typeof parsed.prompt !== "string") {
     throw new Error("LLM did not return a valid prompt field. Try again with more specific goal and constraints.");
