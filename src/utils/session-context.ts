@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "async_hooks";
-import type { AgentState } from "../../types/agent-state.ts";
-import type { Logger } from "../../types/logger.ts"; // used by RunContext
+import type { AgentState } from "../types/agent-state.ts";
+import type { Logger } from "../types/logger.ts"; // used by RunContext
 
 interface RunContext {
   state: AgentState;

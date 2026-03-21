@@ -2,7 +2,7 @@ import { readdir, stat, mkdir, appendFile } from "fs/promises";
 import { join, resolve } from "path";
 import type { FileProvider, FileStat } from "../../types/file.ts";
 import { config } from "../../config/index.ts";
-import { getSessionId } from "../agent/session-context.ts";
+import { getSessionId } from "../../utils/session-context.ts";
 import { safeParse } from "../../utils/parse.ts";
 
 export class FileSizeLimitError extends Error {

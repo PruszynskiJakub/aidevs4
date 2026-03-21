@@ -5,7 +5,7 @@ import { sessionService } from "../services/agent/session.ts";
 import { config } from "../config";
 import { safeFilename, assertMaxLength } from "../utils/parse.ts";
 import { createDocument } from "../services/common/document-store.ts";
-import { getSessionId } from "../services/agent/session-context.ts";
+import { getSessionId } from "../utils/session-context.ts";
 import { inferCategory, inferMimeType } from "../utils/media-types.ts";
 
 const PLACEHOLDER_RE = /\{\{(\w+)\}\}/g;
@@ -74,7 +74,8 @@ async function download(payload: { url: string; filename: string }): Promise<Doc
   }, getSessionId());
 }
 
-async function web({ action, payload }: { action: string; payload: Record<string, unknown> }): Promise<Document> {
+async function web(args: Record<string, unknown>): Promise<Document> {
+  const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "download":
       return download(payload as { url: string; filename: string });

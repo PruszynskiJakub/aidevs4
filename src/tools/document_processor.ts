@@ -7,7 +7,7 @@ import { llm } from "../services/ai/llm.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 import { createDocument } from "../services/common/document-store.ts";
 import { sessionService } from "../services/agent/session.ts";
-import { getSessionId } from "../services/agent/session-context.ts";
+import { getSessionId } from "../utils/session-context.ts";
 import { config } from "../config";
 import { IMAGE_EXTENSIONS, TEXT_EXTENSIONS, ALL_SUPPORTED_EXTENSIONS, inferMimeType } from "../utils/media-types.ts";
 
@@ -83,13 +83,8 @@ async function ask(payload: {
   }, getSessionId());
 }
 
-async function documentProcessor({
-  action,
-  payload,
-}: {
-  action: string;
-  payload: Record<string, unknown>;
-}): Promise<Document> {
+async function documentProcessor(args: Record<string, unknown>): Promise<Document> {
+  const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "ask":
       return ask(payload as { paths: string[]; question: string });

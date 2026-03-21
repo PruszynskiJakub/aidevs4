@@ -63,7 +63,7 @@ export interface LLMToolCall {
 export interface LLMChatResponse {
   content: string | null;
   toolCalls: LLMToolCall[];
-  finishReason: "stop" | "tool_calls" | "length" | "content_filter" | (string & {});
+  finishReason: string;
   usage?: { promptTokens: number; completionTokens: number };
 }
 

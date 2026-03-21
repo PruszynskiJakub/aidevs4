@@ -4,7 +4,7 @@ import { files } from "../services/common/file.ts";
 import { config } from "../config/index.ts";
 import { safeParse, assertMaxLength, assertNumericBounds } from "../utils/parse.ts";
 import { createDocument } from "../services/common/document-store.ts";
-import { getSessionId } from "../services/agent/session-context.ts";
+import { getSessionId } from "../utils/session-context.ts";
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -112,7 +112,8 @@ function distance(payload: {
   );
 }
 
-async function geoDistance({ action, payload }: { action: string; payload: Record<string, unknown> }): Promise<Document> {
+async function geoDistance(args: Record<string, unknown>): Promise<Document> {
+  const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "find_nearby":
       return findNearby(payload as { references_file: string; queries_file: string; radius_km: number });

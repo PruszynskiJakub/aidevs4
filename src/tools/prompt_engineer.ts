@@ -4,7 +4,7 @@ import { llm } from "../services/ai/llm.ts";
 import { promptService } from "../services/ai/prompt.ts";
 import { assertMaxLength, safeParse } from "../utils/parse.ts";
 import { createDocument } from "../services/common/document-store.ts";
-import { getSessionId } from "../services/agent/session-context.ts";
+import { getSessionId } from "../utils/session-context.ts";
 
 const MAX_GOAL = 2_000;
 const MAX_CONSTRAINTS = 1_000;
@@ -21,35 +21,36 @@ interface PromptEngineerArgs {
 }
 
 async function promptEngineer(
-  args: PromptEngineerArgs,
+  args: Record<string, unknown>,
 ): Promise<Document> {
-  assertMaxLength(args.goal, "goal", MAX_GOAL);
-  assertMaxLength(args.constraints, "constraints", MAX_CONSTRAINTS);
-  assertMaxLength(args.context, "context", MAX_CONTEXT);
-  assertMaxLength(args.current_prompt, "current_prompt", MAX_PROMPT);
-  assertMaxLength(args.feedback, "feedback", MAX_FEEDBACK);
+  const typedArgs = args as unknown as PromptEngineerArgs;
+  assertMaxLength(typedArgs.goal, "goal", MAX_GOAL);
+  assertMaxLength(typedArgs.constraints, "constraints", MAX_CONSTRAINTS);
+  assertMaxLength(typedArgs.context, "context", MAX_CONTEXT);
+  assertMaxLength(typedArgs.current_prompt, "current_prompt", MAX_PROMPT);
+  assertMaxLength(typedArgs.feedback, "feedback", MAX_FEEDBACK);
 
-  if (!args.goal.trim()) {
+  if (!typedArgs.goal.trim()) {
     throw new Error("goal is required and cannot be empty");
   }
-  if (!args.constraints.trim()) {
+  if (!typedArgs.constraints.trim()) {
     throw new Error("constraints is required and cannot be empty");
   }
 
   const systemPrompt = await promptService.load("prompt-engineer");
 
   const parts: string[] = [
-    `## Goal\n${args.goal}`,
-    `## Constraints\n${args.constraints}`,
-    `## Context\n${args.context}`,
+    `## Goal\n${typedArgs.goal}`,
+    `## Constraints\n${typedArgs.constraints}`,
+    `## Context\n${typedArgs.context}`,
   ];
 
-  if (args.current_prompt.trim()) {
-    parts.push(`## Current Prompt\n\`\`\`\n${args.current_prompt}\n\`\`\``);
+  if (typedArgs.current_prompt.trim()) {
+    parts.push(`## Current Prompt\n\`\`\`\n${typedArgs.current_prompt}\n\`\`\``);
   }
 
-  if (args.feedback.trim()) {
-    parts.push(`## Feedback\n${args.feedback}`);
+  if (typedArgs.feedback.trim()) {
+    parts.push(`## Feedback\n${typedArgs.feedback}`);
   }
 
   const userPrompt = parts.join("\n\n");
@@ -77,7 +78,7 @@ async function promptEngineer(
     reasoning: parsed.reasoning ?? null,
   });
 
-  return createDocument(text, `Engineered prompt for: ${args.goal.slice(0, 80)}`, {
+  return createDocument(text, `Engineered prompt for: ${typedArgs.goal.slice(0, 80)}`, {
     source: null,
     type: "document",
     mimeType: "application/json",

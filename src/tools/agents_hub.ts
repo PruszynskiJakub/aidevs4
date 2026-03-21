@@ -5,7 +5,7 @@ import { config } from "../config/index.ts";
 import { safeParse, validateKeys, assertMaxLength } from "../utils/parse.ts";
 import { createDocument } from "../services/common/document-store.ts";
 import { HUB_DOC_META, hubPost, stringify } from "../utils/hub-fetch.ts";
-import { getSessionId } from "../services/agent/session-context.ts";
+import { getSessionId } from "../utils/session-context.ts";
 
 async function verify(payload: { task: string; answer: string }): Promise<Document> {
   assertMaxLength(payload.task, "task", 100);
@@ -144,7 +144,8 @@ async function verifyBatch(payload: {
   );
 }
 
-async function agentsHub({ action, payload }: { action: string; payload: Record<string, unknown> }): Promise<Document | Document[]> {
+async function agentsHub(args: Record<string, unknown>): Promise<Document | Document[]> {
+  const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "verify":
       return verify(payload as { task: string; answer: string });

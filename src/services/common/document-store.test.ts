@@ -6,8 +6,9 @@ import {
   formatDocumentXml,
   formatDocumentsXml,
 } from "./document-store.ts";
+import type { MediaCategory } from "../../utils/media-types.ts";
 
-function makeDoc(text: string, type: "document" | "text" | "image" = "document") {
+function makeDoc(text: string, type: MediaCategory = "document") {
   return createDocument(text, `test: ${text}`, {
     source: null,
     type,

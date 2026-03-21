@@ -1,8 +1,10 @@
+import type { MediaCategory } from "../utils/media-types.ts";
+
 export interface DocumentMetadata {
   source: string | null;
   sessionUuid: string;
   tokens: number;
-  type: "document" | "text" | "image" | "audio" | "video";
+  type: MediaCategory;
   mimeType: string;
 }
 

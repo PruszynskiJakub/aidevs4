@@ -8,5 +8,5 @@ export {
   requireLogger,
   getSessionId,
   requireSessionId,
-} from "./session-context.ts";
+} from "../../utils/session-context.ts";
 export * from "./assistant/index.ts";

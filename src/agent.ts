@@ -12,7 +12,7 @@ import { MarkdownLogger } from "./services/common/logging/markdown-logger.ts";
 import { ConsoleLogger } from "./services/common/logging/console-logger.ts";
 import { createCompositeLogger } from "./services/common/logging/composite-logger.ts";
 import { assistantResolverService } from "./services/agent/assistant/assistant-resolver.ts";
-import { runWithContext, requireState, requireLogger } from "./services/agent/session-context.ts";
+import { runWithContext, requireState, requireLogger } from "./utils/session-context.ts";
 
 function createLogger(
   userPrompt: string | unknown,

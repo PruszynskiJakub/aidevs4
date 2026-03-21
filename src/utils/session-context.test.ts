@@ -8,8 +8,8 @@ import {
   getSessionId,
   requireSessionId,
 } from "./session-context.ts";
-import type { AgentState } from "../../types/agent-state.ts";
-import type { Logger } from "../../types/logger.ts";
+import type { AgentState } from "../types/agent-state.ts";
+import type { Logger } from "../types/logger.ts";
 
 const noopLogger = new Proxy({} as Logger, { get: () => () => {} });
 

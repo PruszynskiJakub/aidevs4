@@ -12,8 +12,8 @@ describe("registry", () => {
     it("registers a simple tool and returns it via getTools", async () => {
       const tool: ToolDefinition = {
         name: "echo",
-        handler: async (args: { text: string }) =>
-          createDocument(args.text, "echo result", { source: null, type: "document", mimeType: "text/plain" }),
+        handler: async (args: Record<string, unknown>) =>
+          createDocument((args as { text: string }).text, "echo result", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "echo",
@@ -39,8 +39,8 @@ describe("registry", () => {
     it("expands multi-action schemas with __ separator", async () => {
       const tool: ToolDefinition = {
         name: "multi",
-        handler: async ({ action, payload }: { action: string; payload: unknown }) =>
-          createDocument("ok", `${action}`, { source: null, type: "document", mimeType: "text/plain" }),
+        handler: async (args: Record<string, unknown>) =>
+          createDocument("ok", `${(args as { action: string }).action}`, { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "multi",
@@ -101,8 +101,8 @@ describe("registry", () => {
     it("dispatches to registered handler and returns XML document", async () => {
       const tool: ToolDefinition = {
         name: "greet",
-        handler: async (args: { name: string }) =>
-          createDocument(`Hello, ${args.name}!`, "greeting", { source: null, type: "document", mimeType: "text/plain" }),
+        handler: async (args: Record<string, unknown>) =>
+          createDocument(`Hello, ${(args as { name: string }).name}!`, "greeting", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "greet",
@@ -138,7 +138,7 @@ describe("registry", () => {
       let received: unknown = null;
       const tool: ToolDefinition = {
         name: "ma",
-        handler: async (args: { action: string; payload: unknown }) => {
+        handler: async (args: Record<string, unknown>) => {
           received = args;
           return createDocument("done", "ma result", { source: null, type: "document", mimeType: "text/plain" });
         },
@@ -193,8 +193,8 @@ describe("registry", () => {
     function registerEchoAndMulti() {
       const echo: ToolDefinition = {
         name: "echo",
-        handler: async (args: { text: string }) =>
-          createDocument(args.text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
+        handler: async (args: Record<string, unknown>) =>
+          createDocument((args as { text: string }).text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const echoSchema = {
         name: "echo",
@@ -209,8 +209,8 @@ describe("registry", () => {
 
       const multi: ToolDefinition = {
         name: "multi",
-        handler: async ({ action, payload }: { action: string; payload: unknown }) =>
-          createDocument("ok", `${action}`, { source: null, type: "document", mimeType: "text/plain" }),
+        handler: async (args: Record<string, unknown>) =>
+          createDocument("ok", `${(args as { action: string }).action}`, { source: null, type: "document", mimeType: "text/plain" }),
       };
       const multiSchema = {
         name: "multi",
@@ -277,8 +277,8 @@ describe("registry", () => {
     it("rejects tool not in include list", async () => {
       const tool: ToolDefinition = {
         name: "echo",
-        handler: async (args: { text: string }) =>
-          createDocument(args.text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
+        handler: async (args: Record<string, unknown>) =>
+          createDocument((args as { text: string }).text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "echo",
@@ -300,8 +300,8 @@ describe("registry", () => {
     it("allows tool in include list", async () => {
       const tool: ToolDefinition = {
         name: "echo",
-        handler: async (args: { text: string }) =>
-          createDocument(args.text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
+        handler: async (args: Record<string, unknown>) =>
+          createDocument((args as { text: string }).text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "echo",
@@ -323,7 +323,7 @@ describe("registry", () => {
     it("rejects multi-action tool not in include list", async () => {
       const tool: ToolDefinition = {
         name: "ma",
-        handler: async (args: { action: string; payload: unknown }) =>
+        handler: async (args: Record<string, unknown>) =>
           createDocument("done", "ma", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
@@ -351,8 +351,8 @@ describe("registry", () => {
     it("dispatch without filter works (backward compat)", async () => {
       const tool: ToolDefinition = {
         name: "echo",
-        handler: async (args: { text: string }) =>
-          createDocument(args.text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
+        handler: async (args: Record<string, unknown>) =>
+          createDocument((args as { text: string }).text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
       };
       const schema = {
         name: "echo",

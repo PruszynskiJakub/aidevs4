@@ -4,7 +4,7 @@ import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 import { createDocument } from "../services/common/document-store.ts";
 import { HUB_DOC_META, hubPost, stringify } from "../utils/hub-fetch.ts";
-import { getSessionId } from "../services/agent/session-context.ts";
+import { getSessionId } from "../utils/session-context.ts";
 
 const PACKAGEID_RE = /^[A-Za-z0-9]+$/;
 const PACKAGES_URL = `${config.hub.baseUrl}/api/packages`;
@@ -71,7 +71,8 @@ async function redirectPackage(payload: {
   );
 }
 
-async function shipping({ action, payload }: { action: string; payload: Record<string, unknown> }): Promise<Document> {
+async function shipping(args: Record<string, unknown>): Promise<Document> {
+  const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "check":
       return checkPackage(payload as { packageid: string });

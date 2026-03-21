@@ -4,7 +4,7 @@ import { config } from "../config/index.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { createDocument } from "../services/common/document-store.ts";
-import { getSessionId } from "../services/agent/session-context.ts";
+import { getSessionId } from "../utils/session-context.ts";
 
 const MAX_OUTPUT = 20_000;
 
@@ -37,10 +37,11 @@ function assertWritesInSessionDir(command: string, cwd: string): void {
   }
 }
 
-async function bash(args: { command: string }): Promise<Document> {
+async function bash(args: Record<string, unknown>): Promise<Document> {
+  const { command } = args as { command: string };
   const cwd = getBashCwd();
-  assertWritesInSessionDir(args.command, cwd);
-  const result = await $`bash -c ${args.command}`.cwd(cwd).quiet().nothrow();
+  assertWritesInSessionDir(command, cwd);
+  const result = await $`bash -c ${command}`.cwd(cwd).quiet().nothrow();
 
   const stdout = result.stdout.toString().trim();
   const stderr = result.stderr.toString().trim();
@@ -56,7 +57,7 @@ async function bash(args: { command: string }): Promise<Document> {
     output = output.slice(0, MAX_OUTPUT) + "\n...(truncated)";
   }
 
-  const snippet = args.command.slice(0, 80);
+  const snippet = command.slice(0, 80);
   return createDocument(output, `Bash output for: ${snippet}`, {
     source: null,
     type: "document",

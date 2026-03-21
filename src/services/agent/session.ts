@@ -4,7 +4,7 @@ import type { LLMMessage } from "../../types/llm.ts";
 import type { Session } from "../../types/session.ts";
 import type { FileProvider } from "../../types/file.ts";
 import { inferCategory, type MediaCategory } from "../../utils/media-types.ts";
-import { getSessionId } from "./session-context.ts";
+import { getSessionId } from "../../utils/session-context.ts";
 import { files as defaultFiles } from "../common/file.ts";
 import { config as defaultConfig } from "../../config/index.ts";
 
