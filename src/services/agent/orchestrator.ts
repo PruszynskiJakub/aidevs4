@@ -4,6 +4,7 @@ import { assistantResolverService } from "./assistant/assistant-resolver.ts";
 import { log } from "../common/logging/logger.ts";
 import { randomSessionId } from "../../utils/id.ts";
 import type { LLMMessage } from "../../types/llm.ts";
+import type { AgentState } from "../../types/agent-state.ts";
 import type { Session } from "../../types/session.ts";
 
 interface ExecuteTurnOpts {
@@ -51,12 +52,21 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
   sessionService.appendMessage(sessionId, { role: "user", content: opts.prompt });
 
   const messages: LLMMessage[] = [...session.messages];
-  const result = await runAgent(messages, undefined, {
-    model: opts.model ?? resolved.model,
+
+  const state: AgentState = {
     sessionId,
-    toolFilter: resolved.toolFilter,
+    messages,
+    tokens: {
+      plan: { promptTokens: 0, completionTokens: 0 },
+      act: { promptTokens: 0, completionTokens: 0 },
+    },
+    iteration: 0,
     assistant: assistantName,
-  });
+    model: opts.model ?? resolved.model,
+    toolFilter: resolved.toolFilter,
+  };
+
+  const result = await runAgent(state);
 
   for (const m of result.messages) {
     sessionService.appendMessage(sessionId, m);

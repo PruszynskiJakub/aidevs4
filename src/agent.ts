@@ -1,6 +1,5 @@
 import type { LLMProvider, LLMMessage, LLMChatResponse, LLMTool, LLMToolCall } from "./types/llm.ts";
 import type { Logger } from "./types/logger.ts";
-import type { ToolFilter } from "./types/tool.ts";
 import type { PromptResult } from "./services/ai/prompt.ts";
 import type { AgentState } from "./types/agent-state.ts";
 import { llm as defaultLLM } from "./services/ai/llm.ts";
@@ -11,7 +10,6 @@ import { elapsed } from "./utils/timing.ts";
 import { MarkdownLogger } from "./services/common/logging/markdown-logger.ts";
 import { ConsoleLogger } from "./services/common/logging/console-logger.ts";
 import { createCompositeLogger } from "./services/common/logging/composite-logger.ts";
-import { assistantResolverService } from "./services/agent/assistant/assistant-resolver.ts";
 import { runWithContext, requireState, requireLogger } from "./utils/session-context.ts";
 import { createErrorDocument, formatDocumentsXml } from "./services/common/document-store.ts";
 
@@ -25,12 +23,6 @@ function createLogger(
   log.info(`Session: ${md.sessionId}`);
   log.info(`Log: ${md.filePath}`);
   return { log, md };
-}
-
-async function resolveActModel(assistantName: string, modelOverride?: string): Promise<string> {
-  if (modelOverride) return modelOverride;
-  const resolved = await assistantResolverService.resolve(assistantName);
-  return resolved.model;
 }
 
 async function executePlanPhase(
@@ -71,7 +63,6 @@ async function executePlanPhase(
 
 async function executeActPhase(
   planText: string,
-  actModel: string,
   tools: LLMTool[],
   provider: LLMProvider,
 ): Promise<LLMChatResponse> {
@@ -84,7 +75,7 @@ async function executeActPhase(
 
   const actStart = performance.now();
   const response = await provider.chatCompletion({
-    model: actModel,
+    model: state.model,
     messages: actMessages,
     tools,
   });
@@ -110,7 +101,6 @@ async function executeActPhase(
 
 async function dispatchTools(
   functionCalls: LLMToolCall[],
-  toolFilter: ToolFilter | undefined,
 ): Promise<void> {
   const state = requireState();
   const log = requireLogger();
@@ -124,7 +114,7 @@ async function dispatchTools(
   const settled = await Promise.allSettled(
     functionCalls.map(async (tc) => {
       const start = performance.now();
-      const result = await dispatch(tc.function.name, tc.function.arguments, toolFilter);
+      const result = await dispatch(tc.function.name, tc.function.arguments, state.toolFilter);
       return { ...result, elapsed: elapsed(start) };
     })
   );
@@ -169,52 +159,39 @@ export interface AgentResult {
 }
 
 export async function runAgent(
-  messages: LLMMessage[],
+  state: AgentState,
   provider: LLMProvider = defaultLLM,
-  options?: { model?: string; sessionId?: string; toolFilter?: ToolFilter; assistant?: string },
 ): Promise<AgentResult> {
-  const userPrompt = messages.find((m) => m.role === "user")?.content ?? "";
-  const { log, md } = createLogger(userPrompt, options?.sessionId);
+  const userPrompt = state.messages.find((m) => m.role === "user")?.content ?? "";
+  const { log, md } = createLogger(userPrompt, state.sessionId);
 
-  const internalMessages = [...messages];
-  const inputLength = messages.length;
-
-  const state: AgentState = {
-    sessionId: md.sessionId,
-    messages: internalMessages,
-    tokens: {
-      plan: { promptTokens: 0, completionTokens: 0 },
-      act: { promptTokens: 0, completionTokens: 0 },
-    },
-    iteration: 0,
-  };
+  const inputLength = state.messages.length;
 
   return runWithContext(state, log, async () => {
     try {
       const [tools, planPrompt] = await Promise.all([
-        getTools(options?.toolFilter),
+        getTools(state.toolFilter),
         promptService.load("plan"),
       ]);
-      const actModel = await resolveActModel(options?.assistant ?? "default", options?.model);
 
       for (let i = 0; i < config.limits.maxIterations; i++) {
         state.iteration = i;
-        log.step(i + 1, config.limits.maxIterations, actModel, state.messages.length);
+        log.step(i + 1, config.limits.maxIterations, state.model, state.messages.length);
 
         const planText = await executePlanPhase(planPrompt, provider);
-        const response = await executeActPhase(planText, actModel, tools, provider);
+        const response = await executeActPhase(planText, tools, provider);
 
         if (response.finishReason === "stop" || !response.toolCalls.length) {
           log.answer(response.content);
-          return { answer: response.content ?? "", messages: internalMessages.slice(inputLength) };
+          return { answer: response.content ?? "", messages: state.messages.slice(inputLength) };
         }
 
         const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
-        await dispatchTools(functionCalls, options?.toolFilter);
+        await dispatchTools(functionCalls);
       }
 
       log.maxIter(config.limits.maxIterations);
-      return { answer: "", messages: internalMessages.slice(inputLength) };
+      return { answer: "", messages: state.messages.slice(inputLength) };
     } finally {
       await md.flush();
       md.dispose();

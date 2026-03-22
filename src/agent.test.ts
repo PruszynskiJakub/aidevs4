@@ -1,5 +1,6 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import type { LLMProvider, LLMChatResponse, LLMMessage, ChatCompletionParams } from "./types/llm.ts";
+import type { AgentState } from "./types/agent-state.ts";
 
 // Use real prompt/assistant services. Tests check loop behavior, not model names.
 
@@ -42,6 +43,21 @@ function makeMessages(prompt: string): LLMMessage[] {
   ];
 }
 
+function makeState(prompt: string, overrides?: Partial<AgentState>): AgentState {
+  return {
+    sessionId: "test",
+    messages: makeMessages(prompt),
+    tokens: {
+      plan: { promptTokens: 0, completionTokens: 0 },
+      act: { promptTokens: 0, completionTokens: 0 },
+    },
+    iteration: 0,
+    assistant: "default",
+    model: "gpt-4.1",
+    ...overrides,
+  };
+}
+
 function xmlDoc(id: string, desc: string, text: string): string {
   return `<document id="${id}" description="${desc}">${text}</document>`;
 }
@@ -68,8 +84,8 @@ describe("agent plan-act loop", () => {
       completion: async () => "",
     };
 
-    await runAgent(makeMessages("What is 2+2?"), provider);
-    // Plan uses plan.md model, act uses act.md model (or assistant override)
+    await runAgent(makeState("What is 2+2?"), provider);
+    // Plan uses plan.md model, act uses state.model
     expect(callLog[0]).toMatch(/^plan:/);
     expect(callLog[1]).toMatch(/^act:/);
     expect(callLog).toHaveLength(2);
@@ -89,7 +105,7 @@ describe("agent plan-act loop", () => {
       completion: async () => "",
     };
 
-    await runAgent(makeMessages("test"), provider);
+    await runAgent(makeState("test"), provider);
 
     // Act messages should contain the plan as last assistant message
     const lastMsg = actMessages[actMessages.length - 1];
@@ -112,7 +128,7 @@ describe("agent plan-act loop", () => {
       completion: async () => "",
     };
 
-    await runAgent(makeMessages("test"), provider);
+    await runAgent(makeState("test"), provider);
 
     // Plan messages should have plan system prompt (from plan.md) + user message (no act system prompt)
     expect(planMessages[0].role).toBe("system");
@@ -159,7 +175,7 @@ describe("agent plan-act loop", () => {
       completion: async () => "",
     };
 
-    await runAgent(makeMessages("test"), provider);
+    await runAgent(makeState("test"), provider);
 
     // Second plan call should see tool call + result in history
     expect(planCalls).toHaveLength(2);
@@ -204,7 +220,7 @@ describe("agent parallel tool calling", () => {
       { content: "Done", finishReason: "stop", toolCalls: [] },
     ]);
 
-    await runAgent(makeMessages("test"), provider);
+    await runAgent(makeState("test"), provider);
 
     // Both should start before either finishes (parallel, not sequential)
     expect(order.indexOf("b_start")).toBeLessThan(order.indexOf("a_end"));
@@ -245,7 +261,7 @@ describe("agent parallel tool calling", () => {
       completion: async () => "",
     };
 
-    await runAgent(makeMessages("test"), provider);
+    await runAgent(makeState("test"), provider);
 
     // Filter tool messages from second act call's messages (excluding the injected plan)
     const toolMessages = capturedMessages.filter(m => m.role === "tool");
@@ -284,7 +300,7 @@ describe("agent parallel tool calling", () => {
       completion: async () => "",
     };
 
-    await runAgent(makeMessages("test"), provider);
+    await runAgent(makeState("test"), provider);
 
     const toolMessages = capturedMessages.filter(m => m.role === "tool");
     expect(toolMessages).toHaveLength(2);
@@ -324,7 +340,7 @@ describe("agent parallel tool calling", () => {
       completion: async () => "",
     };
 
-    await runAgent(makeMessages("test"), provider);
+    await runAgent(makeState("test"), provider);
 
     const toolMessages = capturedMessages.filter(m => m.role === "tool");
     expect(toolMessages).toHaveLength(1);
@@ -337,13 +353,13 @@ describe("agent parallel tool calling", () => {
       { content: "Hello!", finishReason: "stop", toolCalls: [] },
     ]);
 
-    const result = await runAgent(makeMessages("test"), provider);
+    const result = await runAgent(makeState("test"), provider);
     expect(result.answer).toBe("Hello!");
   });
 });
 
 describe("agent model override", () => {
-  it("uses model from options for act phase, plan uses plan.md model", async () => {
+  it("uses model from state for act phase, plan uses plan.md model", async () => {
     const models: string[] = [];
     const provider: LLMProvider = {
       chatCompletion: async ({ model, tools }) => {
@@ -356,13 +372,13 @@ describe("agent model override", () => {
       completion: async () => "",
     };
 
-    await runAgent(makeMessages("test"), provider, { model: "gpt-4.1-mini" });
-    // Plan uses plan.md model, act uses the override model
+    await runAgent(makeState("test", { model: "gpt-4.1-mini" }), provider);
+    // Plan uses plan.md model, act uses the state model
     expect(models[0]).toMatch(/^plan:gpt-4\.1$/);
     expect(models[1]).toBe("act:gpt-4.1-mini");
   });
 
-  it("falls back to act prompt frontmatter model when no override", async () => {
+  it("falls back to state model when no override", async () => {
     let capturedActModel = "";
     const provider: LLMProvider = {
       chatCompletion: async ({ model, tools }) => {
@@ -375,9 +391,8 @@ describe("agent model override", () => {
       completion: async () => "",
     };
 
-    await runAgent(makeMessages("test"), provider);
-    // Should use model from act.md frontmatter (since no override and no assistant model)
-    expect(capturedActModel).toBeTruthy();
-    expect(capturedActModel).not.toBe(""); // some model from act.md was used
+    await runAgent(makeState("test"), provider);
+    // Should use model from state (gpt-4.1 set in makeState)
+    expect(capturedActModel).toBe("gpt-4.1");
   });
 });
