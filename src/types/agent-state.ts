@@ -1,5 +1,4 @@
-import type { LLMMessage } from "./llm.ts";
-import type { ToolFilter } from "./tool.ts";
+import type { LLMMessage, LLMTool } from "./llm.ts";
 
 export interface TokenUsage {
   promptTokens: number;
@@ -13,5 +12,5 @@ export interface AgentState {
   iteration: number;
   assistant: string;
   model: string;
-  toolFilter?: ToolFilter;
+  tools: LLMTool[];
 }

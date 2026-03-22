@@ -1,6 +1,6 @@
 import { runAgent } from "../../agent.ts";
 import { sessionService } from "./session.ts";
-import { assistantResolverService } from "./assistant/assistant-resolver.ts";
+import { assistantsService } from "./assistant/assistants.ts";
 import { log } from "../common/logging/logger.ts";
 import { randomSessionId } from "../../utils/id.ts";
 import type { LLMMessage } from "../../types/llm.ts";
@@ -40,15 +40,13 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
   const session = sessionService.getOrCreate(sessionId);
   const assistantName = pickAssistantName(session, sessionId, opts.assistant);
 
-  const resolved = await assistantResolverService.resolve(assistantName);
+  // Validate assistant exists before proceeding (throws "Unknown assistant" if not found)
+  await assistantsService.get(assistantName);
 
   if (!session.assistant) {
     session.assistant = assistantName;
   }
 
-  if (session.messages.length === 0) {
-    sessionService.appendMessage(sessionId, { role: "system", content: resolved.prompt });
-  }
   sessionService.appendMessage(sessionId, { role: "user", content: opts.prompt });
 
   const messages: LLMMessage[] = [...session.messages];
@@ -62,8 +60,8 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
     },
     iteration: 0,
     assistant: assistantName,
-    model: opts.model ?? resolved.model,
-    toolFilter: resolved.toolFilter,
+    model: opts.model ?? "",
+    tools: [],
   };
 
   const result = await runAgent(state);

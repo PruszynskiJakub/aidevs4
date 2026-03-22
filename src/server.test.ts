@@ -138,8 +138,8 @@ describe("POST /chat", () => {
 
     const session = sessionService.getOrCreate("s-reuse");
     expect(session.assistant).toBe("proxy");
-    // system + user + assistant + user + assistant = 5
-    expect(session.messages.length).toBe(5);
+    // user + assistant + user + assistant = 4 (no system message stored)
+    expect(session.messages.length).toBe(4);
   });
 
   it("ignores non-string assistant and falls back to default", async () => {
@@ -178,12 +178,11 @@ describe("POST /chat", () => {
     });
 
     const messages = sessionService.getMessages("s1");
-    // system + user("first") + assistant + user("second") + assistant
-    expect(messages.length).toBe(5);
-    expect(messages[0].role).toBe("system");
-    expect(messages[1].role).toBe("user");
-    expect(messages[2].role).toBe("assistant");
-    expect(messages[3].role).toBe("user");
-    expect(messages[4].role).toBe("assistant");
+    // user("first") + assistant + user("second") + assistant = 4 (no system message)
+    expect(messages.length).toBe(4);
+    expect(messages[0].role).toBe("user");
+    expect(messages[1].role).toBe("assistant");
+    expect(messages[2].role).toBe("user");
+    expect(messages[3].role).toBe("assistant");
   });
 });

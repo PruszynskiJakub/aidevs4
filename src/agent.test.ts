@@ -36,17 +36,10 @@ function makeLLMProvider(responses: LLMChatResponse[]): LLMProvider {
   };
 }
 
-function makeMessages(prompt: string): LLMMessage[] {
-  return [
-    { role: "system", content: "You are an agent." },
-    { role: "user", content: prompt },
-  ];
-}
-
 function makeState(prompt: string, overrides?: Partial<AgentState>): AgentState {
   return {
     sessionId: "test",
-    messages: makeMessages(prompt),
+    messages: [{ role: "user", content: prompt }],
     tokens: {
       plan: { promptTokens: 0, completionTokens: 0 },
       act: { promptTokens: 0, completionTokens: 0 },
@@ -54,6 +47,7 @@ function makeState(prompt: string, overrides?: Partial<AgentState>): AgentState 
     iteration: 0,
     assistant: "default",
     model: "gpt-4.1",
+    tools: [],
     ...overrides,
   };
 }
@@ -114,7 +108,30 @@ describe("agent plan-act loop", () => {
     expect((lastMsg as any).content).toContain("[>] Do the thing");
   });
 
-  it("plan receives conversation history without act system prompt", async () => {
+  it("act phase receives system prompt from resolved assistant", async () => {
+    let actMessages: LLMMessage[] = [];
+
+    const provider: LLMProvider = {
+      chatCompletion: async ({ tools, messages }) => {
+        if (tools === undefined) {
+          return planResponse("1. [>] Answer");
+        }
+        actMessages = messages;
+        return { content: "Done", finishReason: "stop", toolCalls: [] };
+      },
+      completion: async () => "",
+    };
+
+    await runAgent(makeState("test"), provider);
+
+    // First message should be system prompt (from resolved assistant)
+    expect(actMessages[0].role).toBe("system");
+    expect((actMessages[0] as any).content).toBeTruthy();
+    // Second should be user message
+    expect(actMessages[1].role).toBe("user");
+  });
+
+  it("plan receives conversation history with plan system prompt", async () => {
     let planMessages: LLMMessage[] = [];
 
     const provider: LLMProvider = {
@@ -130,13 +147,30 @@ describe("agent plan-act loop", () => {
 
     await runAgent(makeState("test"), provider);
 
-    // Plan messages should have plan system prompt (from plan.md) + user message (no act system prompt)
+    // Plan messages should have plan system prompt (from plan.md) + user message
     expect(planMessages[0].role).toBe("system");
     expect(planMessages[1].role).toBe("user");
     expect(planMessages).toHaveLength(2);
-    // Plan system prompt should NOT be the act system prompt
     const planContent = (planMessages[0] as any).content;
     expect(planContent).toBeTruthy();
+  });
+
+  it("state.messages never contains system messages", async () => {
+    const provider: LLMProvider = {
+      chatCompletion: async ({ tools }) => {
+        if (tools === undefined) {
+          return planResponse("1. [>] Answer");
+        }
+        return { content: "Done", finishReason: "stop", toolCalls: [] };
+      },
+      completion: async () => "",
+    };
+
+    const state = makeState("test");
+    await runAgent(state, provider);
+
+    const systemMessages = state.messages.filter(m => m.role === "system");
+    expect(systemMessages).toHaveLength(0);
   });
 
   it("plan updates across iterations with tool results", async () => {
@@ -263,7 +297,7 @@ describe("agent parallel tool calling", () => {
 
     await runAgent(makeState("test"), provider);
 
-    // Filter tool messages from second act call's messages (excluding the injected plan)
+    // Filter tool messages from second act call's messages (excluding system and injected plan)
     const toolMessages = capturedMessages.filter(m => m.role === "tool");
     expect(toolMessages).toHaveLength(2);
     expect((toolMessages[0] as any).toolCallId).toBe("c1");
@@ -378,7 +412,7 @@ describe("agent model override", () => {
     expect(models[1]).toBe("act:gpt-4.1-mini");
   });
 
-  it("falls back to state model when no override", async () => {
+  it("falls back to resolved assistant model when state.model is empty", async () => {
     let capturedActModel = "";
     const provider: LLMProvider = {
       chatCompletion: async ({ model, tools }) => {
@@ -391,8 +425,8 @@ describe("agent model override", () => {
       completion: async () => "",
     };
 
-    await runAgent(makeState("test"), provider);
-    // Should use model from state (gpt-4.1 set in makeState)
-    expect(capturedActModel).toBe("gpt-4.1");
+    await runAgent(makeState("test", { model: "" }), provider);
+    // Should use model from resolved assistant (not empty)
+    expect(capturedActModel).toBeTruthy();
   });
 });
