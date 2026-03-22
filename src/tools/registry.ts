@@ -100,11 +100,7 @@ async function tryDispatch(
   }
 }
 
-export async function dispatch(name: string, argsJson: string, filter?: ToolFilter): Promise<DispatchResult> {
-  if (!matchesFilter(name, filter)) {
-    return { xml: formatDocumentsXml(createErrorDocument(name, `Tool not allowed: ${name}`)), isError: true };
-  }
-
+export async function dispatch(name: string, argsJson: string): Promise<DispatchResult> {
   const parsed = safeParse<Record<string, unknown>>(argsJson, name);
 
   const tool = handlers.get(name);

@@ -2,7 +2,6 @@ import type { LLMProvider, LLMMessage, LLMChatResponse, LLMToolCall } from "./ty
 import type { Logger } from "./types/logger.ts";
 import type { PromptResult } from "./services/ai/prompt.ts";
 import type { AgentState } from "./types/agent-state.ts";
-import type { ToolFilter } from "./types/tool.ts";
 import { llm as defaultLLM } from "./services/ai/llm.ts";
 import { config } from "./config/index.ts";
 import { getTools, dispatch } from "./tools/index.ts";
@@ -104,10 +103,9 @@ async function executeActPhase(
 
 async function dispatchTools(
   functionCalls: LLMToolCall[],
-  toolFilter?: ToolFilter,
 ): Promise<void> {
-  const state = requireState();
   const log = requireLogger();
+  const state = requireState();
   log.toolHeader(functionCalls.length);
   for (const tc of functionCalls) {
     log.toolCall(tc.function.name, tc.function.arguments);
@@ -118,7 +116,7 @@ async function dispatchTools(
   const settled = await Promise.allSettled(
     functionCalls.map(async (tc) => {
       const start = performance.now();
-      const result = await dispatch(tc.function.name, tc.function.arguments, toolFilter);
+      const result = await dispatch(tc.function.name, tc.function.arguments);
       return { ...result, elapsed: elapsed(start) };
     })
   );
@@ -185,8 +183,7 @@ export async function runAgent(
       }
 
       // Populate tools from registry (filtered by assistant config)
-      const toolFilter = resolved.toolFilter;
-      state.tools = await getTools(toolFilter);
+      state.tools = await getTools(resolved.toolFilter);
 
       const actSystemPrompt = resolved.prompt;
 
@@ -203,7 +200,7 @@ export async function runAgent(
         }
 
         const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
-        await dispatchTools(functionCalls, toolFilter);
+        await dispatchTools(functionCalls);
       }
 
       log.maxIter(config.limits.maxIterations);
