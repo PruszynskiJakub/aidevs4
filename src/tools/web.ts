@@ -68,7 +68,7 @@ async function download(payload: { url: string; filename: string }): Promise<Doc
   const text = `File saved to ${relativePath}. Inspect with bash: head -20 ${relativePath}`;
 
   return createDocument(text, `Web download from ${payload.url}`, {
-    source: payload.url,
+    source: path,
     type,
     mimeType,
   }, getSessionId());

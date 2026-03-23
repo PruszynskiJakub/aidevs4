@@ -23,6 +23,7 @@ mock.module("../services/ai/llm.ts", () => ({
 
 // Import after mocking
 const { default: documentProcessor } = await import("./document_processor.ts");
+const { documentService } = await import("../services/common/document-store.ts");
 
 const handler = documentProcessor.handler;
 
@@ -32,6 +33,18 @@ const TEXT_FILE_2 = join(TEST_DIR, "notes.txt");
 const CSV_FILE = join(TEST_DIR, "data.csv");
 const IMAGE_FILE = join(TEST_DIR, "image.png");
 const UNSUPPORTED_FILE = join(TEST_DIR, "file.exe");
+
+/** Helper: create a Document and add it to the store, returning the UUID. */
+function addDoc(overrides: Partial<Document> & { metadata: Document["metadata"] }): string {
+  const doc: Document = {
+    uuid: crypto.randomUUID(),
+    text: "",
+    description: "test doc",
+    ...overrides,
+  };
+  documentService.add(doc);
+  return doc.uuid;
+}
 
 beforeAll(() => {
   mkdirSync(TEST_DIR, { recursive: true });
@@ -61,13 +74,18 @@ beforeEach(() => {
         finishReason: "stop",
       }),
   );
+  documentService._clear();
 });
 
 describe("document_processor ask — text files", () => {
-  it("processes a single text file and returns a Document", async () => {
+  it("processes a single text document and returns a Document", async () => {
+    const uuid = addDoc({
+      metadata: { source: TEXT_FILE, sessionUuid: "s1", tokens: 10, type: "text", mimeType: "text/plain" },
+    });
+
     const result = await handler({
       action: "ask",
-      payload: { paths: [TEXT_FILE], question: "What is this about?" },
+      payload: { uuids: [uuid], question: "What is this about?" },
     }) as Document;
 
     expect(result.text).toBe("Mocked answer from Gemini");
@@ -93,11 +111,21 @@ describe("document_processor ask — text files", () => {
     expect(content[1].text).toBe("What is this about?");
   });
 
-  it("processes multiple text files", async () => {
+  it("processes multiple text documents", async () => {
+    const uuid1 = addDoc({
+      metadata: { source: TEXT_FILE, sessionUuid: "s1", tokens: 10, type: "text", mimeType: "text/plain" },
+    });
+    const uuid2 = addDoc({
+      metadata: { source: TEXT_FILE_2, sessionUuid: "s1", tokens: 5, type: "text", mimeType: "text/plain" },
+    });
+    const uuid3 = addDoc({
+      metadata: { source: CSV_FILE, sessionUuid: "s1", tokens: 8, type: "text", mimeType: "text/plain" },
+    });
+
     const result = await handler({
       action: "ask",
       payload: {
-        paths: [TEXT_FILE, TEXT_FILE_2, CSV_FILE],
+        uuids: [uuid1, uuid2, uuid3],
         question: "Summarize everything",
       },
     }) as Document;
@@ -115,9 +143,13 @@ describe("document_processor ask — text files", () => {
 
 describe("document_processor ask — image files", () => {
   it("sends image as base64 ImagePart with correct mimeType", async () => {
+    const uuid = addDoc({
+      metadata: { source: IMAGE_FILE, sessionUuid: "s1", tokens: 0, type: "image", mimeType: "image/png" },
+    });
+
     const result = await handler({
       action: "ask",
-      payload: { paths: [IMAGE_FILE], question: "Describe this image" },
+      payload: { uuids: [uuid], question: "Describe this image" },
     }) as Document;
 
     expect(result.text).toBe("Mocked answer from Gemini");
@@ -134,11 +166,18 @@ describe("document_processor ask — image files", () => {
 });
 
 describe("document_processor ask — mixed files", () => {
-  it("handles text and image files together", async () => {
+  it("handles text and image documents together", async () => {
+    const uuid1 = addDoc({
+      metadata: { source: TEXT_FILE, sessionUuid: "s1", tokens: 10, type: "text", mimeType: "text/plain" },
+    });
+    const uuid2 = addDoc({
+      metadata: { source: IMAGE_FILE, sessionUuid: "s1", tokens: 0, type: "image", mimeType: "image/png" },
+    });
+
     const result = await handler({
       action: "ask",
       payload: {
-        paths: [TEXT_FILE, IMAGE_FILE],
+        uuids: [uuid1, uuid2],
         question: "Cross-reference text and image",
       },
     }) as Document;
@@ -158,19 +197,27 @@ describe("document_processor ask — mixed files", () => {
 
 describe("document_processor ask — validation errors", () => {
   it("rejects unsupported file extension", async () => {
+    const uuid = addDoc({
+      metadata: { source: UNSUPPORTED_FILE, sessionUuid: "s1", tokens: 0, type: "document", mimeType: "application/octet-stream" },
+    });
+
     await expect(
       handler({
         action: "ask",
-        payload: { paths: [UNSUPPORTED_FILE], question: "What is this?" },
+        payload: { uuids: [uuid], question: "What is this?" },
       }),
     ).rejects.toThrow('Unsupported file extension ".exe"');
   });
 
   it("error message includes supported extensions", async () => {
+    const uuid = addDoc({
+      metadata: { source: UNSUPPORTED_FILE, sessionUuid: "s1", tokens: 0, type: "document", mimeType: "application/octet-stream" },
+    });
+
     try {
       await handler({
         action: "ask",
-        payload: { paths: [UNSUPPORTED_FILE], question: "What is this?" },
+        payload: { uuids: [uuid], question: "What is this?" },
       });
     } catch (e: any) {
       expect(e.message).toContain(".md");
@@ -179,68 +226,86 @@ describe("document_processor ask — validation errors", () => {
     }
   });
 
-  it("rejects path traversal with '..'", async () => {
+  it("rejects unknown UUID", async () => {
     await expect(
       handler({
         action: "ask",
-        payload: { paths: ["../../etc/passwd"], question: "Read this" },
+        payload: { uuids: ["nonexistent-uuid"], question: "Read" },
       }),
-    ).rejects.toThrow("Path traversal not allowed");
+    ).rejects.toThrow('Document not found: "nonexistent-uuid"');
   });
 
-  it("rejects more than 10 files", async () => {
-    const manyPaths = Array.from({ length: 11 }, (_, i) => `/tmp/file${i}.txt`);
+  it("rejects document with no source", async () => {
+    const uuid = addDoc({
+      metadata: { source: null, sessionUuid: "s1", tokens: 0, type: "text", mimeType: "text/plain" },
+    });
+
     await expect(
       handler({
         action: "ask",
-        payload: { paths: manyPaths, question: "Summarize" },
+        payload: { uuids: [uuid], question: "Read" },
       }),
-    ).rejects.toThrow("Too many files: 11. Maximum is 10");
+    ).rejects.toThrow("has no source path");
   });
 
-  it("rejects empty paths array", async () => {
+  it("rejects more than 10 documents", async () => {
+    const uuids = Array.from({ length: 11 }, () =>
+      addDoc({ metadata: { source: TEXT_FILE, sessionUuid: "s1", tokens: 0, type: "text", mimeType: "text/plain" } }),
+    );
     await expect(
       handler({
         action: "ask",
-        payload: { paths: [], question: "Hello" },
+        payload: { uuids, question: "Summarize" },
       }),
-    ).rejects.toThrow("paths must be a non-empty array");
+    ).rejects.toThrow("Too many documents: 11. Maximum is 10");
+  });
+
+  it("rejects empty uuids array", async () => {
+    await expect(
+      handler({
+        action: "ask",
+        payload: { uuids: [], question: "Hello" },
+      }),
+    ).rejects.toThrow("uuids must be a non-empty array");
   });
 
   it("rejects empty question", async () => {
+    const uuid = addDoc({
+      metadata: { source: TEXT_FILE, sessionUuid: "s1", tokens: 0, type: "text", mimeType: "text/plain" },
+    });
+
     await expect(
       handler({
         action: "ask",
-        payload: { paths: [TEXT_FILE], question: "" },
+        payload: { uuids: [uuid], question: "" },
       }),
     ).rejects.toThrow("question must be a non-empty string");
   });
 
   it("rejects whitespace-only question", async () => {
+    const uuid = addDoc({
+      metadata: { source: TEXT_FILE, sessionUuid: "s1", tokens: 0, type: "text", mimeType: "text/plain" },
+    });
+
     await expect(
       handler({
         action: "ask",
-        payload: { paths: [TEXT_FILE], question: "   " },
+        payload: { uuids: [uuid], question: "   " },
       }),
     ).rejects.toThrow("question must be a non-empty string");
   });
 
   it("rejects question exceeding 2000 chars", async () => {
+    const uuid = addDoc({
+      metadata: { source: TEXT_FILE, sessionUuid: "s1", tokens: 0, type: "text", mimeType: "text/plain" },
+    });
+
     await expect(
       handler({
         action: "ask",
-        payload: { paths: [TEXT_FILE], question: "x".repeat(2001) },
+        payload: { uuids: [uuid], question: "x".repeat(2001) },
       }),
     ).rejects.toThrow("question exceeds max length of 2000");
-  });
-
-  it("rejects non-existent file", async () => {
-    await expect(
-      handler({
-        action: "ask",
-        payload: { paths: [join(TEST_DIR, "nonexistent.txt")], question: "Read" },
-      }),
-    ).rejects.toThrow();
   });
 });
 

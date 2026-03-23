@@ -54,7 +54,7 @@ describe("web download", () => {
     expect(result.text).toContain("File saved to");
     expect(result.text).toContain("people.csv");
     expect(result.description).toContain("Web download from");
-    expect(result.metadata.source).toContain("hub.ag3nts.org");
+    expect(result.metadata.source).toContain("people.csv");
   });
 
   it("downloads without placeholders", async () => {

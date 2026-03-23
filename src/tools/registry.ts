@@ -1,7 +1,7 @@
 import type { LLMTool } from "../types/llm.ts";
 import type { ToolDefinition, ToolFilter } from "../types/tool.ts";
 import { safeParse } from "../utils/parse.ts";
-import { createErrorDocument, formatDocumentsXml } from "../services/common/document-store.ts";
+import { createErrorDocument, documentService, formatDocumentsXml } from "../services/common/document-store.ts";
 
 const SEPARATOR = "__";
 
@@ -93,6 +93,8 @@ async function tryDispatch(
 ): Promise<DispatchResult> {
   try {
     const result = await tool.handler(args);
+    const docs = Array.isArray(result) ? result : [result];
+    for (const doc of docs) documentService.add(doc);
     return { xml: formatDocumentsXml(result), isError: false };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
