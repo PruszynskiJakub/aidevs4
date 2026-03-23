@@ -1,14 +1,14 @@
 {
   "name": "web",
-  "description": "Interact with allowed web resources.",
+  "description": "Download files from allowlisted web hosts (*.ag3nts.org). Use when a task requires fetching remote data before processing.",
   "actions": {
     "download": {
-      "description": "Download a file from a URL. Supports {{placeholder}} template variables resolved from environment (available: hub_api_key). Host must be on the allowlist (*.ag3nts.org).",
+      "description": "Download a file from a URL and save to the session output directory. Supports {{placeholder}} template variables from environment (available: hub_api_key). Returns the saved file path and size. After downloading, inspect content with bash (head, jq) or document_processor for images.",
       "parameters": {
         "type": "object",
         "properties": {
-          "url": { "type": "string", "description": "Full URL to download from. May contain {{placeholder}} variables (e.g. https://hub.ag3nts.org/data/{{hub_api_key}}/file.txt)" },
-          "filename": { "type": "string", "description": "Output filename to save the downloaded content as" }
+          "url": { "type": "string", "description": "Full URL to download from. May contain {{placeholder}} variables (e.g. https://hub.ag3nts.org/data/{{hub_api_key}}/file.txt). Host must be on the allowlist." },
+          "filename": { "type": "string", "description": "Filename to save as in the session output directory (e.g. 'data.json'). No path separators." }
         },
         "required": ["url", "filename"],
         "additionalProperties": false

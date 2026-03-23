@@ -3,7 +3,7 @@
   "description": "Analyze local documents (text files, images) using AI vision models. Supports cross-referencing multiple files to answer questions. Accepts any local file path — either from web__download output or an existing file on disk.",
   "actions": {
     "ask": {
-      "description": "Ask a question about one or more local files. Supports text (.md, .txt, .csv, .json, .xml, .html) and image (.png, .jpg, .jpeg, .gif, .webp) files. Returns a text answer based on document content.",
+      "description": "Ask a question about one or more local files using AI vision. Supports text (.md, .txt, .csv, .json, .xml, .html) and image (.png, .jpg, .jpeg, .gif, .webp) files. Returns a text answer synthesized from all provided files. Use for image analysis, cross-referencing documents, or extracting specific information from files downloaded via web__download.",
       "parameters": {
         "type": "object",
         "properties": {

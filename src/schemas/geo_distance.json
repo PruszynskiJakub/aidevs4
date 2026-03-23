@@ -1,9 +1,9 @@
 {
   "name": "geo_distance",
-  "description": "Compute geographic distances using the haversine formula.",
+  "description": "Compute geographic distances between coordinates. Use when a task involves physical proximity, location matching, or distance calculations.",
   "actions": {
     "find_nearby": {
-      "description": "Match two sets of locations in bulk. Reads two JSON files (references + queries) and returns all pairs within a given radius in km, sorted by distance ascending. Preferred over looping with distance — prepare the two files first, then match in one call.",
+      "description": "Match two sets of locations in bulk. Reads two JSON files (references + queries) and returns JSON array of matching pairs with distance_km, sorted by distance ascending. Empty array if no pairs within radius. Preferred over looping with distance — prepare the two files first, then match in one call.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -20,10 +20,10 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "lat1": { "type": "number", "description": "Latitude of the first point" },
-          "lon1": { "type": "number", "description": "Longitude of the first point" },
-          "lat2": { "type": "number", "description": "Latitude of the second point" },
-          "lon2": { "type": "number", "description": "Longitude of the second point" }
+          "lat1": { "type": "number", "description": "Latitude of the first point (-90 to 90)" },
+          "lon1": { "type": "number", "description": "Longitude of the first point (-180 to 180)" },
+          "lat2": { "type": "number", "description": "Latitude of the second point (-90 to 90)" },
+          "lon2": { "type": "number", "description": "Longitude of the second point (-180 to 180)" }
         },
         "required": ["lat1", "lon1", "lat2", "lon2"],
         "additionalProperties": false

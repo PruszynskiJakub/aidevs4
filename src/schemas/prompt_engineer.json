@@ -1,6 +1,6 @@
 {
   "name": "prompt_engineer",
-  "description": "Craft or refine prompts for external LLMs with specific constraints. Use when you need to create a prompt that fits within a token budget, produces a specific output format, or handles edge cases. Supports iterative refinement — pass the current prompt and feedback to improve it.",
+  "description": "Craft or refine prompts for external LLMs with specific constraints. Use when you need to create a prompt that fits within a token budget, produces a specific output format, or handles edge cases. Supports iterative refinement — pass the current prompt and feedback to improve it. Returns the crafted or refined prompt text ready for use with the target LLM.",
   "parameters": {
     "type": "object",
     "properties": {

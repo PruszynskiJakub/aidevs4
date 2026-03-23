@@ -1,9 +1,9 @@
 {
   "name": "agents_hub",
-  "description": "Interact with the AG3NTS hub.",
+  "description": "Submit answers and call APIs on the AG3NTS hub platform (hub.ag3nts.org). Use after you have prepared an answer or need hub data to solve a task.",
   "actions": {
     "verify": {
-      "description": "Submit a single answer for verification. For tasks requiring multiple sequential submissions (e.g. classifying N items one by one), use verify_batch instead.",
+      "description": "Submit a single answer for verification. Returns the hub response (typically a flag or status message). For tasks requiring multiple sequential submissions (e.g. classifying N items one by one), use verify_batch instead.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -15,7 +15,7 @@
       }
     },
     "verify_batch": {
-      "description": "Submit multiple answers for verification SEQUENTIALLY (one after another). Use when the hub expects ordered submissions — e.g. classifying N items where each call advances an internal counter. Answers are sent in array order. Stops on first HTTP error. Results written to output file.",
+      "description": "Submit multiple answers for verification SEQUENTIALLY (one after another). Use when the hub expects ordered submissions — e.g. classifying N items where each call advances an internal counter. Answers are sent in array order. Stops on first HTTP error. Returns array of {index, answer, response} written to output_file.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -28,7 +28,7 @@
       }
     },
     "api_request": {
-      "description": "POST to /api/* with a JSON body. For a single call only — if calling the same endpoint for each item in a dataset, use api_batch instead.",
+      "description": "POST to /api/* with a JSON body. Returns the API response body as JSON. For a single call only — if calling the same endpoint for each item in a dataset, use api_batch instead.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -40,7 +40,7 @@
       }
     },
     "api_batch": {
-      "description": "POST to /api/* for each row in a CSV/JSON array file. Preferred over multiple api_request calls — use whenever a dataset needs the same endpoint called per item. Apikey auto-injected. Calls made sequentially.",
+      "description": "POST to /api/* for each row in a CSV/JSON array file. Preferred over multiple api_request calls — use whenever a dataset needs the same endpoint called per item. Apikey auto-injected. Calls made sequentially. Returns array of {input, response} per row written to output_file.",
       "parameters": {
         "type": "object",
         "properties": {
