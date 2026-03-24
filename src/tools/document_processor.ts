@@ -71,7 +71,8 @@ async function ask(payload: {
   const answer = response.content ?? "";
   const docDescriptions = docs.map((d) => d.description).join(", ");
 
-  return createDocument(answer, `Answer based on ${docs.length} document(s): ${docDescriptions}`, {
+  const shortQuestion = question.length > 120 ? question.slice(0, 117) + "..." : question;
+  return createDocument(answer, `Answer to "${shortQuestion}" based on ${docs.length} document(s): ${docDescriptions}`, {
     source: docs[0].metadata.source,
     type: "document",
     mimeType: "text/plain",
