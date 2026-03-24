@@ -37,6 +37,7 @@ export const config = deepFreeze({
   keys: {
     openaiApiKey: env.openaiApiKey,
     geminiApiKey: env.geminiApiKey,
+    serperApiKey: env.serperApiKey,
   },
   limits: {
     maxIterations: 40,

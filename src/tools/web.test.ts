@@ -176,3 +176,107 @@ describe("web download", () => {
     ).rejects.toThrow("Unknown web action: nonexistent");
   });
 });
+
+describe("web scrape", () => {
+  it("scrapes a single URL and returns Document[]", async () => {
+    globalThis.fetch = mock(async () => {
+      return new Response(JSON.stringify({ text: "Hello from page" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+
+    const results = (await handler({
+      action: "scrape",
+      payload: { urls: ["https://example.com/page"] },
+    })) as Document[];
+
+    expect(results).toHaveLength(1);
+    expect(results[0].text).toBe("Hello from page");
+    expect(results[0].description).toContain("https://example.com/page");
+  });
+
+  it("scrapes multiple URLs in parallel", async () => {
+    let callCount = 0;
+    globalThis.fetch = mock(async () => {
+      callCount++;
+      return new Response(JSON.stringify({ text: `Page ${callCount}` }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+
+    const results = (await handler({
+      action: "scrape",
+      payload: { urls: ["https://a.com", "https://b.com", "https://c.com"] },
+    })) as Document[];
+
+    expect(results).toHaveLength(3);
+    expect(callCount).toBe(3);
+  });
+
+  it("handles partial failure — one bad URL does not block others", async () => {
+    globalThis.fetch = mock(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (body.url === "https://bad.com") {
+        return new Response("Not Found", { status: 404 });
+      }
+      return new Response(JSON.stringify({ text: "OK" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+
+    const results = (await handler({
+      action: "scrape",
+      payload: { urls: ["https://good.com", "https://bad.com"] },
+    })) as Document[];
+
+    expect(results).toHaveLength(2);
+    expect(results[0].text).toBe("OK");
+    expect(results[1].text).toContain("Error scraping");
+    expect(results[1].text).toContain("404");
+  });
+
+  it("rejects empty urls array", async () => {
+    await expect(
+      handler({ action: "scrape", payload: { urls: [] } }),
+    ).rejects.toThrow("non-empty array");
+  });
+
+  it("rejects invalid URL format", async () => {
+    await expect(
+      handler({ action: "scrape", payload: { urls: ["not-a-url"] } }),
+    ).rejects.toThrow("Invalid URL format");
+  });
+
+  it("rejects URL exceeding max length", async () => {
+    const longUrl = "https://example.com/" + "a".repeat(2048);
+    await expect(
+      handler({ action: "scrape", payload: { urls: [longUrl] } }),
+    ).rejects.toThrow("url exceeds max length");
+  });
+
+  it("rejects non-string items in urls array", async () => {
+    await expect(
+      handler({ action: "scrape", payload: { urls: [123 as any] } }),
+    ).rejects.toThrow("must be a string");
+  });
+
+  it("falls back to JSON.stringify when no text field in response", async () => {
+    globalThis.fetch = mock(async () => {
+      return new Response(JSON.stringify({ custom: "data", nested: { a: 1 } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+
+    const results = (await handler({
+      action: "scrape",
+      payload: { urls: ["https://example.com"] },
+    })) as Document[];
+
+    expect(results[0].text).toContain("custom");
+    expect(results[0].text).toContain("data");
+  });
+});

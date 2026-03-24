@@ -1,6 +1,6 @@
 {
   "name": "web",
-  "description": "Download files from allowlisted web hosts (*.ag3nts.org). Use when a task requires fetching remote data before processing.",
+  "description": "Interact with the web: download files from allowlisted hosts or scrape page content from any URL. Use when a task requires fetching remote data or reading web pages.",
   "actions": {
     "download": {
       "description": "Download a file from a URL and save to the session output directory. Supports {{placeholder}} template variables from environment (available: hub_api_key). Returns the saved file path and size. After downloading, inspect content with bash (head, jq) or document_processor for images.",
@@ -11,6 +11,21 @@
           "filename": { "type": "string", "description": "Filename to save as in the session output directory (e.g. 'data.json'). No path separators." }
         },
         "required": ["url", "filename"],
+        "additionalProperties": false
+      }
+    },
+    "scrape": {
+      "description": "Extract text content from one or more web pages. Accepts an array of URLs, scrapes them in parallel, and returns page content for each. Each URL is independent — one failure won't affect others. Use when you need to read or analyze web page content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "urls": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "URLs of web pages to scrape (1 or more). Each is fetched independently."
+          }
+        },
+        "required": ["urls"],
         "additionalProperties": false
       }
     }

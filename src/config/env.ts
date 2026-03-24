@@ -17,6 +17,7 @@ export const env = {
   hubApiKey: requireEnv("HUB_API_KEY"),
   openaiApiKey: requireEnv("OPENAI_API_KEY"),
   geminiApiKey: process.env.GEMINI_API_KEY,
+  serperApiKey: process.env.SERPER_API_KEY,
   port: Number(process.env.PORT) || 3000,
   assistant: process.env.ASSISTANT ?? process.env.PERSONA,
 } as const;
