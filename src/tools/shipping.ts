@@ -28,7 +28,7 @@ async function checkPackage(payload: { packageid: string }): Promise<Document> {
 
   return createDocument(
     stringify(response),
-    `Package ${payload.packageid} status. Use shipping__redirect to reroute if needed.`,
+    `Package ${payload.packageid} status.\nNote: Reroute the package if the current destination is incorrect.`,
     HUB_DOC_META,
     getSessionId(),
   );

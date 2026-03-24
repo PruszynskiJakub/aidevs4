@@ -31,7 +31,7 @@ function assertWritesInSessionDir(command: string, cwd: string): void {
     if (!resolved.startsWith(cwd + "/") && resolved !== cwd) {
       throw new Error(
         `Write target "${target}" resolves to "${resolved}" which is outside the session output directory "${cwd}". ` +
-          `Use the filesystem tool or files service to write elsewhere.`,
+          `Redirect output to a path within the session directory.`,
       );
     }
   }

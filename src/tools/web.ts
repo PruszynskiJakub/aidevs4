@@ -65,7 +65,7 @@ async function download(payload: { url: string; filename: string }): Promise<Doc
   // Use session-relative path to save tokens in LLM context.
   // bash cwd is already the session output dir, so relative paths work directly.
   const relativePath = sessionService.toSessionPath(path);
-  const text = `File saved to ${relativePath}. Inspect with bash: head -20 ${relativePath}`;
+  const text = `File saved to ${relativePath}.\nNote: Verify contents or process the file further.`;
 
   return createDocument(text, `Web download from ${payload.url}`, {
     source: path,

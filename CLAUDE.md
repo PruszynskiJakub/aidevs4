@@ -125,6 +125,11 @@ The agent's toolbox grows with each completed task.
 - **Output files**: Use `ensureOutputDir()` + `outputPath(filename)` from
   `src/utils/output.ts` for any tool-generated files.
 - **Errors**: Throw `Error` — dispatcher catches and returns `{ error: message }`.
+- **Response hints**: Tool results should hint at what can be done next with
+  the result, but **never reference other tools by name** — describe the
+  capability or goal instead. Format hints on a new line starting with
+  `Note: …`. This keeps tools decoupled and reusable across different agent
+  configurations.
 
 ## Playground
 

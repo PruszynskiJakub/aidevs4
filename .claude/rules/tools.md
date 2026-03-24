@@ -78,11 +78,19 @@ Return structured responses:
 { status: "ok"|"error", data: {…}, hints?: string[] }
 ```
 
-- **Success hints**: tell the model what to do next
-  (`"File saved to X. Use fs_read to verify."`)
+- **Success hints**: tell the model what it can do next with the result,
+  describing the **capability or goal**, not a specific tool name.
+  Format as a separate line: `\nNote: <hint>`.
+  Good: `"File saved to X.\nNote: Verify contents or process further."`
+  Bad:  `"File saved to X. Use fs_read to verify."` (couples to a tool)
 - **Actionable errors**: answer what happened, why, and what to do now.
-  Point to prerequisite tools when relevant
-  (`"team_id required. Fetch it via workspace_metadata."`)
+  Describe what information is missing, not which tool provides it.
+  Good: `"team_id required. Fetch the workspace metadata first."`
+  Bad:  `"team_id required. Call workspace_metadata to get it."` (couples to a tool)
+- **No tool-to-tool coupling**: hints must never reference other tools by
+  name. The agent decides which tool to use — the tool just describes what
+  is possible or needed. This keeps tools reusable across different agent
+  configurations and toolsets.
 - **Minimal payloads**: only fields needed for the next step. For large
   results, write to file and return the path.
 - **File-based context passing**: tool A writes to file, tool B reads from

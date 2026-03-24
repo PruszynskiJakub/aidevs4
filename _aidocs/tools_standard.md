@@ -273,11 +273,18 @@ Every tool response should follow:
 
 ### 5.2 Hints on Success
 
-Don't just return data — tell the model what to do with it:
+Don't just return data — tell the model what it can do next with the result.
+**Describe the capability or goal, never reference another tool by name.**
+The agent decides which tool to use; the tool just describes what is possible.
 
-- `"File saved to output/report.csv. Use fs_read to verify contents."`
-- `"3 results found. If none match, try broadening the search query."`
-- `"Task created. The ID is T-42 — use it for follow-up actions."`
+Format hints on a new line starting with `Note: …`:
+
+- `"File saved to output/report.csv.\nNote: Verify contents or process further."`
+- `"3 results found.\nNote: If none match, try broadening the search query."`
+- `"Task created. The ID is T-42.\nNote: Use this ID for follow-up actions."`
+
+This keeps tools decoupled — they stay reusable across different agent
+configurations and toolsets.
 
 ### 5.3 Actionable Errors
 
@@ -287,8 +294,9 @@ Errors must answer three questions:
 2. **Why?** → `"Allowed values are: pending, in_progress, completed."`
 3. **What now?** → `"Hint: did you mean 'completed'? Retry with corrected value."`
 
-If the error relates to a missing prerequisite, point to the tool that provides
-it: `"team_id is required. Hint: fetch it using the 'workspace_metadata' action."`
+If the error relates to a missing prerequisite, describe what information is
+needed — not which tool provides it:
+`"team_id is required. Fetch the workspace metadata first."`
 
 ### 5.4 Minimal Payloads
 
