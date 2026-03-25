@@ -1,9 +1,9 @@
 {
   "name": "web",
-  "description": "Interact with the web: download files from allowlisted hosts or scrape page content from any URL. Use when a task requires fetching remote data or reading web pages.",
+  "description": "Interact with the web: download data files from allowlisted hosts or scrape readable text from any web page. For HTML pages, prefer scrape — it returns clean text. Use download only for non-HTML files (JSON, CSV, images, ZIP, etc.).",
   "actions": {
     "download": {
-      "description": "Download a file from a URL and save to the session output directory. Supports {{placeholder}} template variables from environment (available: hub_api_key). Returns the saved file path and size. After downloading, inspect content with bash (head, jq) or document_processor for images.",
+      "description": "Download a non-HTML data file (JSON, CSV, images, audio, ZIP, etc.) from an allowlisted URL and save to disk. Do NOT use for HTML web pages — use scrape instead to get readable text. Supports {{placeholder}} template variables (available: hub_api_key). Returns the saved file path and size.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -15,7 +15,7 @@
       }
     },
     "scrape": {
-      "description": "Extract text content from one or more web pages. Accepts an array of URLs, scrapes them in parallel, and returns page content for each. Each URL is independent — one failure won't affect others. Use when you need to read or analyze web page content.",
+      "description": "Read web pages by extracting their text content. This is the default choice for any HTML URL — returns clean, readable text without HTML tags. Accepts an array of URLs, scrapes them in parallel. Each URL is independent — one failure won't affect others. Works with any URL (no host restriction).",
       "parameters": {
         "type": "object",
         "properties": {
