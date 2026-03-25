@@ -1,5 +1,6 @@
 import type { Document, DocumentMetadata } from "../../types/document.ts";
 import { escapeXml } from "../../utils/xml.ts";
+import { estimateTokens } from "../../utils/tokens.ts";
 
 // ── Document factory functions ──────────────────────────────────
 
@@ -18,7 +19,7 @@ export function createDocument(
     metadata: {
       source: meta.source,
       sessionUuid: sessionId,
-      tokens: Math.ceil(text.length / 4),
+      tokens: estimateTokens(text),
       type: meta.type,
       mimeType: meta.mimeType,
     },

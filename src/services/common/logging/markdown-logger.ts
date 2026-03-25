@@ -172,4 +172,16 @@ export class MarkdownLogger implements Logger {
   debug(message: string): void {
     this.append(`*Debug: ${message}*\n\n`);
   }
+
+  memoryObserve(tokensBefore: number, tokensAfter: number): void {
+    this.append(
+      `**Memory — Observe:** ${tokensBefore} → ${tokensAfter} tokens (observations)\n\n`,
+    );
+  }
+
+  memoryReflect(level: number, tokensBefore: number, tokensAfter: number): void {
+    this.append(
+      `**Memory — Reflect (level ${level}):** ${tokensBefore} → ${tokensAfter} tokens\n\n`,
+    );
+  }
 }

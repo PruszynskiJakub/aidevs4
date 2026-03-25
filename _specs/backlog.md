@@ -4,7 +4,6 @@
 ----
 ### Brain dump
 Support tool_search capability
-Verify przyjmujący nie tylko pliki bo jest to kłopotliwe w obecnej formie
 
 
 ---
@@ -17,3 +16,9 @@ Agent ma problem z obsługą tego
 system wieloagentowy - odpalający agentów
 logi są per agent + głowny log orkiestratora
 operational memory
+
+eventowanie aplikacji streaming
+dodanie langfuse
+
+nie mam pojecia ile tokeów lata
+

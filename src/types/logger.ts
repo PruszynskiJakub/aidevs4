@@ -18,6 +18,8 @@ export interface AgentLogger {
   batchDone(count: number, elapsed: string): void;
   answer(text: string | null): void;
   maxIter(max: number): void;
+  memoryObserve(tokensBefore: number, tokensAfter: number): void;
+  memoryReflect(level: number, tokensBefore: number, tokensAfter: number): void;
 }
 
 export interface Logger extends GeneralLogger, AgentLogger {}

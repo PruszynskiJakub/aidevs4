@@ -2,6 +2,8 @@ import type { LLMProvider, LLMMessage, LLMChatResponse, LLMToolCall } from "./ty
 import type { Logger } from "./types/logger.ts";
 import type { PromptResult } from "./services/ai/prompt.ts";
 import type { AgentState } from "./types/agent-state.ts";
+import type { MemoryState } from "./types/memory.ts";
+import { emptyMemoryState } from "./types/memory.ts";
 import { llm as defaultLLM } from "./services/ai/llm.ts";
 import { config } from "./config/index.ts";
 import { getTools, dispatch } from "./tools/index.ts";
@@ -13,6 +15,8 @@ import { ConsoleLogger } from "./services/common/logging/console-logger.ts";
 import { createCompositeLogger } from "./services/common/logging/composite-logger.ts";
 import { runWithContext, requireState, requireLogger } from "./utils/session-context.ts";
 import { createErrorDocument, formatDocumentsXml } from "./services/common/document-store.ts";
+import { processMemory, flushMemory } from "./services/memory/processor.ts";
+import { saveState, loadState } from "./services/memory/persistence.ts";
 
 function createLogger(
   userPrompt: string | unknown,
@@ -170,7 +174,13 @@ export async function runAgent(
   const inputLength = state.messages.length;
 
   return runWithContext(state, log, async () => {
+    let memoryState: MemoryState = emptyMemoryState();
+
     try {
+      // Load persisted memory state if resuming a session
+      const persisted = await loadState(state.sessionId);
+      if (persisted) memoryState = persisted;
+
       // Resolve assistant config, tools, and prompts
       const [resolved, planPrompt] = await Promise.all([
         assistantResolverService.resolve(state.assistant),
@@ -191,10 +201,36 @@ export async function runAgent(
         state.iteration = i;
         log.step(i + 1, config.limits.maxIterations, state.model, state.messages.length);
 
+        // Process memory — compress old messages into observations if needed
+        const { context, state: updatedMemory } = await processMemory(
+          actSystemPrompt,
+          state.messages,
+          memoryState,
+          provider,
+          log,
+          state.sessionId,
+        );
+        memoryState = updatedMemory;
+
+        // Use processed messages for LLM calls (observations baked into system prompt)
+        const originalMessages = state.messages;
+        state.messages = context.messages;
+
         const planText = await executePlanPhase(planPrompt, provider);
-        const response = await executeActPhase(planText, actSystemPrompt, provider);
+        const response = await executeActPhase(planText, context.systemPrompt, provider);
+
+        // Restore full message history (act phase already appended the assistant message to state.messages)
+        // We need to merge: keep original observed messages + new tail messages + newly appended messages
+        const newMessages = state.messages.slice(context.messages.length);
+        state.messages = [...originalMessages, ...newMessages];
+
+        // Persist memory state after each iteration
+        await saveState(state.sessionId, memoryState);
 
         if (response.finishReason === "stop" || !response.toolCalls.length) {
+          // Flush remaining unprocessed messages
+          memoryState = await flushMemory(state.messages, memoryState, provider, log, state.sessionId);
+          await saveState(state.sessionId, memoryState);
           log.answer(response.content);
           return { answer: response.content ?? "", messages: state.messages.slice(inputLength) };
         }
@@ -202,6 +238,10 @@ export async function runAgent(
         const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
         await dispatchTools(functionCalls);
       }
+
+      // Flush memory on max iterations too
+      memoryState = await flushMemory(state.messages, memoryState, provider, log, state.sessionId);
+      await saveState(state.sessionId, memoryState);
 
       log.maxIter(config.limits.maxIterations);
       return { answer: "", messages: state.messages.slice(inputLength) };

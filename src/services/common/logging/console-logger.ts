@@ -180,4 +180,12 @@ export class ConsoleLogger implements Logger {
     if (!this.isEnabled("debug")) return;
     console.log(`  ${DIM}${message}${RESET}`);
   }
+
+  memoryObserve(tokensBefore: number, tokensAfter: number): void {
+    console.log(`  ${CYAN}🧠${RESET} Memory observe: ${tokensBefore} → ${tokensAfter} observation tokens`);
+  }
+
+  memoryReflect(level: number, tokensBefore: number, tokensAfter: number): void {
+    console.log(`  ${CYAN}🧠${RESET} Memory reflect (level ${level}): ${tokensBefore} → ${tokensAfter} tokens`);
+  }
 }
