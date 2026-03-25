@@ -63,7 +63,7 @@ app.post("/chat", async (c) => {
     return c.json({ msg: answer });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const isClientError = message.includes("Unknown assistant");
+    const isClientError = message.includes("Unknown agent");
     if (isClientError) {
       return c.json({ error: message }, 400);
     }

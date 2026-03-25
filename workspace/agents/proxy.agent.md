@@ -2,9 +2,8 @@
 name: proxy
 model: gpt-4.1
 tools:
-  include:
-    - shipping
-    - think
+  - shipping
+  - think
 capabilities:
   - conversational
   - identity simulation

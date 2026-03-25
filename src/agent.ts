@@ -8,7 +8,7 @@ import { llm as defaultLLM } from "./services/ai/llm.ts";
 import { config } from "./config/index.ts";
 import { getTools, dispatch } from "./tools/index.ts";
 import { promptService } from "./services/ai/prompt.ts";
-import { assistantResolverService } from "./services/agent/assistant/assistant-resolver.ts";
+import { agentsService } from "./services/agent/agents/agents.ts";
 import { elapsed } from "./utils/timing.ts";
 import { MarkdownLogger } from "./services/common/logging/markdown-logger.ts";
 import { ConsoleLogger } from "./services/common/logging/console-logger.ts";
@@ -181,9 +181,9 @@ export async function runAgent(
       const persisted = await loadState(state.sessionId);
       if (persisted) memoryState = persisted;
 
-      // Resolve assistant config, tools, and prompts
+      // Resolve agent config, tools, and prompts
       const [resolved, planPrompt] = await Promise.all([
-        assistantResolverService.resolve(state.assistant),
+        agentsService.resolve(state.assistant),
         promptService.load("plan"),
       ]);
 

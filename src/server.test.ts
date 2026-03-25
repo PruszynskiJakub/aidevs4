@@ -88,7 +88,7 @@ describe("POST /chat", () => {
     });
     expect(res.status).toBe(400);
     const json = await res.json();
-    expect(json.error).toContain("Unknown assistant");
+    expect(json.error).toContain("Unknown agent");
     expect(json.error).toContain("nonexistent");
     expect(json.error).toContain("default");
   });

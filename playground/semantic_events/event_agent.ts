@@ -3,7 +3,7 @@ import { llm } from "../../src/services/ai/llm.ts";
 import { config } from "../../src/config/index.ts";
 import { getTools, dispatch } from "../../src/tools/index.ts";
 import { promptService } from "../../src/services/ai/prompt.ts";
-import { assistantsService as assistants } from "../../src/services/agent/assistant/assistants.ts";
+import { agentsService as agents } from "../../src/services/agent/agents/agents.ts";
 import { AgentEventEmitter } from "./event_emitter.ts";
 import { makeEventId, parsePlanSteps } from "./types.ts";
 import type { AgentEvent } from "./types.ts";

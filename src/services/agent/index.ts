@@ -9,4 +9,4 @@ export {
   getSessionId,
   requireSessionId,
 } from "../../utils/session-context.ts";
-export * from "./assistant/index.ts";
+export * from "./agents/index.ts";

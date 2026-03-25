@@ -1,6 +1,6 @@
 import { runAgent } from "../../agent.ts";
 import { sessionService } from "./session.ts";
-import { assistantsService } from "./assistant/assistants.ts";
+import { agentsService } from "./agents/agents.ts";
 import { log } from "../common/logging/logger.ts";
 import { moderateInput, assertNotFlagged } from "../common/guard.ts";
 import { randomSessionId } from "../../utils/id.ts";
@@ -41,8 +41,8 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
   const session = sessionService.getOrCreate(sessionId);
   const assistantName = pickAssistantName(session, sessionId, opts.assistant);
 
-  // Validate assistant exists before proceeding (throws "Unknown assistant" if not found)
-  await assistantsService.get(assistantName);
+  // Validate agent exists before proceeding (throws "Unknown agent" if not found)
+  await agentsService.get(assistantName);
 
   // Moderation guardrail — check user input before it enters the session
   const moderation = await moderateInput(opts.prompt);

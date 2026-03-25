@@ -1,12 +1,7 @@
-import type { ToolFilter } from "./tool.ts";
-
 export interface AgentConfig {
   name: string;
   model: string;
   prompt: string;
-  tools?: ToolFilter;
+  tools?: string[];
   capabilities?: string[];
 }
-
-/** @deprecated Use AgentConfig instead */
-export type AssistantConfig = AgentConfig;
