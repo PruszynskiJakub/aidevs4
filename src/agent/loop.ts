@@ -172,19 +172,25 @@ export async function runAgent(
   const inputLength = state.messages.length;
 
   return runWithContext(state, log, async () => {
+    let lastSavedJson = "";
+
+    async function saveIfChanged(): Promise<void> {
+      const json = JSON.stringify(state.memory);
+      if (json === lastSavedJson) return;
+      await saveState(state.sessionId, state.memory);
+      lastSavedJson = json;
+    }
+
     try {
-      // Resolve agent config, tools, and prompts
       const [resolved, planPrompt] = await Promise.all([
         agentsService.resolve(state.assistant),
         promptService.load("plan"),
       ]);
 
-      // Set model from assistant if not overridden
       if (!state.model) {
         state.model = resolved.model;
       }
 
-      // Populate tools from registry (filtered by assistant config)
       state.tools = await getTools(resolved.toolFilter);
 
       const actSystemPrompt = resolved.prompt;
@@ -193,7 +199,6 @@ export async function runAgent(
         state.iteration = i;
         log.step(i + 1, config.limits.maxIterations, state.model, state.messages.length);
 
-        // Process memory — compress old messages into observations if needed
         const { context, state: updatedMemory } = await processMemory(
           actSystemPrompt,
           state.messages,
@@ -204,25 +209,20 @@ export async function runAgent(
         );
         state.memory = updatedMemory;
 
-        // Use processed messages for LLM calls (observations baked into system prompt)
         const originalMessages = state.messages;
         state.messages = context.messages;
 
         const planText = await executePlanPhase(planPrompt, provider);
         const response = await executeActPhase(planText, context.systemPrompt, provider);
 
-        // Restore full message history (act phase already appended the assistant message to state.messages)
-        // We need to merge: keep original observed messages + new tail messages + newly appended messages
         const newMessages = state.messages.slice(context.messages.length);
-        state.messages = [...originalMessages, ...newMessages];
+        state.messages = originalMessages.concat(newMessages);
 
-        // Persist memory state after each iteration
-        await saveState(state.sessionId, state.memory);
+        await saveIfChanged();
 
         if (response.finishReason === "stop" || !response.toolCalls.length) {
-          // Flush remaining unprocessed messages
           state.memory = await flushMemory(state.messages, state.memory, provider, log, state.sessionId);
-          await saveState(state.sessionId, state.memory);
+          await saveIfChanged();
           log.answer(response.content);
           return { answer: response.content ?? "", messages: state.messages.slice(inputLength) };
         }
@@ -231,9 +231,8 @@ export async function runAgent(
         await dispatchTools(functionCalls);
       }
 
-      // Flush memory on max iterations too
       state.memory = await flushMemory(state.messages, state.memory, provider, log, state.sessionId);
-      await saveState(state.sessionId, state.memory);
+      await saveIfChanged();
 
       log.maxIter(config.limits.maxIterations);
       return { answer: "", messages: state.messages.slice(inputLength) };

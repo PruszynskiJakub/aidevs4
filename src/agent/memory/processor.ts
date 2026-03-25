@@ -17,6 +17,25 @@ function appendObservationsToPrompt(
   return systemPrompt + OBSERVATION_HEADER + observations;
 }
 
+function combineObservations(existing: string, added: string): string {
+  if (!added) return existing;
+  return existing ? existing + "\n\n" + added : added;
+}
+
+function passThrough(
+  systemPrompt: string,
+  messages: LLMMessage[],
+  state: MemoryState,
+): { context: ProcessedContext; state: MemoryState } {
+  return {
+    context: {
+      systemPrompt: appendObservationsToPrompt(systemPrompt, state.activeObservations),
+      messages,
+    },
+    state,
+  };
+}
+
 export async function processMemory(
   systemPrompt: string,
   messages: LLMMessage[],
@@ -33,13 +52,7 @@ export async function processMemory(
 
   // Below threshold — pass through unchanged
   if (unobservedTokens < memConfig.observationThreshold) {
-    return {
-      context: {
-        systemPrompt: appendObservationsToPrompt(systemPrompt, state.activeObservations),
-        messages,
-      },
-      state,
-    };
+    return passThrough(systemPrompt, messages, state);
   }
 
   // Above threshold — split at tail budget, observe old messages
@@ -60,14 +73,7 @@ export async function processMemory(
   const tailMessages = messages.slice(splitIndex);
 
   if (messagesToObserve.length === 0) {
-    // All unobserved messages fit in the tail — nothing to observe
-    return {
-      context: {
-        systemPrompt: appendObservationsToPrompt(systemPrompt, state.activeObservations),
-        messages,
-      },
-      state,
-    };
+    return passThrough(systemPrompt, messages, state);
   }
 
   // Run observer
@@ -78,12 +84,7 @@ export async function processMemory(
     provider,
   );
 
-  let updatedObservations = state.activeObservations;
-  if (newObservations) {
-    updatedObservations = updatedObservations
-      ? updatedObservations + "\n\n" + newObservations
-      : newObservations;
-  }
+  const updatedObservations = combineObservations(state.activeObservations, newObservations);
 
   const observationTokens = estimateTokens(updatedObservations);
   log.memoryObserve(tokensBefore, observationTokens);
@@ -164,9 +165,7 @@ export async function flushMemory(
 
   if (!newObservations) return state;
 
-  const updatedObservations = state.activeObservations
-    ? state.activeObservations + "\n\n" + newObservations
-    : newObservations;
+  const updatedObservations = combineObservations(state.activeObservations, newObservations);
 
   const observationTokens = estimateTokens(updatedObservations);
   log.memoryObserve(tokensBefore, observationTokens);

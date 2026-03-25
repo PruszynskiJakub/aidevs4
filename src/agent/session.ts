@@ -1,9 +1,9 @@
-import { join, resolve } from "path";
-import { randomUUID } from "crypto";
+import { join, resolve } from "node:path";
 import type { LLMMessage } from "../types/llm.ts";
 import type { Session } from "../types/session.ts";
 import type { FileProvider } from "../types/file.ts";
 import { inferCategory } from "../utils/media-types.ts";
+import { randomSessionId } from "../utils/id.ts";
 import { getSessionId } from "./context.ts";
 import { files as defaultFiles } from "../infra/file.ts";
 import { config as defaultConfig } from "../config/index.ts";
@@ -46,6 +46,12 @@ function createSessionService(
       const prev = queues.get(sessionId) ?? Promise.resolve();
       const next = prev.then(fn, fn);
       queues.set(sessionId, next);
+      // Clean up queue entry once this promise settles to avoid unbounded growth
+      next.then(() => {
+        if (queues.get(sessionId) === next) queues.delete(sessionId);
+      }, () => {
+        if (queues.get(sessionId) === next) queues.delete(sessionId);
+      });
       return next;
     },
 
@@ -58,14 +64,14 @@ function createSessionService(
     getEffectiveSessionId(): string {
       const id = getSessionId();
       if (id) return id;
-      if (!fallbackSessionId) fallbackSessionId = randomUUID();
+      if (!fallbackSessionId) fallbackSessionId = randomSessionId();
       return fallbackSessionId;
     },
 
     async outputPath(filename: string): Promise<string> {
       const sessionId = this.getEffectiveSessionId();
       const type = inferCategory(filename);
-      const uuid = randomUUID();
+      const uuid = randomSessionId();
       const dir = join(outputDir, sessionId, type, uuid);
       await fileService.mkdir(dir);
       return join(dir, filename);

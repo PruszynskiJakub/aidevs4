@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { MemoryState } from "../../types/memory.ts";
 import { files } from "../../infra/file.ts";
 import { config } from "../../config/index.ts";
+import { safeParse } from "../../utils/parse.ts";
 
 const STATE_FILENAME = "memory-state.json";
 
@@ -24,7 +25,7 @@ export async function loadState(
   const path = join(sessionOutputDir(sessionId), STATE_FILENAME);
   if (!(await files.exists(path))) return null;
   const raw = await files.readText(path);
-  return JSON.parse(raw) as MemoryState;
+  return safeParse<MemoryState>(raw, "memory-state");
 }
 
 export async function saveDebugArtifact(
