@@ -28,6 +28,7 @@ export const config = deepFreeze({
     agent: "gpt-4.1",
     transform: "gpt-4.1-mini",
     gemini: "gemini-3-flash-preview",
+    memory: "gpt-4.1-mini",
   },
   hub: {
     baseUrl: HUB_BASE_URL,
@@ -50,6 +51,20 @@ export const config = deepFreeze({
   },
   server: {
     port: env.port,
+  },
+  memory: {
+    observationThreshold: 30_000,
+    reflectionThreshold: 40_000,
+    reflectionTarget: 20_000,
+    tailBudgetRatio: 0.3,
+    maxReflectionLevels: 3,
+    truncationLimits: {
+      message: 6_000,
+      toolPayload: 3_000,
+    },
+  },
+  moderation: {
+    enabled: true,
   },
   assistant: env.assistant,
 });

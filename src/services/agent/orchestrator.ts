@@ -2,6 +2,7 @@ import { runAgent } from "../../agent.ts";
 import { sessionService } from "./session.ts";
 import { assistantsService } from "./assistant/assistants.ts";
 import { log } from "../common/logging/logger.ts";
+import { moderateInput, assertNotFlagged } from "../common/guard.ts";
 import { randomSessionId } from "../../utils/id.ts";
 import type { LLMMessage } from "../../types/llm.ts";
 import type { AgentState } from "../../types/agent-state.ts";
@@ -42,6 +43,10 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
 
   // Validate assistant exists before proceeding (throws "Unknown assistant" if not found)
   await assistantsService.get(assistantName);
+
+  // Moderation guardrail — check user input before it enters the session
+  const moderation = await moderateInput(opts.prompt);
+  assertNotFlagged(moderation);
 
   if (!session.assistant) {
     session.assistant = assistantName;
