@@ -2,8 +2,6 @@ import type { LLMProvider, LLMMessage, LLMChatResponse, LLMToolCall } from "../t
 import type { Logger } from "../types/logger.ts";
 import type { PromptResult } from "../llm/prompt.ts";
 import type { AgentState } from "../types/agent-state.ts";
-import type { MemoryState } from "../types/memory.ts";
-import { emptyMemoryState } from "../types/memory.ts";
 import { llm as defaultLLM } from "../llm/llm.ts";
 import { config } from "../config/index.ts";
 import { getTools, dispatch } from "../tools/index.ts";
@@ -16,7 +14,7 @@ import { createCompositeLogger } from "../infra/log/composite.ts";
 import { runWithContext, requireState, requireLogger } from "./context.ts";
 import { createErrorDocument, formatDocumentsXml } from "../infra/document.ts";
 import { processMemory, flushMemory } from "./memory/processor.ts";
-import { saveState, loadState } from "./memory/persistence.ts";
+import { saveState } from "./memory/persistence.ts";
 
 function createLogger(
   userPrompt: string | unknown,
@@ -174,13 +172,7 @@ export async function runAgent(
   const inputLength = state.messages.length;
 
   return runWithContext(state, log, async () => {
-    let memoryState: MemoryState = emptyMemoryState();
-
     try {
-      // Load persisted memory state if resuming a session
-      const persisted = await loadState(state.sessionId);
-      if (persisted) memoryState = persisted;
-
       // Resolve agent config, tools, and prompts
       const [resolved, planPrompt] = await Promise.all([
         agentsService.resolve(state.assistant),
@@ -205,12 +197,12 @@ export async function runAgent(
         const { context, state: updatedMemory } = await processMemory(
           actSystemPrompt,
           state.messages,
-          memoryState,
+          state.memory,
           provider,
           log,
           state.sessionId,
         );
-        memoryState = updatedMemory;
+        state.memory = updatedMemory;
 
         // Use processed messages for LLM calls (observations baked into system prompt)
         const originalMessages = state.messages;
@@ -225,12 +217,12 @@ export async function runAgent(
         state.messages = [...originalMessages, ...newMessages];
 
         // Persist memory state after each iteration
-        await saveState(state.sessionId, memoryState);
+        await saveState(state.sessionId, state.memory);
 
         if (response.finishReason === "stop" || !response.toolCalls.length) {
           // Flush remaining unprocessed messages
-          memoryState = await flushMemory(state.messages, memoryState, provider, log, state.sessionId);
-          await saveState(state.sessionId, memoryState);
+          state.memory = await flushMemory(state.messages, state.memory, provider, log, state.sessionId);
+          await saveState(state.sessionId, state.memory);
           log.answer(response.content);
           return { answer: response.content ?? "", messages: state.messages.slice(inputLength) };
         }
@@ -240,8 +232,8 @@ export async function runAgent(
       }
 
       // Flush memory on max iterations too
-      memoryState = await flushMemory(state.messages, memoryState, provider, log, state.sessionId);
-      await saveState(state.sessionId, memoryState);
+      state.memory = await flushMemory(state.messages, state.memory, provider, log, state.sessionId);
+      await saveState(state.sessionId, state.memory);
 
       log.maxIter(config.limits.maxIterations);
       return { answer: "", messages: state.messages.slice(inputLength) };

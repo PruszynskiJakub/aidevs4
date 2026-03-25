@@ -7,6 +7,8 @@ import { randomSessionId } from "../utils/id.ts";
 import type { LLMMessage } from "../types/llm.ts";
 import type { AgentState } from "../types/agent-state.ts";
 import type { Session } from "../types/session.ts";
+import { emptyMemoryState } from "../types/memory.ts";
+import { loadState } from "./memory/persistence.ts";
 
 interface ExecuteTurnOpts {
   sessionId?: string;
@@ -56,6 +58,8 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
 
   const messages: LLMMessage[] = [...session.messages];
 
+  const persisted = await loadState(sessionId);
+
   const state: AgentState = {
     sessionId,
     messages,
@@ -67,6 +71,7 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
     assistant: assistantName,
     model: opts.model ?? "",
     tools: [],
+    memory: persisted ?? emptyMemoryState(),
   };
 
   const result = await runAgent(state);

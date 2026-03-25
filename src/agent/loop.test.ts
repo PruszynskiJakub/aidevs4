@@ -1,6 +1,7 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import type { LLMProvider, LLMChatResponse, LLMMessage, ChatCompletionParams } from "../types/llm.ts";
 import type { AgentState } from "../types/agent-state.ts";
+import { emptyMemoryState } from "../types/memory.ts";
 
 // Use real prompt/assistant services. Tests check loop behavior, not model names.
 
@@ -48,6 +49,7 @@ function makeState(prompt: string, overrides?: Partial<AgentState>): AgentState 
     assistant: "default",
     model: "gpt-4.1",
     tools: [],
+    memory: emptyMemoryState(),
     ...overrides,
   };
 }

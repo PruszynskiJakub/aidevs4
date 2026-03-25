@@ -1,4 +1,5 @@
 import type { LLMMessage, LLMTool } from "./llm.ts";
+import type { MemoryState } from "./memory.ts";
 
 export interface TokenUsage {
   promptTokens: number;
@@ -13,4 +14,5 @@ export interface AgentState {
   assistant: string;
   model: string;
   tools: LLMTool[];
+  memory: MemoryState;
 }

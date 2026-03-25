@@ -10,6 +10,7 @@ import {
 } from "./context.ts";
 import type { AgentState } from "../types/agent-state.ts";
 import type { Logger } from "../types/logger.ts";
+import { emptyMemoryState } from "../types/memory.ts";
 
 const noopLogger = new Proxy({} as Logger, { get: () => () => {} });
 
@@ -22,6 +23,10 @@ function makeState(sessionId: string): AgentState {
       act: { promptTokens: 0, completionTokens: 0 },
     },
     iteration: 0,
+    assistant: "default",
+    model: "",
+    tools: [],
+    memory: emptyMemoryState(),
   };
 }
 
