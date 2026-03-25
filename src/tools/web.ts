@@ -7,6 +7,7 @@ import { safeFilename, assertMaxLength } from "../utils/parse.ts";
 import { createDocument } from "../infra/document.ts";
 import { getSessionId } from "../agent/context.ts";
 import { inferCategory, inferMimeType } from "../utils/media-types.ts";
+import { condense } from "../infra/condense.ts";
 
 const MAX_URL_LENGTH = 2048;
 
@@ -89,7 +90,13 @@ async function scrapeSingle(url: string): Promise<Document> {
   }
 
   const data = await response.json();
-  const text = data.text ?? data.content ?? data.markdown ?? JSON.stringify(data);
+  const rawText = data.text ?? data.content ?? data.markdown ?? JSON.stringify(data);
+
+  const { text } = await condense({
+    content: rawText,
+    intent: `Web scrape of ${url}`,
+    filename: `scrape-${new URL(url).hostname}.txt`,
+  });
 
   return createDocument(
     text,
