@@ -50,11 +50,7 @@ export async function runEventAgent(
 
   try {
     const assistant = await assistants.get("default");
-    const act = await promptService.load("act", {
-      objective: assistant.objective,
-      tone: assistant.tone,
-    });
-    const actModel = assistant.model ?? act.model!;
+    const actModel = assistant.model;
 
     const planPrompt = await promptService.load("plan");
     const planModel = planPrompt.model!;
@@ -62,7 +58,7 @@ export async function runEventAgent(
     const tools = await getTools();
 
     const messages: LLMMessage[] = [
-      { role: "system", content: act.content },
+      { role: "system", content: assistant.prompt },
       { role: "user", content: prompt },
     ];
 

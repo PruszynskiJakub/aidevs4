@@ -1,5 +1,4 @@
 import { assistantsService } from "./assistants.ts";
-import { promptService } from "../../ai/prompt.ts";
 import type { ToolFilter } from "../../../types/tool.ts";
 
 interface ResolvedAssistant {
@@ -16,16 +15,12 @@ export function createAssistantResolverService() {
       const cached = promptCache.get(name);
       if (cached) return cached;
 
-      const assistant = await assistantsService.get(name);
-      const actPrompt = await promptService.load("act", {
-        objective: assistant.objective,
-        tone: assistant.tone,
-      });
+      const agent = await assistantsService.get(name);
 
       const resolved: ResolvedAssistant = {
-        prompt: actPrompt.content,
-        model: assistant.model ?? actPrompt.model!,
-        toolFilter: assistant.tools,
+        prompt: agent.prompt,
+        model: agent.model,
+        toolFilter: agent.tools,
       };
 
       promptCache.set(name, resolved);

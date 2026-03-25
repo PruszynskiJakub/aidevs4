@@ -1,40 +1,34 @@
-import { parse } from "yaml";
 import { resolve, basename } from "path";
-import type { AssistantConfig } from "../../../types/assistant.ts";
+import matter from "gray-matter";
+import type { AgentConfig } from "../../../types/assistant.ts";
 import type { ToolFilter } from "../../../types/tool.ts";
 import { files } from "../../common/file.ts";
 
-const ASSISTANTS_DIR = resolve(import.meta.dir, "../../../assistants");
+const AGENTS_DIR = resolve(import.meta.dir, "../../../../workspace/agents");
 
-function validate(raw: unknown, filename: string): AssistantConfig {
-  if (typeof raw !== "object" || raw === null) {
-    throw new Error(`Invalid assistant file "${filename}": must be a YAML object`);
-  }
-
-  const obj = raw as Record<string, unknown>;
-
-  for (const field of ["name", "objective", "tone"] as const) {
-    if (typeof obj[field] !== "string" || (obj[field] as string).trim() === "") {
+function validate(data: Record<string, unknown>, body: string, filename: string): AgentConfig {
+  for (const field of ["name", "model"] as const) {
+    if (typeof data[field] !== "string" || (data[field] as string).trim() === "") {
       throw new Error(
-        `Invalid assistant "${filename}": missing required field "${field}"`,
+        `Invalid agent "${filename}": missing required field "${field}"`,
       );
     }
   }
 
-  if (obj.model !== undefined && typeof obj.model !== "string") {
-    throw new Error(`Invalid assistant "${filename}": "model" must be a string`);
+  if (!body.trim()) {
+    throw new Error(`Invalid agent "${filename}": markdown body (system prompt) is empty`);
   }
 
-  if (obj.tools !== undefined) {
-    if (typeof obj.tools !== "object" || obj.tools === null) {
-      throw new Error(`Invalid assistant "${filename}": "tools" must be an object`);
+  if (data.tools !== undefined) {
+    if (typeof data.tools !== "object" || data.tools === null) {
+      throw new Error(`Invalid agent "${filename}": "tools" must be an object`);
     }
 
-    const tools = obj.tools as Record<string, unknown>;
+    const tools = data.tools as Record<string, unknown>;
 
     if (tools.include !== undefined && tools.exclude !== undefined) {
       throw new Error(
-        `Invalid assistant "${filename}": "tools" cannot have both "include" and "exclude"`,
+        `Invalid agent "${filename}": "tools" cannot have both "include" and "exclude"`,
       );
     }
 
@@ -42,13 +36,13 @@ function validate(raw: unknown, filename: string): AssistantConfig {
       if (tools[key] !== undefined) {
         if (!Array.isArray(tools[key])) {
           throw new Error(
-            `Invalid assistant "${filename}": "tools.${key}" must be an array`,
+            `Invalid agent "${filename}": "tools.${key}" must be an array`,
           );
         }
         for (const item of tools[key] as unknown[]) {
           if (typeof item !== "string") {
             throw new Error(
-              `Invalid assistant "${filename}": "tools.${key}" items must be strings`,
+              `Invalid agent "${filename}": "tools.${key}" items must be strings`,
             );
           }
         }
@@ -56,40 +50,51 @@ function validate(raw: unknown, filename: string): AssistantConfig {
     }
   }
 
+  if (data.capabilities !== undefined) {
+    if (!Array.isArray(data.capabilities)) {
+      throw new Error(`Invalid agent "${filename}": "capabilities" must be an array`);
+    }
+    for (const item of data.capabilities as unknown[]) {
+      if (typeof item !== "string") {
+        throw new Error(`Invalid agent "${filename}": "capabilities" items must be strings`);
+      }
+    }
+  }
+
   return {
-    name: (obj.name as string).trim(),
-    objective: (obj.objective as string).trim(),
-    tone: (obj.tone as string).trim(),
-    ...(obj.model !== undefined && { model: obj.model as string }),
-    ...(obj.tools !== undefined && { tools: obj.tools as ToolFilter }),
+    name: (data.name as string).trim(),
+    model: (data.model as string).trim(),
+    prompt: body.trim(),
+    ...(data.tools !== undefined && { tools: data.tools as ToolFilter }),
+    ...(data.capabilities !== undefined && { capabilities: data.capabilities as string[] }),
   };
 }
 
-async function loadAll(): Promise<Map<string, AssistantConfig>> {
-  const glob = new Bun.Glob("*.yaml");
-  const map = new Map<string, AssistantConfig>();
+async function loadAll(): Promise<Map<string, AgentConfig>> {
+  const glob = new Bun.Glob("*.md");
+  const map = new Map<string, AgentConfig>();
 
-  for await (const path of glob.scan({ cwd: ASSISTANTS_DIR })) {
-    const fullPath = resolve(ASSISTANTS_DIR, path);
-    const text = await files.readText(fullPath);
-    const raw = parse(text);
-    const key = basename(path, ".yaml");
-    const config = validate(raw, path);
+  for await (const path of glob.scan({ cwd: AGENTS_DIR })) {
+    const fullPath = resolve(AGENTS_DIR, path);
+    const raw = await files.readText(fullPath);
+    const { data, content } = matter(raw);
+    const key = basename(path, ".md");
+    const config = validate(data as Record<string, unknown>, content, path);
     map.set(key, config);
   }
 
   if (map.size === 0) {
-    throw new Error(`No assistant files found in ${ASSISTANTS_DIR}`);
+    throw new Error(`No agent files found in ${AGENTS_DIR}`);
   }
 
   return map;
 }
 
 export function createAssistantsService() {
-  let cache: Map<string, AssistantConfig> | null = null;
+  let cache: Map<string, AgentConfig> | null = null;
 
   return {
-    async get(name: string): Promise<AssistantConfig> {
+    async get(name: string): Promise<AgentConfig> {
       if (!cache) {
         cache = await loadAll();
       }
