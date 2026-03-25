@@ -8,6 +8,7 @@ import { createDocument } from "../infra/document.ts";
 import { getSessionId } from "../agent/context.ts";
 import { inferCategory, inferMimeType } from "../utils/media-types.ts";
 import { condense } from "../infra/condense.ts";
+import { scrapeUrl } from "../infra/serper.ts";
 
 const MAX_URL_LENGTH = 2048;
 
@@ -70,30 +71,10 @@ function validateUrl(url: string): void {
 }
 
 async function scrapeSingle(url: string): Promise<Document> {
-  const apiKey = config.keys.serperApiKey;
-  if (!apiKey) {
-    throw new Error("SERPER_API_KEY is not configured");
-  }
-
-  const response = await fetch(config.urls.serperScrape, {
-    method: "POST",
-    headers: {
-      "X-API-KEY": apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ url }),
-    signal: AbortSignal.timeout(config.limits.fetchTimeout),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Scrape failed (${response.status}) for ${url.slice(0, 80)}`);
-  }
-
-  const data = await response.json();
-  const rawText = data.text ?? data.content ?? data.markdown ?? JSON.stringify(data);
+  const result = await scrapeUrl(url);
 
   const { text } = await condense({
-    content: rawText,
+    content: result.text,
     intent: `Web scrape of ${url}`,
     filename: `scrape-${new URL(url).hostname}.txt`,
   });
