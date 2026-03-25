@@ -1,10 +1,11 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
-import { llm } from "../services/ai/llm.ts";
-import { promptService } from "../services/ai/prompt.ts";
+import { llm } from "../llm/llm.ts";
+import { promptService } from "../llm/prompt.ts";
+import { config } from "../config/index.ts";
 import { assertMaxLength, safeParse } from "../utils/parse.ts";
-import { createDocument } from "../services/common/document-store.ts";
-import { getSessionId } from "../utils/session-context.ts";
+import { createDocument } from "../infra/document.ts";
+import { getSessionId } from "../agent/context.ts";
 
 const MAX_GOAL = 2_000;
 const MAX_CONSTRAINTS = 1_000;
@@ -56,7 +57,7 @@ async function promptEngineer(
   const userPrompt = parts.join("\n\n");
 
   const result = await llm.completion({
-    model: systemPrompt.model ?? "gpt-4.1",
+    model: systemPrompt.model ?? config.models.agent,
     systemPrompt: systemPrompt.content,
     userPrompt,
     ...(systemPrompt.temperature !== undefined && {

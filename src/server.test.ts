@@ -1,14 +1,20 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { sessionService } from "./services/agent/session.ts";
+import { sessionService } from "./agent/session.ts";
 
-// Mock runAgent before importing server
-mock.module("./agent.ts", () => ({
-  runAgent: async (_state: unknown) => {
-    // Return AgentResult — no mutation of input
-    return {
-      answer: "mock answer",
-      messages: [{ role: "assistant", content: "mock answer" }],
-    };
+// Mock the orchestrator — avoids polluting agent/loop.ts mock across test files
+const KNOWN_AGENTS = ["default", "proxy"];
+mock.module("./agent/orchestrator.ts", () => ({
+  executeTurn: async (opts: { prompt: string; sessionId?: string; assistant?: string }) => {
+    const sid = opts.sessionId ?? "auto";
+    const assistantName = opts.assistant ?? "default";
+    if (!KNOWN_AGENTS.includes(assistantName)) {
+      throw new Error(`Unknown agent "${assistantName}". Available: ${KNOWN_AGENTS.join(", ")}`);
+    }
+    const session = sessionService.getOrCreate(sid);
+    if (!session.assistant) session.assistant = assistantName;
+    sessionService.appendMessage(sid, { role: "user", content: opts.prompt });
+    sessionService.appendMessage(sid, { role: "assistant", content: "mock answer" });
+    return { answer: "mock answer", sessionId: sid };
   },
 }));
 

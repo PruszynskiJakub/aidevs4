@@ -1,11 +1,11 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
-import { files } from "../services/common/file.ts";
+import { files } from "../infra/file.ts";
 import { config } from "../config/index.ts";
 import { safeParse, validateKeys, assertMaxLength } from "../utils/parse.ts";
-import { createDocument } from "../services/common/document-store.ts";
+import { createDocument } from "../infra/document.ts";
 import { HUB_DOC_META, hubPost, stringify } from "../utils/hub-fetch.ts";
-import { getSessionId } from "../utils/session-context.ts";
+import { getSessionId } from "../agent/context.ts";
 
 async function verify(payload: { task: string; answer: string }): Promise<Document> {
   assertMaxLength(payload.task, "task", 100);

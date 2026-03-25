@@ -4,7 +4,7 @@ import type { Document } from "../types/document.ts";
 // Mock llm before importing the tool
 const completionMock = mock(() => Promise.resolve("The best approach is to call the API endpoint first."));
 
-mock.module("../services/ai/llm.ts", () => ({
+mock.module("../llm/llm.ts", () => ({
   llm: {
     completion: completionMock,
     chatCompletion: mock(),

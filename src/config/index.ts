@@ -40,6 +40,9 @@ export const config = deepFreeze({
     geminiApiKey: env.geminiApiKey,
     serperApiKey: env.serperApiKey,
   },
+  urls: {
+    serperScrape: "https://scrape.serper.dev",
+  },
   limits: {
     maxIterations: 40,
     fetchTimeout: 30_000,

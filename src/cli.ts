@@ -1,5 +1,5 @@
 import { config } from "./config/index.ts";
-import { executeTurn } from "./services/agent/orchestrator.ts";
+import { executeTurn } from "./agent/orchestrator.ts";
 
 function extractFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);

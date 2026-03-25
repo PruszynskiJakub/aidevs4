@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { sessionService } from "./services/agent/session.ts";
-import { executeTurn } from "./services/agent/orchestrator.ts";
-import { log } from "./services/common/logging/logger.ts";
+import { sessionService } from "./agent/session.ts";
+import { executeTurn } from "./agent/orchestrator.ts";
+import { log } from "./infra/log/logger.ts";
 import { config } from "./config/index.ts";
 
 interface ChatRequest {

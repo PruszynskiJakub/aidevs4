@@ -2,11 +2,11 @@ import { basename, extname } from "path";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import type { ContentPart } from "../types/llm.ts";
-import { files } from "../services/common/file.ts";
-import { llm } from "../services/ai/llm.ts";
+import { files } from "../infra/file.ts";
+import { llm } from "../llm/llm.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { createDocument, documentService } from "../services/common/document-store.ts";
-import { getSessionId } from "../utils/session-context.ts";
+import { createDocument, documentService } from "../infra/document.ts";
+import { getSessionId } from "../agent/context.ts";
 import { config } from "../config";
 import { IMAGE_EXTENSIONS, TEXT_EXTENSIONS, ALL_SUPPORTED_EXTENSIONS, inferMimeType } from "../utils/media-types.ts";
 

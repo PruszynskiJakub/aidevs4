@@ -1,7 +1,7 @@
 import type { LLMTool } from "../types/llm.ts";
 import type { ToolDefinition, ToolFilter } from "../types/tool.ts";
 import { safeParse } from "../utils/parse.ts";
-import { createErrorDocument, documentService, formatDocumentsXml } from "../services/common/document-store.ts";
+import { createErrorDocument, documentService, formatDocumentsXml } from "../infra/document.ts";
 
 const SEPARATOR = "__";
 

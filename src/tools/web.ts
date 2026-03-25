@@ -1,32 +1,14 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
-import { files } from "../services/common/file.ts";
-import { sessionService } from "../services/agent/session.ts";
+import { files } from "../infra/file.ts";
+import { sessionService } from "../agent/session.ts";
 import { config } from "../config";
 import { safeFilename, assertMaxLength } from "../utils/parse.ts";
-import { createDocument } from "../services/common/document-store.ts";
-import { getSessionId } from "../utils/session-context.ts";
+import { createDocument } from "../infra/document.ts";
+import { getSessionId } from "../agent/context.ts";
 import { inferCategory, inferMimeType } from "../utils/media-types.ts";
 
-const SERPER_SCRAPE_URL = "https://scrape.serper.dev";
 const MAX_URL_LENGTH = 2048;
-
-const PLACEHOLDER_RE = /\{\{(\w+)\}\}/g;
-
-const placeholderMap: Record<string, () => string> = {
-  hub_api_key: () => config.hub.apiKey,
-};
-
-function resolvePlaceholders(url: string): string {
-  return url.replace(PLACEHOLDER_RE, (_match, name: string) => {
-    const resolver = placeholderMap[name];
-    if (!resolver) {
-      const available = Object.keys(placeholderMap).join(", ");
-      throw new Error(`Unknown placeholder "{{${name}}}". Available: ${available}`);
-    }
-    return resolver();
-  });
-}
 
 function assertHostAllowed(hostname: string): void {
   const allowed = config.sandbox.webAllowedHosts.some((entry) => hostname.endsWith(entry));
@@ -42,7 +24,7 @@ async function download(payload: { url: string; filename: string }): Promise<Doc
   assertMaxLength(payload.filename, "filename", 255);
   safeFilename(payload.filename);
 
-  const resolvedUrl = resolvePlaceholders(payload.url);
+  const resolvedUrl = payload.url.replace("{{hub_api_key}}", config.hub.apiKey);
 
   let parsed: URL;
   try {
@@ -92,7 +74,7 @@ async function scrapeSingle(url: string): Promise<Document> {
     throw new Error("SERPER_API_KEY is not configured");
   }
 
-  const response = await fetch(SERPER_SCRAPE_URL, {
+  const response = await fetch(config.urls.serperScrape, {
     method: "POST",
     headers: {
       "X-API-KEY": apiKey,

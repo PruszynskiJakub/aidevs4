@@ -14,7 +14,7 @@ const mockChatCompletion = mock(
     }),
 );
 
-mock.module("../services/ai/llm.ts", () => ({
+mock.module("../llm/llm.ts", () => ({
   llm: {
     chatCompletion: mockChatCompletion,
     completion: mock(() => Promise.resolve("")),
@@ -23,7 +23,7 @@ mock.module("../services/ai/llm.ts", () => ({
 
 // Import after mocking
 const { default: documentProcessor } = await import("./document_processor.ts");
-const { documentService } = await import("../services/common/document-store.ts");
+const { documentService } = await import("../infra/document.ts");
 
 const handler = documentProcessor.handler;
 

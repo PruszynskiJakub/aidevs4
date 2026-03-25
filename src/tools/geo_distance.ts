@@ -1,10 +1,10 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
-import { files } from "../services/common/file.ts";
+import { files } from "../infra/file.ts";
 import { config } from "../config/index.ts";
 import { safeParse, assertMaxLength, assertNumericBounds } from "../utils/parse.ts";
-import { createDocument } from "../services/common/document-store.ts";
-import { getSessionId } from "../utils/session-context.ts";
+import { createDocument } from "../infra/document.ts";
+import { getSessionId } from "../agent/context.ts";
 
 const EARTH_RADIUS_KM = 6371;
 

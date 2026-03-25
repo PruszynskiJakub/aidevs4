@@ -50,7 +50,7 @@ Tools must be safe by construction — never rely on model behaviour.
 - **No general-purpose shell.** Prefer native APIs > fixed commands with
   validated args > command allowlist. Full `bash -c` is last resort and must:
   restrict cwd, reject dangerous chars, set `.timeout(30_000)`, cap output.
-- **File I/O**: always use `files` service (`src/services/file.ts`). Never
+- **File I/O**: always use `files` service (`src/infra/file.ts`). Never
   raw `fs`, `Bun.file()`, or `Bun.write()`.
 - **Network**: allowlisted hosts only. Never let model control full URL —
   construct from base URL + validated path. Always `AbortSignal.timeout(30_000)`.

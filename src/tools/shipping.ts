@@ -2,9 +2,9 @@ import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { createDocument } from "../services/common/document-store.ts";
+import { createDocument } from "../infra/document.ts";
 import { HUB_DOC_META, hubPost, stringify } from "../utils/hub-fetch.ts";
-import { getSessionId } from "../utils/session-context.ts";
+import { getSessionId } from "../agent/context.ts";
 
 const PACKAGEID_RE = /^[A-Za-z0-9]+$/;
 const PACKAGES_URL = `${config.hub.baseUrl}/api/packages`;

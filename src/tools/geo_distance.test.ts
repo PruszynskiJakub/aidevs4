@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 import type { Document } from "../types/document.ts";
 import geoDistance from "./geo_distance.ts";
 import { haversine } from "./geo_distance.ts";
-import { createBunFileService, _setFilesForTest } from "../services/common/file.ts";
+import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
 import { config } from "../config/index.ts";
 
 const handler = geoDistance.handler;

@@ -1,10 +1,11 @@
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
-import { llm } from "../services/ai/llm.ts";
-import { promptService } from "../services/ai/prompt.ts";
+import { llm } from "../llm/llm.ts";
+import { promptService } from "../llm/prompt.ts";
+import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { createDocument } from "../services/common/document-store.ts";
-import { getSessionId } from "../utils/session-context.ts";
+import { createDocument } from "../infra/document.ts";
+import { getSessionId } from "../agent/context.ts";
 
 async function think(args: Record<string, unknown>): Promise<Document> {
   const { thought } = args as { thought: string };
@@ -13,7 +14,7 @@ async function think(args: Record<string, unknown>): Promise<Document> {
   const prompt = await promptService.load("think");
 
   const result = await llm.completion({
-    model: prompt.model ?? "gpt-4.1",
+    model: prompt.model ?? config.models.agent,
     systemPrompt: prompt.content,
     userPrompt: `## Thought \n${thought}\n\n`,
     ...(prompt.temperature !== undefined && { temperature: prompt.temperature }),

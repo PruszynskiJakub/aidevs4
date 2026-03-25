@@ -7,18 +7,6 @@ export interface MemoryState {
   generationCount: number;
 }
 
-export interface MemoryConfig {
-  observationThreshold: number;
-  reflectionThreshold: number;
-  reflectionTarget: number;
-  tailBudgetRatio: number;
-  maxReflectionLevels: number;
-  truncationLimits: {
-    message: number;
-    toolPayload: number;
-  };
-}
-
 export interface ProcessedContext {
   systemPrompt: string;
   messages: LLMMessage[];

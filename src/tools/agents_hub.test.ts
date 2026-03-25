@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 import type { Document } from "../types/document.ts";
 import agentsHub from "./agents_hub.ts";
 import { config } from "../config/index.ts";
-import { createBunFileService, _setFilesForTest } from "../services/common/file.ts";
+import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
 
 const handler = agentsHub.handler;
 

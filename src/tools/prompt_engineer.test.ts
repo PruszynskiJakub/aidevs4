@@ -12,7 +12,7 @@ const mockCompletion = mock(() =>
   ),
 );
 
-mock.module("../services/ai/llm.ts", () => ({
+mock.module("../llm/llm.ts", () => ({
   llm: {
     completion: mockCompletion,
   },
@@ -20,7 +20,7 @@ mock.module("../services/ai/llm.ts", () => ({
 
 const { default: prompt_engineer } = await import("./prompt_engineer.ts");
 
-mock.module("../services/prompt.ts", () => ({
+mock.module("../llm/prompt.ts", () => ({
   promptService: {
     load: mock(() =>
       Promise.resolve({

@@ -26,23 +26,40 @@ The agent's toolbox grows with each completed task.
 ## Project Structure
 
 ```
-  ├── playground/<task_name>/       # Prototyping area — one dir per task        
+  ├── playground/<task_name>/       # Prototyping area — one dir per task
   │   ├── <task_name>.ts            # Standalone script
   │   └── output/                   # Generated artifacts (gitignored)
   ├── src/                          # Production agent system
-  │   ├── agent.ts                  # Agent loop (OpenAI chat + tool calling)
-  │   ├── config.ts                 # Constants (models, URLs, batch sizes)
-  │   ├── prompts/                   # Markdown prompt files (.md + YAML frontmatter)
-  │   │   └── system.md             # Agent system prompt
+  │   ├── agent/                    # The brain — loop, orchestration, session, memory
+  │   │   ├── loop.ts               # Plan/Act state machine
+  │   │   ├── orchestrator.ts       # executeTurn entry point
+  │   │   ├── session.ts            # Session store + output paths
+  │   │   ├── agents.ts             # Agent config loader (.agent.md)
+  │   │   ├── context.ts            # AsyncLocalStorage session context
+  │   │   └── memory/               # Observation, reflection, persistence
+  │   ├── llm/                      # Everything LLM: routing, providers, prompts
+  │   │   ├── llm.ts                # Provider registry singleton + factory
+  │   │   ├── router.ts             # Model→provider routing logic
+  │   │   ├── openai.ts             # OpenAI adapter
+  │   │   ├── gemini.ts             # Gemini adapter
+  │   │   └── prompt.ts             # Prompt loader (.md + YAML frontmatter)
+  │   ├── infra/                    # I/O, side effects, external world
+  │   │   ├── file.ts               # Sandboxed file service
+  │   │   ├── document.ts           # Document store + XML formatting
+  │   │   ├── guard.ts              # Input moderation (OpenAI Moderation API)
+  │   │   └── log/                  # Logging (console, markdown, composite)
   │   ├── tools/                    # Tool implementations (auto-registered)
   │   │   ├── registry.ts           # Tool registry and dispatch logic
   │   │   ├── index.ts              # Explicit tool + schema registration
   │   │   └── <tool_name>.ts        # Each exports default ToolDefinition
   │   ├── schemas/                  # OpenAI function calling schemas (JSON)
   │   │   └── <tool_name>.json      # Matched to tools by filename
-  │   ├── types/tool.ts             # ToolDefinition interface
-  │   ├── utils/                    # Shared helpers (csv, hub, llm, output)
-  │   └── output/                   # Agent output (gitignored)
+  │   ├── config/                   # Environment + path configuration
+  │   ├── types/                    # Shared TypeScript interfaces
+  │   ├── prompts/                  # Markdown prompt files (.md + YAML frontmatter)
+  │   ├── utils/                    # Pure helpers (parse, tokens, xml, id, timing)
+  │   ├── cli.ts                    # CLI entry point
+  │   └── server.ts                 # HTTP server (Hono)
   ├── _specs/                       # Task specifications & backlog
   ├── .env                          # API keys (gitignored)
   └── index.ts                      # Entry point (placeholder)
@@ -93,7 +110,7 @@ The agent's toolbox grows with each completed task.
   ```
 - **Placeholders**: Use `{{variable_name}}` — rendered by `promptService.load()`.
   Missing variables throw; extra variables are silently ignored.
-- **Service**: `promptService` from `src/services/prompt.ts`. Call
+- **Service**: `promptService` from `src/llm/prompt.ts`. Call
   `promptService.load("name", { key: "value" })` → returns
   `{ model?, temperature?, content }`.
 - **Consumers wire the result** into the LLM service themselves — the prompt
@@ -121,7 +138,7 @@ The agent's toolbox grows with each completed task.
   `${tool}__${action}` (double-underscore separator). Each action has its own
   `description` and `parameters`. Handler switches on `action`.
   See `agents_hub` as the reference pattern.
-- **File I/O**: Always use `files` service (`src/services/file.ts`), never raw `fs`.
+- **File I/O**: Always use `files` service (`src/infra/file.ts`), never raw `fs`.
 - **Output files**: Use `ensureOutputDir()` + `outputPath(filename)` from
   `src/utils/output.ts` for any tool-generated files.
 - **Errors**: Throw `Error` — dispatcher catches and returns `{ error: message }`.

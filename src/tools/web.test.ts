@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 import type { Document } from "../types/document.ts";
 import web from "./web.ts";
 import { config } from "../config/index.ts";
-import { createBunFileService, _setFilesForTest } from "../services/common/file.ts";
+import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
 
 const handler = web.handler;
 
@@ -34,7 +34,7 @@ beforeEach(() => {
 });
 
 describe("web download", () => {
-  it("resolves placeholders, fetches, and writes file", async () => {
+  it("resolves hub_api_key placeholder, fetches, and writes file", async () => {
     let capturedUrl = "";
 
     globalThis.fetch = mock(async (url: string) => {
@@ -77,16 +77,23 @@ describe("web download", () => {
     expect(result.text).toContain("File saved to");
   });
 
-  it("throws on unknown placeholder", async () => {
-    await expect(
-      handler({
-        action: "download",
-        payload: {
-          url: "https://hub.ag3nts.org/data/{{unknown_key}}/file.txt",
-          filename: "file.txt",
-        },
-      }),
-    ).rejects.toThrow('Unknown placeholder "{{unknown_key}}"');
+  it("passes unknown placeholders through unchanged", async () => {
+    let capturedUrl = "";
+
+    globalThis.fetch = mock(async (url: string) => {
+      capturedUrl = url;
+      return new Response("data", { status: 200 });
+    }) as any;
+
+    await handler({
+      action: "download",
+      payload: {
+        url: "https://hub.ag3nts.org/data/{{unknown_key}}/file.txt",
+        filename: "file.txt",
+      },
+    });
+
+    expect(capturedUrl).toBe("https://hub.ag3nts.org/data/{{unknown_key}}/file.txt");
   });
 
   it("throws on disallowed host", async () => {
