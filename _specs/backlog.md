@@ -28,14 +28,5 @@ wykorzystanie promptfoo oraz langfuse do ewaluacji i observability
 
 routing zapytań do dedykowanego modelu
 
-
-
-no workspace discovery
-    shared
-        ...
-    session
-        sId
-            shared
-                ...
-            agent_id
-                ...
+chowanie wewnątrz agenta plików nie sprzyja używaniu przez agentów,
+ale korzysta z tego mechanizm przekazywania plików pomiędzy narzędziami
