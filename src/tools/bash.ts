@@ -39,9 +39,19 @@ function assertWritesInSessionDir(command: string, cwd: string): void {
 
 async function bash(args: Record<string, unknown>): Promise<Document> {
   const { command } = args as { command: string };
+
+  // Clamp timeout to [1000, 120000], default 30000
+  const rawTimeout = typeof args.timeout === "number" ? args.timeout : 30_000;
+  const timeout = Math.max(1000, Math.min(120_000, Math.round(rawTimeout)));
+
   const cwd = getBashCwd();
   assertWritesInSessionDir(command, cwd);
-  const result = await $`bash -c ${command}`.cwd(cwd).quiet().nothrow();
+
+  const shellPromise = $`bash -c ${command}`.cwd(cwd).quiet().nothrow();
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`Command timed out after ${timeout}ms`)), timeout),
+  );
+  const result = await Promise.race([shellPromise, timeoutPromise]);
 
   const stdout = result.stdout.toString().trim();
   const stderr = result.stderr.toString().trim();

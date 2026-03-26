@@ -1,0 +1,19 @@
+{
+  "name": "glob",
+  "description": "Find files matching a glob pattern. Returns sorted file paths, capped at 500 results. Use for discovering files by extension, name pattern, or directory structure.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "pattern": {
+        "type": "string",
+        "description": "Glob pattern to match (e.g. \"**/*.ts\", \"src/*.json\")."
+      },
+      "path": {
+        "type": "string",
+        "description": "Base directory to search in. Must be an absolute path within allowed read directories."
+      }
+    },
+    "required": ["pattern", "path"],
+    "additionalProperties": false
+  }
+}

@@ -16,6 +16,16 @@ import document_processor from "./document_processor.ts";
 import documentProcessorSchema from "../schemas/document_processor.json";
 import prompt_engineer from "./prompt_engineer.ts";
 import promptEngineerSchema from "../schemas/prompt_engineer.json";
+import read_file from "./read_file.ts";
+import readFileSchema from "../schemas/read_file.json";
+import write_file from "./write_file.ts";
+import writeFileSchema from "../schemas/write_file.json";
+import edit_file from "./edit_file.ts";
+import editFileSchema from "../schemas/edit_file.json";
+import glob from "./glob.ts";
+import globSchema from "../schemas/glob.json";
+import grep from "./grep.ts";
+import grepSchema from "../schemas/grep.json";
 
 register(think, thinkSchema);
 register(bash, bashSchema);
@@ -25,6 +35,11 @@ register(geo_distance, geoDistanceSchema);
 register(shipping, shippingSchema);
 register(document_processor, documentProcessorSchema);
 register(prompt_engineer, promptEngineerSchema);
+register(read_file, readFileSchema);
+register(write_file, writeFileSchema);
+register(edit_file, editFileSchema);
+register(glob, globSchema);
+register(grep, grepSchema);
 
 export { getTools, dispatch, reset };
 export type { ToolFilter } from "../types/tool.ts";

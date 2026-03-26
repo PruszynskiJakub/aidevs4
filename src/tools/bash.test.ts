@@ -69,4 +69,35 @@ describe("bash tool", () => {
     expect(result.metadata.mimeType).toBe("text/plain");
     expect(result.metadata.tokens).toBeGreaterThan(0);
   });
+
+  it("accepts description parameter without affecting execution", async () => {
+    const result = await bash.handler({
+      command: "echo hello",
+      description: "Test echo command",
+      timeout: 30000,
+    }) as Document;
+    expect(result.text).toBe("hello");
+  });
+
+  it("enforces timeout on long-running commands", async () => {
+    await expect(
+      bash.handler({ command: "sleep 10", description: "sleep test", timeout: 1000 }),
+    ).rejects.toThrow("timed out");
+  }, 5000);
+
+  it("clamps timeout below 1000 to 1000", async () => {
+    // Should not throw immediately — timeout is clamped up to 1000ms
+    const result = await bash.handler({
+      command: "echo fast",
+      description: "fast command",
+      timeout: 100,
+    }) as Document;
+    expect(result.text).toBe("fast");
+  });
+
+  it("defaults timeout to 30000 when not provided", async () => {
+    // Just verify it runs without error (not actually waiting 30s)
+    const result = await bash.handler({ command: "echo ok" }) as Document;
+    expect(result.text).toBe("ok");
+  });
 });

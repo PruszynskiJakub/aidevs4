@@ -56,15 +56,18 @@ Existing tools follow a well-established pattern: `ToolDefinition` interface,
 ## Acceptance criteria
 
 - [ ] `read_file` tool reads text files with line numbers, supports
-      `offset`/`limit` for pagination, enforces path sandbox
+      `offset`/`limit` for pagination, returns md5 checksum, enforces
+      path sandbox
 - [ ] `write_file` tool creates/overwrites files in session output dir,
       auto-creates parent directories
 - [ ] `edit_file` tool performs exact string replacement with uniqueness
-      check, supports `replace_all` flag
+      check, supports `replace_all`, optional `checksum` verification,
+      and `dry_run` preview mode
 - [ ] `glob` tool finds files by pattern using async `Bun.Glob.scan()`,
       returns paths sorted alphabetically, caps at 500 results
-- [ ] `grep` tool searches file contents by regex (pure JS), returns
-      `file:line:content` format, caps at 200 lines / 50 files
+- [ ] `grep` tool searches file contents by regex (pure JS), supports
+      `case_insensitive` flag, returns `file:line:content` format,
+      caps at 200 lines / 50 files
 - [ ] `bash` tool gains `description` (string, logged) and `timeout`
       (integer, enforced, clamped 1000–120000 ms) parameters; schema
       description steers LLM away from file operations
@@ -96,9 +99,12 @@ Handler:
 4. Apply `offset` (1-based, default 1) and `limit` (default 2000). Clamp
    offset to `[1, totalLines]`. If offset > totalLines, return informative
    message.
-5. Format with line numbers: `"  {n}\t{line}"` (cat -n style).
-6. Return Document — description includes line range and total.
-7. Hint: `"\nNote: Adjust offset/limit to read other sections, or search
+5. Compute checksum: `md5(fullContent)` — returned in Document text so
+   downstream edits can verify freshness.
+6. Format with line numbers: `"  {n}\t{line}"` (cat -n style).
+   Append `"\nChecksum: {hash} | Lines: {total}"` at end of output.
+7. Return Document — description includes line range and total.
+8. Hint: `"\nNote: Adjust offset/limit to read other sections, or search
    within the file for specific content."`
 
 ### 2. Implement `glob`
@@ -127,12 +133,14 @@ Handler:
 **Schema**: `src/schemas/grep.json`
 
 ```
-Parameters: pattern (string), path (string), include (string)
+Parameters: pattern (string), path (string), include (string),
+            case_insensitive (boolean)
 ```
 
 Handler:
 1. Validate `pattern` — `assertMaxLength(512)`, reject empty. Construct
-   `new RegExp(pattern)` in try-catch — throw `"Invalid regex"` on failure.
+   `new RegExp(pattern, case_insensitive ? "i" : "")` in try-catch —
+   throw `"Invalid regex"` on failure.
 2. Validate `path` — default to session output dir. Verify exists.
 3. Validate `include` — glob filter for file types (e.g. `"*.ts"`),
    default `"*"`. Document this default in schema description so the LLM
@@ -172,7 +180,7 @@ Handler:
 
 ```
 Parameters: file_path (string), old_string (string), new_string (string),
-            replace_all (boolean)
+            replace_all (boolean), checksum (string), dry_run (boolean)
 ```
 
 Handler:
@@ -180,17 +188,27 @@ Handler:
    empty `old_string`. Reject `old_string === new_string`.
 2. Read file via `files.readText(file_path)` (file service enforces
    read sandbox).
-3. Verify `old_string` exists. If not found, throw with brief context.
-4. If `replace_all` is false: count occurrences. If >1, throw with count
+3. If `checksum` is non-empty: compute `md5(fileContent)` and compare.
+   If mismatch, throw `"File changed since last read (expected {checksum},
+   got {actual}). Re-read the file to get the current checksum."`.
+   If empty string (default), skip check — checksum is advisory, not
+   mandatory, to keep simple edits frictionless.
+4. Verify `old_string` exists. If not found, throw with brief context.
+5. If `replace_all` is false: count occurrences. If >1, throw with count
    and instruct to provide more context or use `replace_all`.
-5. Replace: first occurrence (default) or all (`replaceAll`).
-6. Write back via `files.write(file_path, result)` (file service enforces
+6. Compute replacement result (first occurrence or all via `replaceAll`).
+7. If `dry_run` is true: return a unified diff preview without writing.
+   Document text shows the diff, description says `"Dry run — no changes
+   applied."`.
+8. Write back via `files.write(file_path, result)` (file service enforces
    write sandbox).
-7. Return Document: `"Edited {file_path}: replaced {n} occurrence(s)."`.
+9. Return Document: `"Edited {file_path}: replaced {n} occurrence(s)."`.
+   Include new checksum in output: `"\nChecksum: {newHash}"`.
 
-Note: read-then-write is not atomic. This is acceptable because files in
-the session output dir are only written by the agent within a single
-turn — no concurrent writers.
+The `checksum` param follows the tools standard ("Mutate: require
+checksum/version guard"). It's optional (empty string = skip) so simple
+edits don't require a prior read, but the agent should use it when
+editing files it read earlier — especially in multi-step workflows.
 
 ### 6. Modify `bash`
 
@@ -232,6 +250,7 @@ Delete `_specs/filesystem-tools.md` (superseded by this spec).
 | Criterion | Test |
 |-----------|------|
 | read_file reads with line numbers | Read a known file, verify `"  1\t..."` format and correct content |
+| read_file returns checksum | Read a file, verify md5 checksum is present in output |
 | read_file offset/limit | Read lines 5-10 of a 20-line file, verify only those lines returned |
 | read_file path sandbox | Attempt to read `/etc/passwd` or file outside allowed paths — expect error |
 | write_file creates file | Write to new path, verify file exists with correct content |
@@ -241,11 +260,16 @@ Delete `_specs/filesystem-tools.md` (superseded by this spec).
 | edit_file uniqueness check | File with two "foo", `replace_all: false` — expect error with count |
 | edit_file replace_all | File with three "foo", `replace_all: true` — all replaced |
 | edit_file not found | `old_string` absent from file — expect descriptive error |
+| edit_file checksum pass | Read file, edit with correct checksum — succeeds |
+| edit_file checksum fail | Modify file between read and edit — checksum mismatch error |
+| edit_file checksum skip | Edit with empty checksum string — succeeds without check |
+| edit_file dry_run | Edit with `dry_run: true` — returns diff, file unchanged |
 | glob finds files | Create known files, glob for `"*.txt"`, verify all returned |
 | glob alphabetical sort | Verify results are sorted alphabetically |
 | glob cap at 500 | Directory with >500 files — verify truncation note in output |
 | glob sandbox | Glob with path outside allowed dirs — expect error |
 | grep finds matches | Files with known content, grep regex, verify `file:line:content` format |
+| grep case insensitive | Search for `"hello"` with `case_insensitive: true` — matches `"Hello"`, `"HELLO"` |
 | grep invalid regex | Pass `"[invalid"` — expect `"Invalid regex"` error |
 | grep per-file cap | File with 50 matches — verify only 20 collected from that file |
 | grep total cap | >200 matches across files — verify truncation note |

@@ -1,0 +1,19 @@
+{
+  "name": "write_file",
+  "description": "Create or overwrite a file. Auto-creates parent directories. Writes to the session output directory. Use for saving generated content, creating configuration files, or writing processed data.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "file_path": {
+        "type": "string",
+        "description": "Path to write to. Must be within the allowed write directories."
+      },
+      "content": {
+        "type": "string",
+        "description": "Text content to write to the file."
+      }
+    },
+    "required": ["file_path", "content"],
+    "additionalProperties": false
+  }
+}
