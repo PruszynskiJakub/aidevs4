@@ -3,7 +3,6 @@ import { processMemory, flushMemory } from "./processor.ts";
 import { emptyMemoryState } from "../../types/memory.ts";
 import type { MemoryState } from "../../types/memory.ts";
 import type { LLMProvider, LLMMessage } from "../../types/llm.ts";
-import type { Logger } from "../../types/logger.ts";
 
 function createMockProvider(content: string = "🟡 New observation"): LLMProvider {
   return {
@@ -21,27 +20,6 @@ function createMockProvider(content: string = "🟡 New observation"): LLMProvid
   };
 }
 
-function createMockLogger(): Logger {
-  return {
-    info() {},
-    success() {},
-    error() {},
-    debug() {},
-    step() {},
-    llm() {},
-    plan() {},
-    toolHeader() {},
-    toolCall() {},
-    toolOk() {},
-    toolErr() {},
-    batchDone() {},
-    answer() {},
-    maxIter() {},
-    memoryObserve() {},
-    memoryReflect() {},
-  };
-}
-
 function makeMessages(tokenCount: number): LLMMessage[] {
   // Each message ~1000 chars = ~250 tokens
   const msgCount = Math.ceil(tokenCount / 250);
@@ -53,7 +31,6 @@ function makeMessages(tokenCount: number): LLMMessage[] {
 }
 
 describe("processMemory", () => {
-  const log = createMockLogger();
   const sessionId = "test-session";
 
   test("passes through when below threshold", async () => {
@@ -61,7 +38,7 @@ describe("processMemory", () => {
     const state = emptyMemoryState();
     const provider = createMockProvider();
 
-    const result = await processMemory("system prompt", messages, state, provider, log, sessionId);
+    const result = await processMemory("system prompt", messages, state, provider, sessionId);
 
     expect(result.context.messages).toBe(messages); // same reference — untouched
     expect(result.context.systemPrompt).toBe("system prompt"); // no observations appended
@@ -78,7 +55,7 @@ describe("processMemory", () => {
     };
     const provider = createMockProvider();
 
-    const result = await processMemory("system prompt", messages, state, provider, log, sessionId);
+    const result = await processMemory("system prompt", messages, state, provider, sessionId);
 
     expect(result.context.systemPrompt).toContain("Memory Observations");
     expect(result.context.systemPrompt).toContain("Important fact");
@@ -89,7 +66,7 @@ describe("processMemory", () => {
     const state = emptyMemoryState();
     const provider = createMockProvider("🟡 Observed something new");
 
-    const result = await processMemory("system prompt", messages, state, provider, log, sessionId);
+    const result = await processMemory("system prompt", messages, state, provider, sessionId);
 
     // State should be updated
     expect(result.state.lastObservedIndex).toBeGreaterThan(0);
@@ -102,7 +79,6 @@ describe("processMemory", () => {
 });
 
 describe("flushMemory", () => {
-  const log = createMockLogger();
   const sessionId = "test-session";
 
   test("observes remaining messages when above minimum threshold", async () => {
@@ -114,7 +90,7 @@ describe("flushMemory", () => {
     const state = emptyMemoryState();
     const provider = createMockProvider("🟢 User asked basic math");
 
-    const result = await flushMemory(messages, state, provider, log, sessionId);
+    const result = await flushMemory(messages, state, provider, sessionId);
 
     expect(result.activeObservations).toContain("basic math");
     expect(result.lastObservedIndex).toBe(2);
@@ -128,7 +104,7 @@ describe("flushMemory", () => {
     const state = emptyMemoryState();
     const provider = createMockProvider();
 
-    const result = await flushMemory(messages, state, provider, log, sessionId);
+    const result = await flushMemory(messages, state, provider, sessionId);
     expect(result).toBe(state); // unchanged — too few tokens
   });
 
@@ -137,7 +113,7 @@ describe("flushMemory", () => {
     const state = emptyMemoryState();
     const provider = createMockProvider();
 
-    const result = await flushMemory(messages, state, provider, log, sessionId);
+    const result = await flushMemory(messages, state, provider, sessionId);
 
     expect(result).toBe(state); // same reference
   });

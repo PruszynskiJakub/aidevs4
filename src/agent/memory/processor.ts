@@ -1,11 +1,11 @@
 import type { LLMProvider, LLMMessage } from "../../types/llm.ts";
 import type { MemoryState, ProcessedContext } from "../../types/memory.ts";
-import type { Logger } from "../../types/logger.ts";
 import { config } from "../../config/index.ts";
 import { estimateTokens, estimateMessagesTokens } from "../../utils/tokens.ts";
 import { observe } from "./observer.ts";
 import { reflect } from "./reflector.ts";
 import { saveDebugArtifact } from "./persistence.ts";
+import { bus } from "../../infra/events.ts";
 
 const OBSERVATION_HEADER = "\n\n---\n\n## Memory Observations\n\n";
 
@@ -41,7 +41,6 @@ export async function processMemory(
   messages: LLMMessage[],
   state: MemoryState,
   provider: LLMProvider,
-  log: Logger,
   sessionId: string,
 ): Promise<{ context: ProcessedContext; state: MemoryState }> {
   const memConfig = config.memory;
@@ -87,7 +86,7 @@ export async function processMemory(
   const updatedObservations = combineObservations(state.activeObservations, newObservations);
 
   const observationTokens = estimateTokens(updatedObservations);
-  log.memoryObserve(tokensBefore, observationTokens);
+  bus.emit("memory.compressed", { phase: "observation", tokensBefore, tokensAfter: observationTokens });
 
   // Save observer debug artifact
   await saveDebugArtifact(sessionId, "observer", newObservations || "(no new observations)", {
@@ -120,7 +119,12 @@ export async function processMemory(
     newState.observationTokenCount = compressedTokens;
     newState.generationCount += 1;
 
-    log.memoryReflect(newState.generationCount, reflectTokensBefore, compressedTokens);
+    bus.emit("memory.compressed", {
+      phase: "reflection",
+      level: newState.generationCount,
+      tokensBefore: reflectTokensBefore,
+      tokensAfter: compressedTokens,
+    });
 
     // Save reflector debug artifact
     await saveDebugArtifact(sessionId, "reflector", compressed, {
@@ -146,7 +150,6 @@ export async function flushMemory(
   messages: LLMMessage[],
   state: MemoryState,
   provider: LLMProvider,
-  log: Logger,
   sessionId: string,
 ): Promise<MemoryState> {
   const unobservedMessages = messages.slice(state.lastObservedIndex);
@@ -168,7 +171,7 @@ export async function flushMemory(
   const updatedObservations = combineObservations(state.activeObservations, newObservations);
 
   const observationTokens = estimateTokens(updatedObservations);
-  log.memoryObserve(tokensBefore, observationTokens);
+  bus.emit("memory.compressed", { phase: "observation", tokensBefore, tokensAfter: observationTokens });
 
   await saveDebugArtifact(sessionId, "observer", newObservations, {
     flush: true,

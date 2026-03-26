@@ -7,25 +7,48 @@ import { config } from "../config/index.ts";
 import { getTools, dispatch } from "../tools/index.ts";
 import { promptService } from "../llm/prompt.ts";
 import { agentsService } from "./agents.ts";
-import { elapsed } from "../utils/timing.ts";
 import { MarkdownLogger } from "../infra/log/markdown.ts";
 import { ConsoleLogger } from "../infra/log/console.ts";
 import { createCompositeLogger } from "../infra/log/composite.ts";
-import { runWithContext, requireState, requireLogger } from "./context.ts";
+import { runWithContext, requireState } from "./context.ts";
 import { createErrorDocument, formatDocumentsXml } from "../infra/document.ts";
 import { processMemory, flushMemory } from "./memory/processor.ts";
 import { saveState } from "./memory/persistence.ts";
+import { bus } from "../infra/events.ts";
+import { createJsonlWriter } from "../infra/log/jsonl.ts";
+import { attachLoggerListener } from "../infra/log/bridge.ts";
 
-function createLogger(
+interface SessionResources {
+  log: Logger;
+  md: MarkdownLogger;
+  detachLogger: () => void;
+  detachJsonl: () => void;
+  flushJsonl: () => Promise<void>;
+}
+
+function setupSession(
   userPrompt: string | unknown,
   sessionId?: string,
-): { log: Logger; md: MarkdownLogger } {
+): SessionResources {
   const md = new MarkdownLogger({ sessionId });
   md.init(typeof userPrompt === "string" ? userPrompt : "(structured)");
+
   const log = createCompositeLogger([new ConsoleLogger(), md]);
+  const detachLogger = attachLoggerListener(bus, log);
+
+  const jsonl = createJsonlWriter();
+  const detachJsonl = bus.onAny(jsonl.listener);
+
   log.info(`Session: ${md.sessionId}`);
   log.info(`Log: ${md.filePath}`);
-  return { log, md };
+
+  return {
+    log,
+    md,
+    detachLogger,
+    detachJsonl,
+    flushJsonl: () => jsonl.flush(),
+  };
 }
 
 async function executePlanPhase(
@@ -33,7 +56,6 @@ async function executePlanPhase(
   provider: LLMProvider,
 ): Promise<string> {
   const state = requireState();
-  const log = requireLogger();
   const planMessages: LLMMessage[] = [
     { role: "system", content: planPrompt.content },
     ...state.messages,
@@ -47,19 +69,20 @@ async function executePlanPhase(
       temperature: planPrompt.temperature,
     }),
   });
-  const planTime = elapsed(planStart);
+  const durationMs = performance.now() - planStart;
   const planText = planResponse.content ?? "";
 
   state.tokens.plan.promptTokens += planResponse.usage?.promptTokens ?? 0;
   state.tokens.plan.completionTokens += planResponse.usage?.completionTokens ?? 0;
 
-  log.plan(
-    planText,
-    planPrompt.model!,
-    planTime,
-    planResponse.usage?.promptTokens,
-    planResponse.usage?.completionTokens,
-  );
+  bus.emit("plan.produced", {
+    model: planPrompt.model!,
+    durationMs,
+    tokensIn: planResponse.usage?.promptTokens ?? 0,
+    tokensOut: planResponse.usage?.completionTokens ?? 0,
+    summary: planText.slice(0, 200),
+    fullText: planText,
+  });
 
   return planText;
 }
@@ -70,7 +93,6 @@ async function executeActPhase(
   provider: LLMProvider,
 ): Promise<LLMChatResponse> {
   const state = requireState();
-  const log = requireLogger();
   const actMessages: LLMMessage[] = [
     { role: "system", content: actSystemPrompt },
     ...state.messages,
@@ -83,16 +105,17 @@ async function executeActPhase(
     messages: actMessages,
     tools: state.tools,
   });
-  const actTime = elapsed(actStart);
+  const durationMs = performance.now() - actStart;
 
   state.tokens.act.promptTokens += response.usage?.promptTokens ?? 0;
   state.tokens.act.completionTokens += response.usage?.completionTokens ?? 0;
 
-  log.llm(
-    actTime,
-    response.usage?.promptTokens,
-    response.usage?.completionTokens,
-  );
+  bus.emit("turn.acted", {
+    toolCount: response.toolCalls.length,
+    durationMs,
+    tokensIn: response.usage?.promptTokens ?? 0,
+    tokensOut: response.usage?.completionTokens ?? 0,
+  });
 
   state.messages.push({
     role: "assistant",
@@ -106,20 +129,28 @@ async function executeActPhase(
 async function dispatchTools(
   functionCalls: LLMToolCall[],
 ): Promise<void> {
-  const log = requireLogger();
   const state = requireState();
-  log.toolHeader(functionCalls.length);
-  for (const tc of functionCalls) {
-    log.toolCall(tc.function.name, tc.function.arguments);
+
+  for (let idx = 0; idx < functionCalls.length; idx++) {
+    const tc = functionCalls[idx];
+    bus.emit("tool.dispatched", {
+      callId: tc.id,
+      name: tc.function.name,
+      args: tc.function.arguments,
+      batchIndex: idx,
+      batchSize: functionCalls.length,
+    });
   }
 
   const batchStart = performance.now();
+  let succeeded = 0;
+  let failed = 0;
 
   const settled = await Promise.allSettled(
     functionCalls.map(async (tc) => {
       const start = performance.now();
       const result = await dispatch(tc.function.name, tc.function.arguments);
-      return { ...result, elapsed: elapsed(start) };
+      return { ...result, durationMs: performance.now() - start };
     })
   );
 
@@ -128,11 +159,25 @@ async function dispatchTools(
     const outcome = settled[j];
 
     if (outcome.status === "fulfilled") {
-      const { xml, isError, elapsed } = outcome.value;
+      const { xml, isError, durationMs } = outcome.value;
       if (isError) {
-        log.toolErr(tc.function.name, xml);
+        failed++;
+        bus.emit("tool.completed", {
+          callId: tc.id,
+          name: tc.function.name,
+          ok: false,
+          durationMs,
+          error: xml,
+        });
       } else {
-        log.toolOk(tc.function.name, elapsed, xml);
+        succeeded++;
+        bus.emit("tool.completed", {
+          callId: tc.id,
+          name: tc.function.name,
+          ok: true,
+          durationMs,
+          result: xml,
+        });
       }
       state.messages.push({
         role: "tool",
@@ -140,10 +185,15 @@ async function dispatchTools(
         content: xml,
       });
     } else {
-      // Promise.allSettled rejection — should not happen since dispatch catches errors,
-      // but handle defensively
+      failed++;
       const errorMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
-      log.toolErr(tc.function.name, errorMsg);
+      bus.emit("tool.completed", {
+        callId: tc.id,
+        name: tc.function.name,
+        ok: false,
+        durationMs: 0,
+        error: errorMsg,
+      });
       state.messages.push({
         role: "tool",
         toolCallId: tc.id,
@@ -153,7 +203,12 @@ async function dispatchTools(
   }
 
   if (functionCalls.length > 1) {
-    log.batchDone(functionCalls.length, elapsed(batchStart));
+    bus.emit("batch.completed", {
+      count: functionCalls.length,
+      durationMs: performance.now() - batchStart,
+      succeeded,
+      failed,
+    });
   }
 }
 
@@ -167,7 +222,7 @@ export async function runAgent(
   provider: LLMProvider = defaultLLM,
 ): Promise<AgentResult> {
   const userPrompt = state.messages.find((m) => m.role === "user")?.content ?? "";
-  const { log, md } = createLogger(userPrompt, state.sessionId);
+  const { log, md, detachLogger, detachJsonl, flushJsonl } = setupSession(userPrompt, state.sessionId);
 
   const inputLength = state.messages.length;
 
@@ -193,18 +248,28 @@ export async function runAgent(
 
       state.tools = await getTools(resolved.toolFilter);
 
+      bus.emit("session.opened", {
+        assistant: state.assistant,
+        model: state.model,
+      });
+
       const actSystemPrompt = resolved.prompt;
 
       for (let i = 0; i < config.limits.maxIterations; i++) {
         state.iteration = i;
-        log.step(i + 1, config.limits.maxIterations, state.model, state.messages.length);
+
+        bus.emit("turn.began", {
+          iteration: i + 1,
+          maxIterations: config.limits.maxIterations,
+          model: state.model,
+          messageCount: state.messages.length,
+        });
 
         const { context, state: updatedMemory } = await processMemory(
           actSystemPrompt,
           state.messages,
           state.memory,
           provider,
-          log,
           state.sessionId,
         );
         state.memory = updatedMemory;
@@ -221,23 +286,44 @@ export async function runAgent(
         await saveIfChanged();
 
         if (response.finishReason === "stop" || !response.toolCalls.length) {
-          state.memory = await flushMemory(state.messages, state.memory, provider, log, state.sessionId);
+          state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
           await saveIfChanged();
-          log.answer(response.content);
+
+          bus.emit("turn.ended", { iteration: i + 1, outcome: "answer" });
+          bus.emit("agent.answer", { text: response.content });
+          bus.emit("session.closed", {
+            reason: "answer",
+            iterations: i + 1,
+            tokens: { ...state.tokens },
+          });
+
           return { answer: response.content ?? "", messages: state.messages.slice(inputLength) };
         }
 
         const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
         await dispatchTools(functionCalls);
+
+        bus.emit("turn.ended", { iteration: i + 1, outcome: "continue" });
       }
 
-      state.memory = await flushMemory(state.messages, state.memory, provider, log, state.sessionId);
+      state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
       await saveIfChanged();
 
-      log.maxIter(config.limits.maxIterations);
+      bus.emit("turn.ended", {
+        iteration: config.limits.maxIterations,
+        outcome: "max_iterations",
+      });
+      bus.emit("session.closed", {
+        reason: "max_iterations",
+        iterations: config.limits.maxIterations,
+        tokens: { ...state.tokens },
+      });
+
       return { answer: "", messages: state.messages.slice(inputLength) };
     } finally {
-      await md.flush();
+      detachLogger();
+      detachJsonl();
+      await Promise.all([md.flush(), flushJsonl()]);
       md.dispose();
     }
   });

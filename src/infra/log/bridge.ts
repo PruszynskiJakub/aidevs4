@@ -1,0 +1,121 @@
+import type { Logger } from "../../types/logger.ts";
+import type { EventBus } from "../../types/events.ts";
+
+/**
+ * Subscribes to domain events on the bus and renders them
+ * through the provided Logger (typically a CompositeLogger
+ * wrapping console + markdown targets).
+ *
+ * This is the Bus→Logger direction: the agent loop emits
+ * semantic events, this listener translates them into
+ * human-readable log output.
+ *
+ * Returns an unsubscribe function to detach all listeners.
+ */
+export function attachLoggerListener(bus: EventBus, log: Logger): () => void {
+  const unsubs: (() => void)[] = [];
+
+  unsubs.push(
+    bus.on("session.opened", (e) => {
+      log.info(`Assistant: ${e.data.assistant} (${e.data.model})`);
+    }),
+  );
+
+  unsubs.push(
+    bus.on("session.closed", (e) => {
+      if (e.data.reason === "answer") {
+        // answer text is emitted separately via agent.answer event
+      } else if (e.data.reason === "max_iterations") {
+        log.maxIter(e.data.iterations);
+      } else {
+        log.error(`Session closed: ${e.data.reason}`);
+      }
+    }),
+  );
+
+  unsubs.push(
+    bus.on("turn.began", (e) => {
+      log.step(
+        e.data.iteration,
+        e.data.maxIterations,
+        e.data.model,
+        e.data.messageCount,
+      );
+    }),
+  );
+
+  unsubs.push(
+    bus.on("turn.acted", (e) => {
+      log.llm(
+        formatMs(e.data.durationMs),
+        e.data.tokensIn,
+        e.data.tokensOut,
+      );
+    }),
+  );
+
+  unsubs.push(
+    bus.on("plan.produced", (e) => {
+      log.plan(
+        e.data.fullText,
+        e.data.model,
+        formatMs(e.data.durationMs),
+        e.data.tokensIn,
+        e.data.tokensOut,
+      );
+    }),
+  );
+
+  unsubs.push(
+    bus.on("tool.dispatched", (e) => {
+      if (e.data.batchIndex === 0) {
+        log.toolHeader(e.data.batchSize);
+      }
+      log.toolCall(e.data.name, e.data.args);
+    }),
+  );
+
+  unsubs.push(
+    bus.on("tool.completed", (e) => {
+      if (e.data.ok) {
+        log.toolOk(e.data.name, formatMs(e.data.durationMs), e.data.result ?? "");
+      } else {
+        log.toolErr(e.data.name, e.data.error ?? "unknown error");
+      }
+    }),
+  );
+
+  unsubs.push(
+    bus.on("batch.completed", (e) => {
+      log.batchDone(e.data.count, formatMs(e.data.durationMs));
+    }),
+  );
+
+  unsubs.push(
+    bus.on("agent.answer", (e) => {
+      log.answer(e.data.text);
+    }),
+  );
+
+  unsubs.push(
+    bus.on("memory.compressed", (e) => {
+      if (e.data.phase === "observation") {
+        log.memoryObserve(e.data.tokensBefore, e.data.tokensAfter);
+      } else {
+        log.memoryReflect(
+          e.data.level ?? 0,
+          e.data.tokensBefore,
+          e.data.tokensAfter,
+        );
+      }
+    }),
+  );
+
+  return () => {
+    for (const unsub of unsubs) unsub();
+  };
+}
+
+function formatMs(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`;
+}
