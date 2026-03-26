@@ -22,3 +22,14 @@ dodanie langfuse
 
 nie mam pojecia ile tokeów lata
 
+
+
+no workspace discovery
+    shared
+        ...
+    session
+        sId
+            shared
+                ...
+            agent_id
+                ...
