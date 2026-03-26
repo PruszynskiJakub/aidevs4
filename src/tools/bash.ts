@@ -10,8 +10,11 @@ const MAX_OUTPUT = 20_000;
 
 function getBashCwd(): string {
   const sessionId = getSessionId();
-  if (sessionId) return resolve(join(config.paths.outputDir, sessionId));
-  return resolve(config.paths.outputDir);
+  if (sessionId) {
+    const dateFolder = new Date().toISOString().slice(0, 10);
+    return resolve(join(config.paths.sessionsDir, dateFolder, sessionId));
+  }
+  return resolve(config.paths.sessionsDir);
 }
 
 /**

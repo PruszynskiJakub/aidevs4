@@ -7,7 +7,8 @@ import { safeParse } from "../../utils/parse.ts";
 const STATE_FILENAME = "memory-state.json";
 
 function sessionOutputDir(sessionId: string): string {
-  return join(config.paths.outputDir, sessionId);
+  const dateFolder = new Date().toISOString().slice(0, 10);
+  return join(config.paths.sessionsDir, dateFolder, sessionId);
 }
 
 export async function saveState(

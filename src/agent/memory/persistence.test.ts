@@ -6,7 +6,8 @@ import { config } from "../../config/index.ts";
 import { rmSync, existsSync, readFileSync, readdirSync } from "node:fs";
 
 const TEST_SESSION = "test-persistence-" + Date.now();
-const sessionDir = join(config.paths.outputDir, TEST_SESSION);
+const dateFolder = new Date().toISOString().slice(0, 10);
+const sessionDir = join(config.paths.sessionsDir, dateFolder, TEST_SESSION);
 
 afterEach(() => {
   try {

@@ -8,6 +8,7 @@ export interface TokenUsage {
 
 export interface AgentState {
   sessionId: string;
+  agentName?: string;
   messages: LLMMessage[];
   tokens: { plan: TokenUsage; act: TokenUsage };
   iteration: number;

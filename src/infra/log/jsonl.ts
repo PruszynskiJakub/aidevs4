@@ -19,7 +19,7 @@ function dateFolderFromTs(ts: number): string {
 function defaultPathFn(event: BusEvent): string {
   const folder = dateFolderFromTs(event.ts);
   const sid = event.sessionId ?? "_global";
-  return join(config.paths.logsDir, folder, sid, "events.jsonl");
+  return join(config.paths.sessionsDir, folder, sid, "log", "events.jsonl");
 }
 
 /**

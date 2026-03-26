@@ -151,16 +151,20 @@ describe("outputPath", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("returns path with correct structure: {outputDir}/{sessionId}/{type}/{uuid}/{filename}", async () => {
+  it("returns path with correct structure: {sessionsDir}/{date}/{sessionId}/{agentName}/output/{type}/{uuid}/{filename}", async () => {
     const result = await svc.outputPath("report.csv");
 
     const parts = result.split("/");
     const filename = parts.pop()!;
     const uuid = parts.pop()!;
     const type = parts.pop()!;
+    const output = parts.pop()!;
+    const agentName = parts.pop()!;
 
     expect(filename).toBe("report.csv");
     expect(type).toBe("text");
+    expect(output).toBe("output");
+    expect(agentName).toBe("default");
     expect(UUID_RE.test(uuid)).toBe(true);
   });
 
@@ -174,14 +178,17 @@ describe("outputPath", () => {
   it("uses explicit sessionId inside runWithSession", async () => {
     await withSession("test-session", async () => {
       const result = await svc.outputPath("file.json");
-      expect(result).toContain("/test-session/text/");
+      expect(result).toContain("/test-session/default/output/text/");
     });
   });
 
   it("uses fallback UUID outside any session", async () => {
     const result = await svc.outputPath("file.json");
-    const sessionSegment = result.split("/").slice(-4, -3)[0];
-    expect(UUID_RE.test(sessionSegment)).toBe(true);
+    // Path: {tmp}/{date}/{fallbackId}/default/output/text/{uuid}/file.json
+    // fallbackId is at index -7 from end
+    const parts = result.split("/");
+    const fallbackIdx = parts.indexOf("default") - 1;
+    expect(UUID_RE.test(parts[fallbackIdx])).toBe(true);
   });
 
   it("isolates concurrent sessions in outputPath", async () => {
@@ -223,11 +230,11 @@ describe("toSessionPath", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("strips session output dir prefix from absolute path", async () => {
+  it("strips session dir prefix from absolute path", async () => {
     await withSession("sess-rel", async () => {
       const abs = await svc.outputPath("photo.png");
       const rel = svc.toSessionPath(abs);
-      expect(rel).toMatch(/^image\/[0-9a-f-]+\/photo\.png$/);
+      expect(rel).toMatch(/^default\/output\/image\/[0-9a-f-]+\/photo\.png$/);
       expect(rel).not.toContain("sess-rel");
     });
   });

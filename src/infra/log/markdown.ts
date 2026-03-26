@@ -39,17 +39,17 @@ export class MarkdownLogger implements Logger {
   private _exitHandler: () => void;
 
   constructor(options?: { logsDir?: string; sessionId?: string; fs?: FileProvider }) {
-    const logsDir = options?.logsDir ?? config.paths.logsDir;
+    const sessionsDir = options?.logsDir ?? config.paths.sessionsDir;
     const sid = options?.sessionId ?? randomSessionId();
 
     if (!SAFE_ID.test(sid)) {
       throw new Error("Invalid session ID: must match /^[a-zA-Z0-9_\\-]+$/");
     }
 
-    this.fs = options?.fs ?? createBunFileService([], [logsDir]);
+    this.fs = options?.fs ?? createBunFileService([], [sessionsDir]);
     this.sessionId = sid;
     const ts = utcTimestamp();
-    const dir = join(logsDir, ts.folder, sid);
+    const dir = join(sessionsDir, ts.folder, sid, "log");
     this.sessionDir = dir;
     this.filePath = join(dir, `log_${ts.stamp}.md`);
     // Kick off directory creation — subsequent appends chain after it

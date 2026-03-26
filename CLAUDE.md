@@ -26,43 +26,53 @@ The agent's toolbox grows with each completed task.
 ## Project Structure
 
 ```
-  ├── playground/<task_name>/       # Prototyping area — one dir per task
-  │   ├── <task_name>.ts            # Standalone script
-  │   └── output/                   # Generated artifacts (gitignored)
-  ├── src/                          # Production agent system
-  │   ├── agent/                    # The brain — loop, orchestration, session, memory
-  │   │   ├── loop.ts               # Plan/Act state machine
-  │   │   ├── orchestrator.ts       # executeTurn entry point
-  │   │   ├── session.ts            # Session store + output paths
-  │   │   ├── agents.ts             # Agent config loader (.agent.md)
-  │   │   ├── context.ts            # AsyncLocalStorage session context
-  │   │   └── memory/               # Observation, reflection, persistence
-  │   ├── llm/                      # Everything LLM: routing, providers, prompts
-  │   │   ├── llm.ts                # Provider registry singleton + factory
-  │   │   ├── router.ts             # Model→provider routing logic
-  │   │   ├── openai.ts             # OpenAI adapter
-  │   │   ├── gemini.ts             # Gemini adapter
-  │   │   └── prompt.ts             # Prompt loader (.md + YAML frontmatter)
-  │   ├── infra/                    # I/O, side effects, external world
-  │   │   ├── file.ts               # Sandboxed file service
-  │   │   ├── document.ts           # Document store + XML formatting
-  │   │   ├── guard.ts              # Input moderation (OpenAI Moderation API)
-  │   │   └── log/                  # Logging (console, markdown, composite)
-  │   ├── tools/                    # Tool implementations (auto-registered)
-  │   │   ├── registry.ts           # Tool registry and dispatch logic
-  │   │   ├── index.ts              # Explicit tool + schema registration
-  │   │   └── <tool_name>.ts        # Each exports default ToolDefinition
-  │   ├── schemas/                  # OpenAI function calling schemas (JSON)
-  │   │   └── <tool_name>.json      # Matched to tools by filename
-  │   ├── config/                   # Environment + path configuration
-  │   ├── types/                    # Shared TypeScript interfaces
-  │   ├── prompts/                  # Markdown prompt files (.md + YAML frontmatter)
-  │   ├── utils/                    # Pure helpers (parse, tokens, xml, id, timing)
-  │   ├── cli.ts                    # CLI entry point
-  │   └── server.ts                 # HTTP server (Hono)
-  ├── _specs/                       # Task specifications & backlog
-  ├── .env                          # API keys (gitignored)
-  └── index.ts                      # Entry point (placeholder)
+  ├── workspace/                      # Unified workspace directory
+  │   ├── agents/                     # Agent definitions (.agent.md files)
+  │   ├── shared/                     # Human-AI communication layer (empty initially)
+  │   └── sessions/                   # All session data (output, logs, shared)
+  │       └── {YYYY-MM-DD}/
+  │           └── {sessionId}/
+  │               ├── log/            # Markdown logs + JSONL events
+  │               ├── shared/         # Inter-agent file dump
+  │               └── {agentName}/
+  │                   └── output/     # Agent artifacts by file type
+  ├── playground/<task_name>/         # Prototyping area — one dir per task
+  │   ├── <task_name>.ts              # Standalone script
+  │   └── output/                     # Generated artifacts (gitignored)
+  ├── src/                            # Production agent system
+  │   ├── agent/                      # The brain — loop, orchestration, session, memory
+  │   │   ├── loop.ts                 # Plan/Act state machine
+  │   │   ├── orchestrator.ts         # executeTurn entry point
+  │   │   ├── session.ts              # Session store + output paths
+  │   │   ├── agents.ts               # Agent config loader (.agent.md)
+  │   │   ├── context.ts              # AsyncLocalStorage session context
+  │   │   └── memory/                 # Observation, reflection, persistence
+  │   ├── llm/                        # Everything LLM: routing, providers, prompts
+  │   │   ├── llm.ts                  # Provider registry singleton + factory
+  │   │   ├── router.ts               # Model→provider routing logic
+  │   │   ├── openai.ts               # OpenAI adapter
+  │   │   ├── gemini.ts               # Gemini adapter
+  │   │   └── prompt.ts               # Prompt loader (.md + YAML frontmatter)
+  │   ├── infra/                      # I/O, side effects, external world
+  │   │   ├── file.ts                 # Sandboxed file service
+  │   │   ├── document.ts             # Document store + XML formatting
+  │   │   ├── guard.ts                # Input moderation (OpenAI Moderation API)
+  │   │   └── log/                    # Logging (console, markdown, composite)
+  │   ├── tools/                      # Tool implementations (auto-registered)
+  │   │   ├── registry.ts             # Tool registry and dispatch logic
+  │   │   ├── index.ts                # Explicit tool + schema registration
+  │   │   └── <tool_name>.ts          # Each exports default ToolDefinition
+  │   ├── schemas/                    # OpenAI function calling schemas (JSON)
+  │   │   └── <tool_name>.json        # Matched to tools by filename
+  │   ├── config/                     # Environment + path configuration
+  │   ├── types/                      # Shared TypeScript interfaces
+  │   ├── prompts/                    # Markdown prompt files (.md + YAML frontmatter)
+  │   ├── utils/                      # Pure helpers (parse, tokens, xml, id, timing)
+  │   ├── cli.ts                      # CLI entry point
+  │   └── server.ts                   # HTTP server (Hono)
+  ├── _specs/                         # Task specifications & backlog
+  ├── .env                            # API keys (gitignored)
+  └── index.ts                        # Entry point (placeholder)
 ```
 
 ## Testing
@@ -87,11 +97,11 @@ The agent's toolbox grows with each completed task.
   the terminal. This is the primary way to verify that new tools work correctly
   within the full agent loop.
 - **Logging**: Every agent run writes a detailed Markdown log to
-  `logs/{YYYY-MM-DD}/{sessionId}/log_{HH-mm-ss}.md`. Logs capture each step,
-  tool calls with arguments, tool results, LLM token usage, and the final
-  answer. Session ID is printed to console on startup — reuse it with
-  `--session <id>` to group runs. **Always check the latest log file after a
-  run** to debug issues or verify tool behavior — it's more complete than
+  `workspace/sessions/{YYYY-MM-DD}/{sessionId}/log/log_{HH-mm-ss}.md`. Logs
+  capture each step, tool calls with arguments, tool results, LLM token usage,
+  and the final answer. Session ID is printed to console on startup — reuse it
+  with `--session <id>` to group runs. **Always check the latest log file after
+  a run** to debug issues or verify tool behavior — it's more complete than
   console output.
 
 ## Code Style
@@ -139,8 +149,9 @@ The agent's toolbox grows with each completed task.
   `description` and `parameters`. Handler switches on `action`.
   See `agents_hub` as the reference pattern.
 - **File I/O**: Always use `files` service (`src/infra/file.ts`), never raw `fs`.
-- **Output files**: Use `ensureOutputDir()` + `outputPath(filename)` from
-  `src/utils/output.ts` for any tool-generated files.
+- **Output files**: Use `sessionService.outputPath(filename)` from
+  `src/agent/session.ts` for any tool-generated files. Output lands under
+  `workspace/sessions/{date}/{sessionId}/{agentName}/output/`.
 - **Errors**: Throw `Error` — dispatcher catches and returns `{ error: message }`.
 - **Response hints**: Tool results should hint at what can be done next with
   the result, but **never reference other tools by name** — describe the

@@ -50,3 +50,9 @@ export function requireSessionId(): string {
   if (!id) throw new Error("No active session context");
   return id;
 }
+
+// ── Agent name accessor ──────────────────────────────────────
+
+export function getAgentName(): string {
+  return asyncLocalStorage.getStore()?.state.agentName ?? "default";
+}

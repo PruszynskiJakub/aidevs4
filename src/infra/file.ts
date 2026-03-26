@@ -13,11 +13,12 @@ function narrowOutputPaths(allowedDirs: string[]): string[] {
   const sessionId = getSessionId();
   if (!sessionId) return allowedDirs;
 
-  const outputDir = resolve(config.paths.outputDir);
-  const sessionOutputDir = resolve(join(outputDir, sessionId));
+  const sessionsDir = resolve(config.paths.sessionsDir);
+  const dateFolder = new Date().toISOString().slice(0, 10);
+  const sessionDir = resolve(join(sessionsDir, dateFolder, sessionId));
   return allowedDirs.map((dir) => {
     const resolved = resolve(dir);
-    return resolved === outputDir ? sessionOutputDir : dir;
+    return resolved === sessionsDir ? sessionDir : dir;
   });
 }
 

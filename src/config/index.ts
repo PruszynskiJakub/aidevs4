@@ -1,4 +1,5 @@
-import { PROJECT_ROOT, OUTPUT_DIR, LOGS_DIR } from "./paths.ts";
+import { join } from "path";
+import { PROJECT_ROOT, WORKSPACE_DIR, SESSIONS_DIR } from "./paths.ts";
 import { env } from "./env.ts";
 
 function deepFreeze<T extends object>(obj: T): T {
@@ -16,12 +17,12 @@ const HUB_BASE_URL = "https://hub.ag3nts.org";
 export const config = deepFreeze({
   paths: {
     projectRoot: PROJECT_ROOT,
-    outputDir: OUTPUT_DIR,
-    logsDir: LOGS_DIR,
+    workspaceDir: WORKSPACE_DIR,
+    sessionsDir: SESSIONS_DIR,
   },
   sandbox: {
     allowedReadPaths: [PROJECT_ROOT] as readonly string[],
-    allowedWritePaths: [OUTPUT_DIR, LOGS_DIR] as readonly string[],
+    allowedWritePaths: [SESSIONS_DIR, join(WORKSPACE_DIR, "shared")] as readonly string[],
     webAllowedHosts: [".ag3nts.org"] as readonly string[],
   },
   models: {

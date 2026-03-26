@@ -21,9 +21,9 @@ describe("bash tool", () => {
     expect(result.text).toEndWith("...(truncated)");
   });
 
-  it("runs with CWD set to output directory", async () => {
+  it("runs with CWD set to sessions directory", async () => {
     const result = await bash.handler({ command: "pwd" }) as Document;
-    expect(result.text).toBe(resolve(config.paths.outputDir));
+    expect(result.text).toBe(resolve(config.paths.sessionsDir));
   });
 
   it("blocks redirect writes to absolute paths outside session dir", async () => {

@@ -117,18 +117,19 @@ describe("MarkdownLogger", () => {
 
   // --- Session-based directory structure tests ---
 
-  it("writes to logs/{date}/{sessionId}/log_{time}.md", async () => {
+  it("writes to {sessionsDir}/{date}/{sessionId}/log/log_{time}.md", async () => {
     const md = makeLogger(dir, "abc123");
     md.init("test");
     await md.flush();
 
-    // filePath should contain the date folder and session folder
-    const rel = md.filePath.slice(dir.length + 1); // e.g. "2026-03-17/abc123/log_10-15-30.md"
+    // filePath should contain the date folder, session folder, and log subfolder
+    const rel = md.filePath.slice(dir.length + 1); // e.g. "2026-03-17/abc123/log/log_10-15-30.md"
     const parts = rel.split("/");
-    expect(parts).toHaveLength(3);
+    expect(parts).toHaveLength(4);
     expect(parts[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/); // date folder
     expect(parts[1]).toBe("abc123"); // session folder
-    expect(parts[2]).toMatch(/^log_\d{2}-\d{2}-\d{2}\.md$/); // time-only filename
+    expect(parts[2]).toBe("log"); // log subfolder
+    expect(parts[3]).toMatch(/^log_\d{2}-\d{2}-\d{2}\.md$/); // time-only filename
   });
 
   it("generates a UUID v4 session ID when none provided", async () => {

@@ -4,13 +4,17 @@ import type { Session } from "../types/session.ts";
 import type { FileProvider } from "../types/file.ts";
 import { inferCategory } from "../utils/media-types.ts";
 import { randomSessionId } from "../utils/id.ts";
-import { getSessionId } from "./context.ts";
+import { getSessionId, getAgentName } from "./context.ts";
 import { files as defaultFiles } from "../infra/file.ts";
 import { config as defaultConfig } from "../config/index.ts";
 
+function dateFolderNow(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function createSessionService(
   fileService: FileProvider = defaultFiles,
-  outputDir: string = defaultConfig.paths.outputDir,
+  sessionsDir: string = defaultConfig.paths.sessionsDir,
 ) {
   const sessions = new Map<string, Session>();
   const queues = new Map<string, Promise<unknown>>();
@@ -55,11 +59,7 @@ function createSessionService(
       return next;
     },
 
-    // ── Output path management ──────────────────────────────────
-
-    async ensureOutputDir(): Promise<void> {
-      await fileService.mkdir(outputDir);
-    },
+    // ── Path helpers ─────────────────────────────────────────────
 
     getEffectiveSessionId(): string {
       const id = getSessionId();
@@ -68,24 +68,46 @@ function createSessionService(
       return fallbackSessionId;
     },
 
+    /** workspace/sessions/{YYYY-MM-DD}/{sessionId} */
+    sessionDir(dateFolder?: string): string {
+      const date = dateFolder ?? dateFolderNow();
+      const sid = this.getEffectiveSessionId();
+      return join(sessionsDir, date, sid);
+    },
+
+    /** workspace/sessions/{YYYY-MM-DD}/{sessionId}/log/ */
+    logDir(dateFolder?: string): string {
+      return join(this.sessionDir(dateFolder), "log");
+    },
+
+    /** workspace/sessions/{YYYY-MM-DD}/{sessionId}/shared/ */
+    sharedDir(dateFolder?: string): string {
+      return join(this.sessionDir(dateFolder), "shared");
+    },
+
+    async ensureSessionDir(): Promise<void> {
+      await fileService.mkdir(this.sessionDir());
+    },
+
     async outputPath(filename: string): Promise<string> {
-      const sessionId = this.getEffectiveSessionId();
+      const agentName = getAgentName();
       const type = inferCategory(filename);
       const uuid = randomSessionId();
-      const dir = join(outputDir, sessionId, type, uuid);
+      const dir = join(this.sessionDir(), agentName, "output", type, uuid);
       await fileService.mkdir(dir);
       return join(dir, filename);
     },
 
     /**
-     * Convert an absolute output path to a session-relative path.
-     * e.g. `/abs/output/session-id/image/uuid/file.png` → `image/uuid/file.png`
+     * Convert an absolute path to a session-relative path.
+     * Strips everything up to and including {sessionId}/ prefix.
      */
     toSessionPath(absolutePath: string): string {
       const sessionId = this.getEffectiveSessionId();
-      const sessionDir = join(outputDir, sessionId) + "/";
-      if (absolutePath.startsWith(sessionDir)) {
-        return absolutePath.slice(sessionDir.length);
+      const marker = `/${sessionId}/`;
+      const idx = absolutePath.indexOf(marker);
+      if (idx !== -1) {
+        return absolutePath.slice(idx + marker.length);
       }
       return absolutePath;
     },
@@ -93,12 +115,10 @@ function createSessionService(
     /**
      * Resolve a session-relative path to an absolute path.
      * If the path is already absolute, returns it unchanged.
-     * e.g. `image/uuid/file.png` → `/abs/output/session-id/image/uuid/file.png`
      */
     resolveSessionPath(pathOrRelative: string): string {
       if (pathOrRelative.startsWith("/")) return pathOrRelative;
-      const sessionId = this.getEffectiveSessionId();
-      return resolve(join(outputDir, sessionId, pathOrRelative));
+      return resolve(join(this.sessionDir(), pathOrRelative));
     },
 
     /** Visible for testing */
