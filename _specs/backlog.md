@@ -23,6 +23,12 @@ dodanie langfuse
 nie mam pojecia ile tokeów lata
 
 
+wykorzystanie promptfoo oraz langfuse do ewaluacji i observability
+
+
+routing zapytań do dedykowanego modelu
+
+
 
 no workspace discovery
     shared
