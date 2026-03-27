@@ -1,9 +1,14 @@
 import { readdir, stat, mkdir, appendFile } from "fs/promises";
-import { join, resolve } from "path";
+import { join, resolve, relative } from "path";
 import type { FileProvider, FileStat } from "../types/file.ts";
 import { config } from "../config/index.ts";
 import { getSessionId } from "../agent/context.ts";
 import { safeParse, formatSizeMB } from "../utils/parse.ts";
+
+function toRelative(absolutePath: string): string {
+  const rel = relative(config.paths.projectRoot, resolve(absolutePath));
+  return rel || ".";
+}
 
 export class FileSizeLimitError extends Error {
   override readonly name = "FileSizeLimitError";
@@ -35,7 +40,7 @@ function assertPathAllowed(
   });
   if (!allowed) {
     throw new Error(
-      `Access denied: cannot ${operation} "${resolved}". Allowed ${operation} directories: [${effective.map((d) => resolve(d)).join(", ")}]`,
+      `Access denied: cannot ${operation} "${toRelative(resolved)}". Allowed ${operation} directories: [${effective.map((d) => toRelative(d)).join(", ")}]`,
     );
   }
 }
@@ -103,7 +108,7 @@ export function createBunFileService(
     async checkFileSize(path: string, maxBytes: number = config.limits.maxFileSize): Promise<void> {
       const s = await svc.stat(path);
       if (s.size > maxBytes) {
-        throw new FileSizeLimitError(`File ${path} is ${formatSizeMB(s.size)} MB — exceeds limit of ${formatSizeMB(maxBytes)} MB`);
+        throw new FileSizeLimitError(`File ${toRelative(path)} is ${formatSizeMB(s.size)} MB — exceeds limit of ${formatSizeMB(maxBytes)} MB`);
       }
     },
 
@@ -111,7 +116,7 @@ export function createBunFileService(
       try {
         const s = await svc.stat(input);
         if (s.size > config.limits.maxFileSize) {
-          throw new FileSizeLimitError(`File ${input} is ${formatSizeMB(s.size)} MB — exceeds limit of ${formatSizeMB(config.limits.maxFileSize)} MB`);
+          throw new FileSizeLimitError(`File ${toRelative(input)} is ${formatSizeMB(s.size)} MB — exceeds limit of ${formatSizeMB(config.limits.maxFileSize)} MB`);
         }
         const content = await svc.readText(input);
         return safeParse(content, label);
