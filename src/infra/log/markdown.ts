@@ -46,10 +46,13 @@ export class MarkdownLogger implements Logger {
       throw new Error("Invalid session ID: must match /^[a-zA-Z0-9_\\-]+$/");
     }
 
-    this.fs = options?.fs ?? createBunFileService([], [sessionsDir]);
-    this.sessionId = sid;
     const ts = utcTimestamp();
-    const dir = join(sessionsDir, ts.folder, sid, "log");
+    const sessionDir = join(sessionsDir, ts.folder, sid);
+    // Use the exact session directory as write path so sandbox narrowing
+    // doesn't block child sessions called from a parent's async context.
+    this.fs = options?.fs ?? createBunFileService([], [sessionDir]);
+    this.sessionId = sid;
+    const dir = join(sessionDir, "log");
     this.sessionDir = dir;
     this.filePath = join(dir, `log_${ts.stamp}.md`);
     // Kick off directory creation — subsequent appends chain after it
