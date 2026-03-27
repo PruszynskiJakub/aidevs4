@@ -151,41 +151,42 @@ describe("outputPath", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("returns path with correct structure: {sessionsDir}/{date}/{sessionId}/{agentName}/output/{type}/{uuid}/{filename}", async () => {
+  it("returns flat path: {sessionsDir}/{date}/{sessionId}/{agentName}/output/{uuid}.{ext}", async () => {
     const result = await svc.outputPath("report.csv");
 
     const parts = result.split("/");
     const filename = parts.pop()!;
-    const uuid = parts.pop()!;
-    const type = parts.pop()!;
     const output = parts.pop()!;
     const agentName = parts.pop()!;
 
-    expect(filename).toBe("report.csv");
-    expect(type).toBe("text");
+    // filename is {uuid}.csv
+    expect(filename).toMatch(/^[0-9a-f-]+\.csv$/);
     expect(output).toBe("output");
     expect(agentName).toBe("default");
-    expect(UUID_RE.test(uuid)).toBe(true);
+    // Extract UUID part (strip extension)
+    const uuidPart = filename.replace(/\.[^.]+$/, "");
+    expect(UUID_RE.test(uuidPart)).toBe(true);
   });
 
-  it("creates the UUID directory", async () => {
+  it("creates the output directory", async () => {
     const result = await svc.outputPath("test.txt");
     const dir = result.replace(/\/[^/]+$/, "");
     const s = await stat(dir);
     expect(s.isDirectory()).toBe(true);
+    // dir should end with /output (no extra nesting)
+    expect(dir).toMatch(/\/output$/);
   });
 
   it("uses explicit sessionId inside runWithSession", async () => {
     await withSession("test-session", async () => {
       const result = await svc.outputPath("file.json");
-      expect(result).toContain("/test-session/default/output/text/");
+      expect(result).toContain("/test-session/default/output/");
+      expect(result).toMatch(/\/[0-9a-f-]+\.json$/);
     });
   });
 
   it("uses fallback UUID outside any session", async () => {
     const result = await svc.outputPath("file.json");
-    // Path: {tmp}/{date}/{fallbackId}/default/output/text/{uuid}/file.json
-    // fallbackId is at index -7 from end
     const parts = result.split("/");
     const fallbackIdx = parts.indexOf("default") - 1;
     expect(UUID_RE.test(parts[fallbackIdx])).toBe(true);
@@ -234,7 +235,7 @@ describe("toSessionPath", () => {
     await withSession("sess-rel", async () => {
       const abs = await svc.outputPath("photo.png");
       const rel = svc.toSessionPath(abs);
-      expect(rel).toMatch(/^default\/output\/image\/[0-9a-f-]+\/photo\.png$/);
+      expect(rel).toMatch(/^default\/output\/[0-9a-f-]+\.png$/);
       expect(rel).not.toContain("sess-rel");
     });
   });

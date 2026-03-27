@@ -41,7 +41,7 @@ describe("condense", () => {
     expect(result.condensed).toBe(true);
     expect(result.text).toBe("condensed summary");
     expect(result.fullPath).not.toBeNull();
-    expect(result.fullPath).toContain("full-output.txt");
+    expect(result.fullPath).toMatch(/\.txt$/);
   });
 
   test("uses custom filename for full output", async () => {
@@ -57,7 +57,7 @@ describe("condense", () => {
     });
 
     expect(result.condensed).toBe(true);
-    expect(result.fullPath).toContain("scraped-page.html");
+    expect(result.fullPath).toMatch(/\.html$/);
   });
 
   test("respects exact threshold boundary", async () => {

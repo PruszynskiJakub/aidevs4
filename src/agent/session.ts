@@ -1,8 +1,7 @@
-import { join, resolve } from "node:path";
+import { join, resolve, extname } from "node:path";
 import type { LLMMessage } from "../types/llm.ts";
 import type { Session } from "../types/session.ts";
 import type { FileProvider } from "../types/file.ts";
-import { inferCategory } from "../utils/media-types.ts";
 import { randomSessionId } from "../utils/id.ts";
 import { getSessionId, getAgentName } from "./context.ts";
 import { files as defaultFiles } from "../infra/file.ts";
@@ -91,11 +90,11 @@ function createSessionService(
 
     async outputPath(filename: string): Promise<string> {
       const agentName = getAgentName();
-      const type = inferCategory(filename);
       const uuid = randomSessionId();
-      const dir = join(this.sessionDir(), agentName, "output", type, uuid);
+      const ext = extname(filename);
+      const dir = join(this.sessionDir(), agentName, "output");
       await fileService.mkdir(dir);
-      return join(dir, filename);
+      return join(dir, `${uuid}${ext}`);
     },
 
     /**
