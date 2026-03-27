@@ -1,61 +1,49 @@
+import { z } from "zod";
 import type { LLMTool } from "../types/llm.ts";
-import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolDefinition, ToolSchema } from "../types/tool.ts";
 import { safeParse } from "../utils/parse.ts";
 import { createErrorDocument, documentService, formatDocumentsXml } from "../infra/document.ts";
 
 const SEPARATOR = "__";
 
-export interface ActionSchema {
-  description: string;
-  parameters: Record<string, unknown>;
-}
-
-export interface MultiActionSchema {
-  name: string;
-  description: string;
-  actions: Record<string, ActionSchema>;
-}
-
-export interface SimpleSchema {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-}
-
 const handlers = new Map<string, ToolDefinition>();
 const expandedTools: LLMTool[] = [];
 
-export function register(
-  tool: ToolDefinition,
-  schema: MultiActionSchema | SimpleSchema,
-): void {
+function zodToParameters(schema: z.ZodObject): Record<string, unknown> {
+  const jsonSchema = z.toJSONSchema(schema);
+  // Remove $schema key — not part of OpenAI function-calling format
+  delete (jsonSchema as Record<string, unknown>)["$schema"];
+  return jsonSchema as Record<string, unknown>;
+}
+
+export function register(tool: ToolDefinition): void {
   if (handlers.has(tool.name)) {
     throw new Error(`Duplicate tool registration: "${tool.name}"`);
   }
 
   handlers.set(tool.name, tool);
+  const schema = tool.schema;
 
   if ("actions" in schema && schema.actions) {
-    const multi = schema as MultiActionSchema;
-    for (const [actionName, actionDef] of Object.entries(multi.actions)) {
+    for (const [actionName, actionDef] of Object.entries(schema.actions)) {
       expandedTools.push({
         type: "function",
         function: {
-          name: `${multi.name}${SEPARATOR}${actionName}`,
-          description: `${multi.description} — ${actionDef.description}`,
-          parameters: actionDef.parameters,
+          name: `${schema.name}${SEPARATOR}${actionName}`,
+          description: `${schema.description} — ${actionDef.description}`,
+          parameters: zodToParameters(actionDef.schema),
           strict: true,
         },
       });
     }
   } else {
-    const simple = schema as SimpleSchema;
+    const simple = schema as { name: string; description: string; schema: z.ZodObject };
     expandedTools.push({
       type: "function",
       function: {
         name: simple.name,
         description: simple.description,
-        parameters: simple.parameters,
+        parameters: zodToParameters(simple.schema),
         strict: true,
       },
     });

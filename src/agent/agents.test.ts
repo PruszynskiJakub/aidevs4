@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { agentsService } from "./agents.ts";
 import { register, reset } from "../tools/index.ts";
@@ -7,15 +8,15 @@ import { createDocument } from "../infra/document.ts";
 function registerTool(name: string) {
   const tool: ToolDefinition = {
     name,
+    schema: {
+      name,
+      description: `${name} tool`,
+      schema: z.object({}),
+    },
     handler: async () =>
       createDocument("ok", name, { source: null, type: "document", mimeType: "text/plain" }),
   };
-  const schema = {
-    name,
-    description: `${name} tool`,
-    parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
-  };
-  register(tool, schema);
+  register(tool);
 }
 
 beforeEach(() => {

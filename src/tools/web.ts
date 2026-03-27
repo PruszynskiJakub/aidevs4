@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { files } from "../infra/file.ts";
@@ -133,5 +134,24 @@ async function web(args: Record<string, unknown>): Promise<Document | Document[]
 
 export default {
   name: "web",
+  schema: {
+    name: "web",
+    description: "Interact with the web: download data files from allowlisted hosts or scrape readable text from any web page. For HTML pages, prefer scrape — it returns clean text. Use download only for non-HTML files (JSON, CSV, images, ZIP, etc.).",
+    actions: {
+      download: {
+        description: "Download a non-HTML data file (JSON, CSV, images, audio, ZIP, etc.) from an allowlisted URL and save to disk. Do NOT use for HTML web pages — use scrape instead to get readable text. Supports {{placeholder}} template variables (available: hub_api_key). Returns the saved file path and size.",
+        schema: z.object({
+          url: z.string().describe("Full URL to download from. May contain {{placeholder}} variables (e.g. https://hub.ag3nts.org/data/{{hub_api_key}}/file.txt). Host must be on the allowlist."),
+          filename: z.string().describe("Filename to save as in the session output directory (e.g. 'data.json'). No path separators."),
+        }),
+      },
+      scrape: {
+        description: "Read web pages by extracting their text content. This is the default choice for any HTML URL — returns clean, readable text without HTML tags. Accepts an array of URLs, scrapes them in parallel. Each URL is independent — one failure won't affect others. Works with any URL (no host restriction).",
+        schema: z.object({
+          urls: z.array(z.string()).describe("URLs of web pages to scrape (1 or more). Each is fetched independently."),
+        }),
+      },
+    },
+  },
   handler: web,
 } satisfies ToolDefinition;

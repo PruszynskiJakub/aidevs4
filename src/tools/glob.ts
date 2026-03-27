@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { createDocument } from "../infra/document.ts";
@@ -64,5 +65,13 @@ async function glob(args: Record<string, unknown>): Promise<Document> {
 
 export default {
   name: "glob",
+  schema: {
+    name: "glob",
+    description: "Find files matching a glob pattern. Returns sorted file paths, capped at 500 results. Use for discovering files by extension, name pattern, or directory structure.",
+    schema: z.object({
+      pattern: z.string().describe('Glob pattern to match (e.g. "**/*.ts", "src/*.json").'),
+      path: z.string().describe("Base directory to search in. Must be an absolute path within allowed read directories."),
+    }),
+  },
   handler: glob,
 } satisfies ToolDefinition;

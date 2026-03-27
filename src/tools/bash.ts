@@ -1,5 +1,6 @@
 import { join, resolve } from "path";
 import { $ } from "bun";
+import { z } from "zod";
 import { config } from "../config/index.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
@@ -80,5 +81,14 @@ async function bash(args: Record<string, unknown>): Promise<Document> {
 
 export default {
   name: "bash",
+  schema: {
+    name: "bash",
+    description: "Execute a shell command in the session output directory.\n\nUse for: shell operations like unzipping/archiving, downloading, data transformation (jq, awk, sort, cut), system inspection (wc, file, du), running scripts, and operations not covered by dedicated file tools. Always prefer bash over execute_code for file management, CLI commands, and shell operations.\n\nPrefer dedicated tools for file reading, writing, editing, searching, and pattern matching — this tool is for everything else.\n\nCWD is the session directory. All paths in commands should be relative to CWD — do NOT use absolute paths from tool results; strip any prefix up to and including the session ID. All write targets (>, >>, tee) MUST stay within CWD — writing to /tmp or any path outside the session directory will fail. For temporary files, use relative paths (e.g., ./tmp_work.txt).\n\nOutput truncated at 20 KB — for large outputs, redirect to a file and inspect afterward. Returns stdout/stderr with exit code.",
+    schema: z.object({
+      command: z.string().describe("Shell command to execute. Supports pipes and standard Unix tools."),
+      description: z.string().describe("Brief human-readable description of what this command does. Logged for audit, not executed."),
+      timeout: z.int().describe("Execution timeout in milliseconds. Clamped to [1000, 120000]. Defaults to 30000 (30s)."),
+    }),
+  },
   handler: bash,
 } satisfies ToolDefinition;

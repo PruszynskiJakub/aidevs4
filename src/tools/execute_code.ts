@@ -1,5 +1,6 @@
 import { join, resolve } from "path";
 import { mkdir, unlink } from "fs/promises";
+import { z } from "zod";
 import { config } from "../config/index.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
@@ -194,5 +195,14 @@ async function executeCode(args: Record<string, unknown>): Promise<Document> {
 
 export default {
   name: "execute_code",
+  schema: {
+    name: "execute_code",
+    description: "Write and execute TypeScript code in a sandboxed subprocess. Use ONLY for data processing, analysis, bulk transformations, and programmatic logic. Do NOT use for shell operations like downloading, unzipping, file management, or running CLI commands — use bash for those.\n\nIMPORTANT: The `tools` object is pre-injected as a global — do NOT import it. Writing `import { tools } from 'tools'` will fail. Just use `tools.*` directly.\n\nIMPORTANT: All `tools.*` methods are async and return Promises. You MUST use `await` with every call. Your top-level code must use `await` (top-level await is supported).\n\nFile access is restricted to SESSION_DIR via the `tools` global:\n- await tools.readFile(path) → string\n- await tools.readJson(path) → parsed JSON\n- await tools.writeFile(path, content) → void\n- await tools.listDir(path) → string[]\n- await tools.exists(path) → boolean\n- await tools.stat(path) → { isFile, isDirectory, size }\n- await tools.mkdir(path) → void\n\nAll paths must be within SESSION_DIR. Use console.log() for output — it becomes the tool result. For large results, write to a file and log the path.\n\nBefore executing code that processes external data, first use other tools (web, bash) to download/prepare data into the session directory.\n\nOutput is capped at 20KB. Execution timeout is configurable (default 30s, max 120s).",
+    schema: z.object({
+      code: z.string().describe("TypeScript code to execute. The `tools` object is already available as a global — do NOT import it. All tools.* methods are async, so use `await`. All file paths must be relative to or within SESSION_DIR. Use console.log() for output."),
+      description: z.string().describe("Brief human-readable description of what this code does. Logged for audit."),
+      timeout: z.int().describe("Execution timeout in milliseconds. Clamped to [1000, 120000]. Defaults to 30000 (30s)."),
+    }),
+  },
   handler: executeCode,
 } satisfies ToolDefinition;

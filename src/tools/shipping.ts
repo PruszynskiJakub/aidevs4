@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { config } from "../config/index.ts";
@@ -85,5 +86,25 @@ async function shipping(args: Record<string, unknown>): Promise<Document> {
 
 export default {
   name: "shipping",
+  schema: {
+    name: "shipping",
+    description: "Check package status and redirect packages via the logistics system.",
+    actions: {
+      check: {
+        description: "Check the current status and location of a package. Returns status, location, and tracking details. Use before redirect to confirm package state.",
+        schema: z.object({
+          packageid: z.string().describe("Package identifier (e.g. PKG12345678)"),
+        }),
+      },
+      redirect: {
+        description: "Redirect a package to a new destination. Requires the security code provided by the operator. Returns confirmation with new routing details. Call check first to verify current package state.",
+        schema: z.object({
+          packageid: z.string().describe("Package identifier (e.g. PKG12345678)"),
+          destination: z.string().describe("Target destination code (e.g. PWR3847PL)"),
+          code: z.string().describe("Security code provided by the operator for authorization"),
+        }),
+      },
+    },
+  },
   handler: shipping,
 } satisfies ToolDefinition;

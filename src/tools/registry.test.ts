@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { describe, it, expect, beforeEach } from "bun:test";
 import { register, getTools, getToolsByName, dispatch, reset } from "./registry.ts";
 import type { ToolDefinition } from "../types/tool.ts";
@@ -12,21 +13,16 @@ describe("registry", () => {
     it("registers a simple tool and returns it via getTools", async () => {
       const tool: ToolDefinition = {
         name: "echo",
+        schema: {
+          name: "echo",
+          description: "Echoes text back",
+          schema: z.object({ text: z.string() }),
+        },
         handler: async (args: Record<string, unknown>) =>
           createDocument((args as { text: string }).text, "echo result", { source: null, type: "document", mimeType: "text/plain" }),
       };
-      const schema = {
-        name: "echo",
-        description: "Echoes text back",
-        parameters: {
-          type: "object",
-          properties: { text: { type: "string" } },
-          required: ["text"],
-          additionalProperties: false,
-        },
-      };
 
-      register(tool, schema);
+      register(tool);
       const tools = await getTools();
 
       expect(tools).toHaveLength(1);
@@ -34,40 +30,37 @@ describe("registry", () => {
       expect(tools[0].function.name).toBe("echo");
       expect(tools[0].function.description).toBe("Echoes text back");
       expect(tools[0].function.strict).toBe(true);
+      // Verify Zod schema was converted to JSON Schema
+      expect(tools[0].function.parameters).toEqual({
+        type: "object",
+        properties: { text: { type: "string" } },
+        required: ["text"],
+        additionalProperties: false,
+      });
     });
 
     it("expands multi-action schemas with __ separator", async () => {
       const tool: ToolDefinition = {
         name: "multi",
-        handler: async (args: Record<string, unknown>) =>
-          createDocument("ok", `${(args as { action: string }).action}`, { source: null, type: "document", mimeType: "text/plain" }),
-      };
-      const schema = {
-        name: "multi",
-        description: "Multi-action tool",
-        actions: {
-          create: {
-            description: "Create a thing",
-            parameters: {
-              type: "object",
-              properties: { name: { type: "string" } },
-              required: ["name"],
-              additionalProperties: false,
+        schema: {
+          name: "multi",
+          description: "Multi-action tool",
+          actions: {
+            create: {
+              description: "Create a thing",
+              schema: z.object({ name: z.string() }),
             },
-          },
-          delete: {
-            description: "Delete a thing",
-            parameters: {
-              type: "object",
-              properties: { id: { type: "string" } },
-              required: ["id"],
-              additionalProperties: false,
+            delete: {
+              description: "Delete a thing",
+              schema: z.object({ id: z.string() }),
             },
           },
         },
+        handler: async (args: Record<string, unknown>) =>
+          createDocument("ok", `${(args as { action: string }).action}`, { source: null, type: "document", mimeType: "text/plain" }),
       };
 
-      register(tool, schema);
+      register(tool);
       const tools = await getTools();
 
       expect(tools).toHaveLength(2);
@@ -83,17 +76,17 @@ describe("registry", () => {
     it("rejects duplicate registration", () => {
       const tool: ToolDefinition = {
         name: "dup",
+        schema: {
+          name: "dup",
+          description: "A tool",
+          schema: z.object({}),
+        },
         handler: async () =>
           createDocument("ok", "dup", { source: null, type: "document", mimeType: "text/plain" }),
       };
-      const schema = {
-        name: "dup",
-        description: "A tool",
-        parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
-      };
 
-      register(tool, schema);
-      expect(() => register(tool, schema)).toThrow('Duplicate tool registration: "dup"');
+      register(tool);
+      expect(() => register(tool)).toThrow('Duplicate tool registration: "dup"');
     });
   });
 
@@ -101,21 +94,16 @@ describe("registry", () => {
     it("dispatches to registered handler and returns XML document", async () => {
       const tool: ToolDefinition = {
         name: "greet",
+        schema: {
+          name: "greet",
+          description: "Greets someone",
+          schema: z.object({ name: z.string() }),
+        },
         handler: async (args: Record<string, unknown>) =>
           createDocument(`Hello, ${(args as { name: string }).name}!`, "greeting", { source: null, type: "document", mimeType: "text/plain" }),
       };
-      const schema = {
-        name: "greet",
-        description: "Greets someone",
-        parameters: {
-          type: "object",
-          properties: { name: { type: "string" } },
-          required: ["name"],
-          additionalProperties: false,
-        },
-      };
 
-      register(tool, schema);
+      register(tool);
       const result = await dispatch("greet", '{"name":"World"}');
 
       expect(result.isError).toBe(false);
@@ -138,28 +126,23 @@ describe("registry", () => {
       let received: unknown = null;
       const tool: ToolDefinition = {
         name: "ma",
+        schema: {
+          name: "ma",
+          description: "Multi",
+          actions: {
+            run: {
+              description: "Run it",
+              schema: z.object({ x: z.number() }),
+            },
+          },
+        },
         handler: async (args: Record<string, unknown>) => {
           received = args;
           return createDocument("done", "ma result", { source: null, type: "document", mimeType: "text/plain" });
         },
       };
-      const schema = {
-        name: "ma",
-        description: "Multi",
-        actions: {
-          run: {
-            description: "Run it",
-            parameters: {
-              type: "object",
-              properties: { x: { type: "number" } },
-              required: ["x"],
-              additionalProperties: false,
-            },
-          },
-        },
-      };
 
-      register(tool, schema);
+      register(tool);
       const result = await dispatch("ma__run", '{"x":42}');
 
       expect(result.xml).toContain("done");
@@ -171,15 +154,15 @@ describe("registry", () => {
     it("wraps handler errors as error document", async () => {
       const tool: ToolDefinition = {
         name: "fail",
+        schema: {
+          name: "fail",
+          description: "Fails",
+          schema: z.object({}),
+        },
         handler: async () => { throw new Error("boom"); },
       };
-      const schema = {
-        name: "fail",
-        description: "Fails",
-        parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
-      };
 
-      register(tool, schema);
+      register(tool);
       const result = await dispatch("fail", "{}");
 
       expect(result.isError).toBe(true);
@@ -193,52 +176,37 @@ describe("registry", () => {
     function registerEchoAndMulti() {
       const echo: ToolDefinition = {
         name: "echo",
+        schema: {
+          name: "echo",
+          description: "Echoes text back",
+          schema: z.object({ text: z.string() }),
+        },
         handler: async (args: Record<string, unknown>) =>
           createDocument((args as { text: string }).text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
-      };
-      const echoSchema = {
-        name: "echo",
-        description: "Echoes text back",
-        parameters: {
-          type: "object",
-          properties: { text: { type: "string" } },
-          required: ["text"],
-          additionalProperties: false,
-        },
       };
 
       const multi: ToolDefinition = {
         name: "multi",
-        handler: async (args: Record<string, unknown>) =>
-          createDocument("ok", `${(args as { action: string }).action}`, { source: null, type: "document", mimeType: "text/plain" }),
-      };
-      const multiSchema = {
-        name: "multi",
-        description: "Multi-action tool",
-        actions: {
-          create: {
-            description: "Create a thing",
-            parameters: {
-              type: "object",
-              properties: { name: { type: "string" } },
-              required: ["name"],
-              additionalProperties: false,
+        schema: {
+          name: "multi",
+          description: "Multi-action tool",
+          actions: {
+            create: {
+              description: "Create a thing",
+              schema: z.object({ name: z.string() }),
             },
-          },
-          delete: {
-            description: "Delete a thing",
-            parameters: {
-              type: "object",
-              properties: { id: { type: "string" } },
-              required: ["id"],
-              additionalProperties: false,
+            delete: {
+              description: "Delete a thing",
+              schema: z.object({ id: z.string() }),
             },
           },
         },
+        handler: async (args: Record<string, unknown>) =>
+          createDocument("ok", `${(args as { action: string }).action}`, { source: null, type: "document", mimeType: "text/plain" }),
       };
 
-      register(echo, echoSchema);
-      register(multi, multiSchema);
+      register(echo);
+      register(multi);
     }
 
     it("returns simple tool by name", () => {
@@ -274,16 +242,16 @@ describe("registry", () => {
     it("clears all registered tools", async () => {
       const tool: ToolDefinition = {
         name: "temp",
+        schema: {
+          name: "temp",
+          description: "Temporary",
+          schema: z.object({}),
+        },
         handler: async () =>
           createDocument("ok", "temp", { source: null, type: "document", mimeType: "text/plain" }),
       };
-      const schema = {
-        name: "temp",
-        description: "Temporary",
-        parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
-      };
 
-      register(tool, schema);
+      register(tool);
       expect((await getTools()).length).toBe(1);
 
       reset();

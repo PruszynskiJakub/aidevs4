@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { files } from "../infra/file.ts";
@@ -162,5 +163,42 @@ async function agentsHub(args: Record<string, unknown>): Promise<Document | Docu
 
 export default {
   name: "agents_hub",
+  schema: {
+    name: "agents_hub",
+    description: "Submit answers and call APIs on the AG3NTS hub platform (hub.ag3nts.org). Use after you have prepared an answer or need hub data to solve a task.",
+    actions: {
+      verify: {
+        description: "Submit a single answer for verification. Returns the hub response (typically a flag or status message). For tasks requiring multiple sequential submissions (e.g. classifying N items one by one), use verify_batch instead.",
+        schema: z.object({
+          task: z.string().describe('The task name to verify against (e.g. "people")'),
+          answer: z.string().describe("The answer to submit — file path to a JSON file, inline JSON string, or a raw string value"),
+        }),
+      },
+      verify_batch: {
+        description: "Submit multiple answers for verification SEQUENTIALLY (one after another). Use when the hub expects ordered submissions — e.g. classifying N items where each call advances an internal counter. Answers are sent in array order. Stops on first HTTP error. Returns array of {index, answer, response} written to output_file.",
+        schema: z.object({
+          task: z.string().describe('The task name to verify against (e.g. "categorize")'),
+          answers: z.string().describe("Array of answers — file path to a JSON array file, or an inline JSON array string"),
+          output_file: z.string().describe("Absolute path to write the results JSON array (each entry has index, answer, response)"),
+        }),
+      },
+      api_request: {
+        description: "POST to /api/* with a JSON body. Returns the API response body as JSON. For a single call only — if calling the same endpoint for each item in a dataset, use api_batch instead.",
+        schema: z.object({
+          path: z.string().describe('API path segment after /api/ (e.g. "location")'),
+          body: z.string().describe("Request body — file path to a JSON file, inline JSON string, or a raw string value. apikey is injected automatically."),
+        }),
+      },
+      api_batch: {
+        description: "POST to /api/* for each row in a CSV/JSON array file. Preferred over multiple api_request calls — use whenever a dataset needs the same endpoint called per item. Apikey auto-injected. Calls made sequentially. Returns array of {input, response} per row written to output_file.",
+        schema: z.object({
+          path: z.string().describe('API path segment after /api/ (e.g. "location")'),
+          data_file: z.string().describe("Absolute path to a CSV or JSON array file. Each row/item becomes one API call."),
+          field_map_json: z.string().describe('JSON object mapping source field names to target field names, e.g. {"born":"birthYear"}. Unmapped fields pass through. Default: "{}" (no renaming).'),
+          output_file: z.string().describe("Absolute path to write the results JSON array"),
+        }),
+      },
+    },
+  },
   handler: agentsHub,
 } satisfies ToolDefinition;

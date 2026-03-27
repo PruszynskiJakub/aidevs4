@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { createDocument } from "../infra/document.ts";
@@ -120,5 +121,15 @@ async function grep(args: Record<string, unknown>): Promise<Document> {
 
 export default {
   name: "grep",
+  schema: {
+    name: "grep",
+    description: "Search file contents by regex pattern. Returns matches in file:line:content format. Capped at 200 matching lines across 50 files. Use for finding code patterns, string occurrences, or specific content across files.",
+    schema: z.object({
+      pattern: z.string().describe("Regular expression pattern to search for."),
+      path: z.string().describe("Base directory to search in. Must be an absolute path within allowed read directories."),
+      include: z.string().describe('Glob filter for file types (e.g. "*.ts", "*.json"). Defaults to "*" (all files).'),
+      case_insensitive: z.boolean().describe("If true, match case-insensitively. Defaults to false."),
+    }),
+  },
   handler: grep,
 } satisfies ToolDefinition;

@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { createDocument } from "../infra/document.ts";
@@ -58,5 +59,14 @@ async function read_file(args: Record<string, unknown>): Promise<Document> {
 
 export default {
   name: "read_file",
+  schema: {
+    name: "read_file",
+    description: "Read a text file with line numbers. Returns content in cat -n format with md5 checksum. Supports pagination via offset/limit for large files. Use for inspecting file contents, verifying edits, or extracting specific sections.",
+    schema: z.object({
+      file_path: z.string().describe("Absolute or relative path to the file to read."),
+      offset: z.int().describe("1-based line number to start reading from. Defaults to 1."),
+      limit: z.int().describe("Maximum number of lines to return. Defaults to 2000."),
+    }),
+  },
   handler: read_file,
 } satisfies ToolDefinition;

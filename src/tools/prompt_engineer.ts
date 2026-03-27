@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { llm } from "../llm/llm.ts";
@@ -88,5 +89,16 @@ async function promptEngineer(
 
 export default {
   name: "prompt_engineer",
+  schema: {
+    name: "prompt_engineer",
+    description: "Craft or refine prompts for external LLMs with specific constraints. Use when you need to create a prompt that fits within a token budget, produces a specific output format, or handles edge cases. Supports iterative refinement — pass the current prompt and feedback to improve it. Returns the crafted or refined prompt text ready for use with the target LLM.",
+    schema: z.object({
+      goal: z.string().describe("What the prompt should accomplish. Be specific about the task, expected input, and desired output format."),
+      constraints: z.string().describe("Hard constraints: token limit, output format (e.g. 'respond with DNG or NEU only'), language requirements, model limitations."),
+      context: z.string().describe("Relevant context: sample data, known edge cases, exceptions to standard rules, placeholders available (e.g. {id}, {description})."),
+      current_prompt: z.string().describe("The current prompt to refine. Empty string if crafting from scratch."),
+      feedback: z.string().describe("What went wrong with the current prompt — which cases failed and why. Empty string if crafting from scratch."),
+    }),
+  },
   handler: promptEngineer,
 } satisfies ToolDefinition;

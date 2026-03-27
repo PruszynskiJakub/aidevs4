@@ -1,4 +1,5 @@
 import { dirname } from "path";
+import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { createDocument } from "../infra/document.ts";
@@ -39,5 +40,13 @@ async function write_file(args: Record<string, unknown>): Promise<Document> {
 
 export default {
   name: "write_file",
+  schema: {
+    name: "write_file",
+    description: "Create or overwrite a file. Auto-creates parent directories. Writes to the session output directory. Use for saving generated content, creating configuration files, or writing processed data.",
+    schema: z.object({
+      file_path: z.string().describe("Path to write to. Must be within the allowed write directories."),
+      content: z.string().describe("Text content to write to the file."),
+    }),
+  },
   handler: write_file,
 } satisfies ToolDefinition;

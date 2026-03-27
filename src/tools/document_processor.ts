@@ -1,4 +1,5 @@
 import { basename, extname } from "path";
+import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import type { ContentPart } from "../types/llm.ts";
@@ -91,5 +92,18 @@ async function documentProcessor(args: Record<string, unknown>): Promise<Documen
 
 export default {
   name: "document_processor",
+  schema: {
+    name: "document_processor",
+    description: "Analyze documents (text files, images) using AI vision models. Accepts document UUIDs returned by other tools (e.g. web__download). Supports cross-referencing multiple documents to answer questions.",
+    actions: {
+      ask: {
+        description: "Ask a question about one or more documents using AI vision. Supports text (.md, .txt, .csv, .json, .xml, .html) and image (.png, .jpg, .jpeg, .gif, .webp) documents. Pass UUIDs from previous tool results (e.g. web__download). Returns a text answer synthesized from all provided documents.",
+        schema: z.object({
+          uuids: z.array(z.string()).describe("UUIDs of documents to analyze (max 10). Use document IDs returned by other tools such as web__download."),
+          question: z.string().describe("Question to answer based on the documents. Be specific about what information you need."),
+        }),
+      },
+    },
+  },
   handler: documentProcessor,
 } satisfies ToolDefinition;

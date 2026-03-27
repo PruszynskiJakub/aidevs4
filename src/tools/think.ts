@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { llm } from "../llm/llm.ts";
@@ -30,5 +31,12 @@ async function think(args: Record<string, unknown>): Promise<Document> {
 
 export default {
   name: "think",
+  schema: {
+    name: "think",
+    description: "Pause and reason step-by-step before acting. Use when you need to plan a multi-step approach, weigh alternatives, or synthesize information from previous tool results. Returns the reasoning as text. No side effects — does not fetch data or modify files.",
+    schema: z.object({
+      thought: z.string().describe("The problem or question to reason through. Include relevant facts from prior tool results."),
+    }),
+  },
   handler: think,
 } satisfies ToolDefinition;

@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { createDocument } from "../infra/document.ts";
@@ -149,5 +150,17 @@ async function edit_file(args: Record<string, unknown>): Promise<Document> {
 
 export default {
   name: "edit_file",
+  schema: {
+    name: "edit_file",
+    description: "Perform exact string replacement in a file. Supports single or bulk replacement, optional checksum verification for concurrency safety, and dry-run preview. Use for modifying existing files, patching code, or updating configuration values.",
+    schema: z.object({
+      file_path: z.string().describe("Path to the file to edit. Must be within allowed write directories."),
+      old_string: z.string().describe("Exact string to find and replace. Must exist in the file."),
+      new_string: z.string().describe("Replacement string. Must differ from old_string."),
+      replace_all: z.boolean().describe("If true, replace all occurrences. If false, require exactly one occurrence. Defaults to false."),
+      checksum: z.string().describe("md5 checksum from a prior read. If non-empty, edit is rejected when the file has changed. Pass empty string to skip check."),
+      dry_run: z.boolean().describe("If true, return a diff preview without writing changes. Defaults to false."),
+    }),
+  },
   handler: edit_file,
 } satisfies ToolDefinition;

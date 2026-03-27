@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { Document } from "../types/document.ts";
 import { files } from "../infra/file.ts";
@@ -126,5 +127,28 @@ async function geoDistance(args: Record<string, unknown>): Promise<Document> {
 
 export default {
   name: "geo_distance",
+  schema: {
+    name: "geo_distance",
+    description: "Compute geographic distances between coordinates. Use when a task involves physical proximity, location matching, or distance calculations.",
+    actions: {
+      find_nearby: {
+        description: "Match two sets of locations in bulk. Reads two JSON files (references + queries) and returns JSON array of matching pairs with distance_km, sorted by distance ascending. Empty array if no pairs within radius. Preferred over looping with distance — prepare the two files first, then match in one call.",
+        schema: z.object({
+          references_file: z.string().describe("Absolute path to a JSON array of reference points. Each item must have latitude and longitude (numbers). All other fields are passed through as metadata."),
+          queries_file: z.string().describe("Absolute path to a JSON array of query points. Each item must have latitude and longitude (numbers). All other fields are passed through as metadata."),
+          radius_km: z.number().describe("Maximum distance in kilometers. Only pairs within this radius are returned."),
+        }),
+      },
+      distance: {
+        description: "Compute haversine distance between a single pair of points. Returns distance in km. For comparing multiple points against multiple references, use find_nearby instead.",
+        schema: z.object({
+          lat1: z.number().describe("Latitude of the first point (-90 to 90)"),
+          lon1: z.number().describe("Longitude of the first point (-180 to 180)"),
+          lat2: z.number().describe("Latitude of the second point (-90 to 90)"),
+          lon2: z.number().describe("Longitude of the second point (-180 to 180)"),
+        }),
+      },
+    },
+  },
   handler: geoDistance,
 } satisfies ToolDefinition;
