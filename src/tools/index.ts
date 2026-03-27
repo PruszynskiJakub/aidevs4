@@ -26,6 +26,8 @@ import glob from "./glob.ts";
 import globSchema from "../schemas/glob.json";
 import grep from "./grep.ts";
 import grepSchema from "../schemas/grep.json";
+import execute_code from "./execute_code.ts";
+import executeCodeSchema from "../schemas/execute_code.json";
 
 register(think, thinkSchema);
 register(bash, bashSchema);
@@ -40,6 +42,7 @@ register(write_file, writeFileSchema);
 register(edit_file, editFileSchema);
 register(glob, globSchema);
 register(grep, grepSchema);
+register(execute_code, executeCodeSchema);
 
 export { getTools, dispatch, reset };
 export type { ToolFilter } from "../types/tool.ts";
