@@ -8,9 +8,6 @@ Support tool_search capability
 
 ---
 ### Problems
-Operujemy na różnego rodzaju plikach.
-Operujemy na różnych strukturach - niektóre są płaskie inne nie.
-Agent ma problem z obsługą tego
 
 
 system wieloagentowy - odpalający agentów
@@ -28,4 +25,6 @@ wykorzystanie promptfoo oraz langfuse do ewaluacji i observability
 
 routing zapytań do dedykowanego modelu
 
-chowanie wewnątrz agenta plików nie sprzyja używaniu przez agentów, ale korzysta z tego mechanizm przekazywania plików pomiędzy narzędziami
+narzędzie 
+publish - udostępniania plików na zewnątrz ( security !!!)
+share - udostępenianie plików dla innych agentów
