@@ -69,8 +69,36 @@ function resolveTools(agentName: string, toolNames: string[]): LLMTool[] {
   return resolved;
 }
 
+export interface AgentSummary {
+  name: string;
+  description: string;
+}
+
 export function createAgentsService() {
+  let cachedAgents: AgentSummary[] | null = null;
+
   return {
+    async listAgents(): Promise<AgentSummary[]> {
+      if (cachedAgents) return cachedAgents;
+
+      const dir = resolve(AGENTS_DIR);
+      const entries = await Array.fromAsync(new Bun.Glob("*.agent.md").scan({ cwd: dir }));
+      const summaries: AgentSummary[] = [];
+
+      for (const entry of entries) {
+        const name = entry.replace(/\.agent\.md$/, "");
+        const config = await loadOne(name);
+        const caps = config.capabilities?.join(", ") ?? "";
+        summaries.push({
+          name: config.name,
+          description: caps || config.name,
+        });
+      }
+
+      cachedAgents = summaries;
+      return summaries;
+    },
+
     async get(name: string): Promise<AgentConfig> {
       const filePath = resolve(AGENTS_DIR, `${name}.agent.md`);
       const file = Bun.file(filePath);
