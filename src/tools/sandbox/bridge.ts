@@ -1,8 +1,11 @@
+import { resolve, isAbsolute } from "path";
 import { createBunFileService } from "../../infra/file.ts";
 
 interface BridgeConfig {
   readPaths: string[];
   writePaths: string[];
+  /** Base directory for resolving relative paths (typically the session dir). */
+  cwd?: string;
 }
 
 export interface BridgeHandle {
@@ -12,6 +15,7 @@ export interface BridgeHandle {
 
 export async function startBridge(cfg: BridgeConfig): Promise<BridgeHandle> {
   const fs = createBunFileService(cfg.readPaths, cfg.writePaths);
+  const baseCwd = cfg.cwd;
 
   const server = Bun.serve({
     port: 0, // OS picks a free port
@@ -21,7 +25,13 @@ export async function startBridge(cfg: BridgeConfig): Promise<BridgeHandle> {
 
       try {
         const body = await req.json() as Record<string, unknown>;
-        const filePath = body.path as string;
+        // Resolve relative paths against the configured cwd (session dir)
+        // so that files created by bash (which runs in session dir) are accessible.
+        const rawPath = body.path as string;
+        const filePath =
+          baseCwd && !isAbsolute(rawPath)
+            ? resolve(baseCwd, rawPath)
+            : rawPath;
 
         switch (endpoint) {
           case "read_file": {

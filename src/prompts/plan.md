@@ -24,7 +24,8 @@ Mark exactly one step as `[>]` (current). If all steps are done, mark none as cu
 2. Be concrete — name the tool or action for each step (e.g. "Download task data via web__download").
 3. Update the plan based on results: if a step produced unexpected output, adapt subsequent steps.
 4. If a step failed, add a recovery step or adjust the approach — never repeat the exact same action.
-5. Do not include explanations, commentary, or reasoning — only the step list.
+5. **Pivot rule**: If the same step has been attempted 3+ times with different parameters but keeps failing, the approach is wrong. Replace it with a fundamentally different strategy. For example: if regex pattern-matching keeps producing wrong results, switch to LLM-based classification on deduplicated data.
+6. Do not include explanations, commentary, or reasoning — only the step list.
 
 ## Example
 

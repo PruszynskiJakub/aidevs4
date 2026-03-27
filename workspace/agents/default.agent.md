@@ -45,6 +45,16 @@ Follow this strict order. Do not skip ahead, do not loop back without reason.
 3. **Process** — Transform, filter, or analyze the data. Choose the right tool for each operation. Prefer deterministic operations over LLM-powered ones for simple transformations. Use LLM only when the task requires semantic understanding.
 4. **Submit** — Format the answer exactly as required, then submit. Done.
 
+## Data Analysis — Explore Before You Process
+
+When a task involves large datasets (100+ items):
+
+1. **Sample first** — Inspect 3–5 items to confirm structure and spot patterns.
+2. **Deduplicate** — Before processing text fields (descriptions, notes, labels), collect unique values and their counts. Patterns that repeat 5000 times need one classification, not 5000. This often reduces the problem by 10–100x.
+3. **Prototype on a subset** — Test your logic on 10–20 items before running on the full set. Verify edge cases.
+4. **Use programmatic checks first** — Range checks, type checks, and structural validation are deterministic and free. Use LLM only for what requires semantic understanding, and only on deduplicated/filtered data.
+5. **Inspect failures** — After your first pass, look at the items you flagged and the items you didn't. Sample both to check for false positives and false negatives before submitting.
+
 ## Tool Usage — Logical Order
 
 - **Read tool descriptions and schemas first** — they document capabilities and constraints. Never guess at parameters.
@@ -64,6 +74,7 @@ Follow this strict order. Do not skip ahead, do not loop back without reason.
 - **Never repeat an identical call.** If it failed, it will fail again. Change parameters, tool, or approach.
 - **Read error messages carefully.** They usually say exactly what's wrong. Fix that specific issue.
 - **Max 2 retries on verification failures.** If two reformatting attempts don't work, step back and rethink the entire approach.
+- **Max 2 retries on approach failures.** If you've tried the same general technique twice (e.g. regex tuning, different keyword lists) and still get wrong results, the technique itself is wrong. Stop tuning and switch to a fundamentally different method: different tool, different algorithm, or LLM-based classification on deduplicated data.
 - **If data is unexpected** (wrong columns, empty results, different format), re-inspect the source before retrying downstream operations.
 
 ## Answer Submission

@@ -61,6 +61,44 @@ describe("processMemory", () => {
     expect(result.context.systemPrompt).toContain("Important fact");
   });
 
+  test("does not orphan tool responses from their tool_calls assistant message", async () => {
+    // Build messages that exceed threshold, with a tool_calls + tool pair
+    // near the split boundary so the naive split would land between them.
+    const filler = makeMessages(30_000); // bulk to trigger compression
+    const assistantWithToolCalls: LLMMessage = {
+      role: "assistant",
+      content: "Let me check.",
+      toolCalls: [
+        { id: "call_1", type: "function", function: { name: "read_file", arguments: '{"path":"a.txt"}' } },
+        { id: "call_2", type: "function", function: { name: "read_file", arguments: '{"path":"b.txt"}' } },
+      ],
+    };
+    const toolResponse1: LLMMessage = { role: "tool", toolCallId: "call_1", content: "file a contents" };
+    const toolResponse2: LLMMessage = { role: "tool", toolCallId: "call_2", content: "file b contents" };
+    const recentUser: LLMMessage = { role: "user", content: "Thanks!" };
+
+    const messages = [...filler, assistantWithToolCalls, toolResponse1, toolResponse2, recentUser];
+    const state = emptyMemoryState();
+    const provider = createMockProvider("🟡 Observed tool usage");
+
+    const result = await processMemory("system prompt", messages, state, provider, sessionId);
+
+    // The tail must never start with a tool message
+    const tail = result.context.messages;
+    if (tail.length > 0) {
+      expect(tail[0].role).not.toBe("tool");
+    }
+
+    // If the assistant+tool messages are in the tail, they must all be there together
+    const tailRoles = tail.map((m) => m.role);
+    const toolIdx = tailRoles.indexOf("tool");
+    if (toolIdx !== -1) {
+      // There must be an assistant message before the first tool message
+      const precedingRoles = tailRoles.slice(0, toolIdx);
+      expect(precedingRoles).toContain("assistant");
+    }
+  });
+
   test("triggers observation when above threshold", async () => {
     const messages = makeMessages(35_000); // above 30K threshold
     const state = emptyMemoryState();

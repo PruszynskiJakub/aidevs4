@@ -91,6 +91,7 @@ async function executeCode(args: Record<string, unknown>): Promise<Document> {
     bridge = await startBridge({
       readPaths: [sessionDir],
       writePaths: [sessionDir],
+      cwd: sessionDir,
     });
 
     // Build script: prelude (with bridge tools) + user code

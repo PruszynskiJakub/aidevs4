@@ -67,7 +67,18 @@ export async function processMemory(
     tailCount++;
   }
 
-  const splitIndex = messages.length - tailCount;
+  let splitIndex = messages.length - tailCount;
+
+  // Ensure the split doesn't orphan tool responses from their tool_calls.
+  // If tail starts with role:"tool" messages, pull splitIndex back to include
+  // the preceding assistant message that issued the tool_calls.
+  while (
+    splitIndex > state.lastObservedIndex &&
+    messages[splitIndex]?.role === "tool"
+  ) {
+    splitIndex--;
+  }
+
   const messagesToObserve = messages.slice(state.lastObservedIndex, splitIndex);
   const tailMessages = messages.slice(splitIndex);
 
