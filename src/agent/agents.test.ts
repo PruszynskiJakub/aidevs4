@@ -1,8 +1,25 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { agentsService } from "./agents.ts";
+import { register, reset } from "../tools/index.ts";
+import type { ToolDefinition } from "../types/tool.ts";
+import { createDocument } from "../infra/document.ts";
+
+function registerTool(name: string) {
+  const tool: ToolDefinition = {
+    name,
+    handler: async () =>
+      createDocument("ok", name, { source: null, type: "document", mimeType: "text/plain" }),
+  };
+  const schema = {
+    name,
+    description: `${name} tool`,
+    parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
+  };
+  register(tool, schema);
+}
 
 beforeEach(() => {
-  agentsService.resetCache();
+  reset();
 });
 
 describe("agentsService", () => {
@@ -37,47 +54,82 @@ describe("agentsService", () => {
       expect(config.prompt).not.toContain("{{");
     });
 
-    it("throws on unknown agent with available names", async () => {
+    it("throws on unknown agent", async () => {
       await expect(agentsService.get("nonexistent")).rejects.toThrow(
-        /Unknown agent: "nonexistent". Available:/,
+        /Unknown agent: "nonexistent"/,
       );
     });
 
-    it("caches results across multiple get calls", async () => {
+    it("reads from disk each time (no caching)", async () => {
       const first = await agentsService.get("default");
       const second = await agentsService.get("default");
-      expect(first).toBe(second);
+      expect(first).toEqual(second);
+      expect(first).not.toBe(second); // different object references
     });
   });
 
   describe("resolve", () => {
-    it("resolves default agent with prompt and model", async () => {
+    it("resolves default agent with all tools when no tools field", async () => {
+      registerTool("think");
+      registerTool("bash");
+
       const result = await agentsService.resolve("default");
       expect(result.prompt).toContain("autonomous agent");
       expect(result.model).toBe("gpt-5-2025-08-07");
-      expect(result.toolFilter).toBeUndefined();
+      expect(result.tools).toHaveLength(2);
     });
 
-    it("wraps tools array as toolFilter include", async () => {
+    it("resolves agent with only declared tools", async () => {
+      registerTool("shipping");
+      registerTool("think");
+      registerTool("bash");
+
       const result = await agentsService.resolve("proxy");
       expect(result.model).toBe("gpt-4.1");
-      expect(result.toolFilter).toEqual({ include: ["shipping", "think"] });
+      const names = result.tools.map((t) => t.function.name);
+      expect(names).toContain("shipping");
+      expect(names).toContain("think");
+      expect(names).not.toContain("bash");
     });
 
-    it("returns prompt directly without template composition", async () => {
-      const result = await agentsService.resolve("default");
-      expect(result.prompt).toContain("Reasoning Protocol");
-      expect(result.prompt).not.toContain("{{");
+    it("warns and skips tool not found in registry", async () => {
+      registerTool("think");
+      // "shipping" is NOT registered — should warn
+
+      const warnSpy = mock(() => {});
+      const originalWarn = console.warn;
+      console.warn = warnSpy;
+
+      try {
+        const result = await agentsService.resolve("proxy");
+        expect(result.tools).toHaveLength(1);
+        expect(result.tools[0].function.name).toBe("think");
+        expect(warnSpy).toHaveBeenCalledWith(
+          "Agent 'proxy': tool 'shipping' not found in registry, skipping",
+        );
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
+
+    it("returns empty tools array when all declared tools are invalid", async () => {
+      // proxy declares ["shipping", "think"] — neither registered
+
+      const warnSpy = mock(() => {});
+      const originalWarn = console.warn;
+      console.warn = warnSpy;
+
+      try {
+        const result = await agentsService.resolve("proxy");
+        expect(result.tools).toHaveLength(0);
+        expect(warnSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        console.warn = originalWarn;
+      }
     });
 
     it("throws for unknown agent", async () => {
       await expect(agentsService.resolve("nonexistent")).rejects.toThrow(/Unknown agent/);
-    });
-
-    it("returns consistent results across calls", async () => {
-      const first = await agentsService.resolve("default");
-      const second = await agentsService.resolve("default");
-      expect(first).toEqual(second);
     });
   });
 });

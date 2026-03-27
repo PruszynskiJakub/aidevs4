@@ -1,4 +1,4 @@
-import { register, getTools, dispatch, reset } from "./registry.ts";
+import { register, getTools, getToolsByName, dispatch, reset } from "./registry.ts";
 
 import think from "./think.ts";
 import thinkSchema from "../schemas/think.json";
@@ -44,5 +44,4 @@ register(glob, globSchema);
 register(grep, grepSchema);
 register(execute_code, executeCodeSchema);
 
-export { getTools, dispatch, reset };
-export type { ToolFilter } from "../types/tool.ts";
+export { register, getTools, getToolsByName, dispatch, reset };

@@ -1,15 +1,16 @@
-import { resolve, basename } from "path";
+import { resolve } from "path";
 import matter from "gray-matter";
 import type { AgentConfig } from "../types/assistant.ts";
-import type { ToolFilter } from "../types/tool.ts";
+import type { LLMTool } from "../types/llm.ts";
 import { files } from "../infra/file.ts";
+import { getTools, getToolsByName } from "../tools/index.ts";
 
 const AGENTS_DIR = resolve(import.meta.dir, "../../workspace/agents");
 
 export interface ResolvedAgent {
   prompt: string;
   model: string;
-  toolFilter?: ToolFilter;
+  tools: LLMTool[];
 }
 
 function stringArray(data: Record<string, unknown>, field: string, filename: string): string[] | undefined {
@@ -48,58 +49,47 @@ function validate(data: Record<string, unknown>, body: string, filename: string)
   };
 }
 
-async function loadAll(): Promise<Map<string, AgentConfig>> {
-  const glob = new Bun.Glob("*.agent.md");
-  const map = new Map<string, AgentConfig>();
+async function loadOne(name: string): Promise<AgentConfig> {
+  const filePath = resolve(AGENTS_DIR, `${name}.agent.md`);
+  const raw = await files.readText(filePath);
+  const { data, content } = matter(raw);
+  return validate(data as Record<string, unknown>, content, `${name}.agent.md`);
+}
 
-  for await (const path of glob.scan({ cwd: AGENTS_DIR })) {
-    const fullPath = resolve(AGENTS_DIR, path);
-    const raw = await files.readText(fullPath);
-    const { data, content } = matter(raw);
-    const key = basename(path, ".agent.md");
-    const config = validate(data as Record<string, unknown>, content, path);
-    map.set(key, config);
+function resolveTools(agentName: string, toolNames: string[]): LLMTool[] {
+  const resolved: LLMTool[] = [];
+  for (const name of toolNames) {
+    const tools = getToolsByName(name);
+    if (tools) {
+      resolved.push(...tools);
+    } else {
+      console.warn(`Agent '${agentName}': tool '${name}' not found in registry, skipping`);
+    }
   }
-
-  if (map.size === 0) {
-    throw new Error(`No agent files found in ${AGENTS_DIR}`);
-  }
-
-  return map;
+  return resolved;
 }
 
 export function createAgentsService() {
-  let cache: Map<string, AgentConfig> | null = null;
-
-  async function ensureLoaded(): Promise<Map<string, AgentConfig>> {
-    if (!cache) {
-      cache = await loadAll();
-    }
-    return cache;
-  }
-
   return {
     async get(name: string): Promise<AgentConfig> {
-      const map = await ensureLoaded();
-      const config = map.get(name);
-      if (!config) {
-        const available = Array.from(map.keys()).join(", ");
-        throw new Error(`Unknown agent: "${name}". Available: ${available}`);
+      const filePath = resolve(AGENTS_DIR, `${name}.agent.md`);
+      const file = Bun.file(filePath);
+      if (!(await file.exists())) {
+        throw new Error(`Unknown agent: "${name}". File not found: ${name}.agent.md`);
       }
-      return config;
+      return loadOne(name);
     },
 
     async resolve(name: string): Promise<ResolvedAgent> {
       const agent = await this.get(name);
+      const tools = agent.tools
+        ? resolveTools(agent.name, agent.tools)
+        : await getTools();
       return {
         prompt: agent.prompt,
         model: agent.model,
-        ...(agent.tools && { toolFilter: { include: agent.tools } }),
+        tools,
       };
-    },
-
-    resetCache(): void {
-      cache = null;
     },
   };
 }

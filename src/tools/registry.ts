@@ -1,5 +1,5 @@
 import type { LLMTool } from "../types/llm.ts";
-import type { ToolDefinition, ToolFilter } from "../types/tool.ts";
+import type { ToolDefinition } from "../types/tool.ts";
 import { safeParse } from "../utils/parse.ts";
 import { createErrorDocument, documentService, formatDocumentsXml } from "../infra/document.ts";
 
@@ -68,17 +68,15 @@ function baseName(expandedName: string): string {
   return idx === -1 ? expandedName : expandedName.slice(0, idx);
 }
 
-function matchesFilter(name: string, filter?: ToolFilter): boolean {
-  if (!filter) return true;
-  const base = baseName(name);
-  if (filter.include) return filter.include.includes(base);
-  if (filter.exclude) return !filter.exclude.includes(base);
-  return true;
+/** Return all tools (no filtering). */
+export async function getTools(): Promise<LLMTool[]> {
+  return expandedTools;
 }
 
-export async function getTools(filter?: ToolFilter): Promise<LLMTool[]> {
-  if (!filter) return expandedTools;
-  return expandedTools.filter((t) => matchesFilter(t.function.name, filter));
+/** Return all expanded tools for a base name, or undefined if not registered. */
+export function getToolsByName(name: string): LLMTool[] | undefined {
+  const matched = expandedTools.filter((t) => baseName(t.function.name) === name);
+  return matched.length > 0 ? matched : undefined;
 }
 
 export interface DispatchResult {

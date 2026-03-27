@@ -5,7 +5,3 @@ export interface ToolDefinition {
   handler: (args: Record<string, unknown>) => Promise<Document | Document[]>;
 }
 
-export interface ToolFilter {
-  include?: string[];
-  exclude?: string[];
-}

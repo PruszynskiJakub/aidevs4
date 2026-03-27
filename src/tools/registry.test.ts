@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { register, getTools, dispatch, reset } from "./registry.ts";
+import { register, getTools, getToolsByName, dispatch, reset } from "./registry.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 import { createDocument } from "../infra/document.ts";
 
@@ -189,7 +189,7 @@ describe("registry", () => {
     });
   });
 
-  describe("getTools with ToolFilter", () => {
+  describe("getToolsByName", () => {
     function registerEchoAndMulti() {
       const echo: ToolDefinition = {
         name: "echo",
@@ -241,32 +241,29 @@ describe("registry", () => {
       register(multi, multiSchema);
     }
 
-    it("include filter returns only matching simple tools", async () => {
+    it("returns simple tool by name", () => {
       registerEchoAndMulti();
-      const tools = await getTools({ include: ["echo"] });
+      const tools = getToolsByName("echo");
       expect(tools).toHaveLength(1);
-      expect(tools[0].function.name).toBe("echo");
+      expect(tools![0].function.name).toBe("echo");
     });
 
-    it("include filter returns multi-action expanded tools by base name", async () => {
+    it("returns multi-action expanded tools by base name", () => {
       registerEchoAndMulti();
-      const tools = await getTools({ include: ["multi"] });
+      const tools = getToolsByName("multi");
       expect(tools).toHaveLength(2);
-      const names = tools.map((t) => t.function.name);
+      const names = tools!.map((t) => t.function.name);
       expect(names).toContain("multi__create");
       expect(names).toContain("multi__delete");
     });
 
-    it("exclude filter removes matching tools", async () => {
+    it("returns undefined for unknown tool name", () => {
       registerEchoAndMulti();
-      const tools = await getTools({ exclude: ["echo"] });
-      expect(tools).toHaveLength(2);
-      const names = tools.map((t) => t.function.name);
-      expect(names).toContain("multi__create");
-      expect(names).toContain("multi__delete");
+      const tools = getToolsByName("nonexistent");
+      expect(tools).toBeUndefined();
     });
 
-    it("no filter returns all tools (backward compat)", async () => {
+    it("getTools returns all tools without filtering", async () => {
       registerEchoAndMulti();
       const tools = await getTools();
       expect(tools).toHaveLength(3);
