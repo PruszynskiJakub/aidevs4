@@ -13,6 +13,29 @@ const MAX_CODE_LENGTH = 100_000;
 const DEFAULT_TIMEOUT = 30_000;
 const MAX_TIMEOUT = 120_000;
 
+/** Resolve path to deno binary — checks common install locations. */
+function findDeno(): string | null {
+  const home = process.env.HOME ?? "";
+  const candidates = [
+    join(home, ".deno", "bin", "deno"),
+    "/usr/local/bin/deno",
+    "/opt/homebrew/bin/deno",
+  ];
+  for (const p of candidates) {
+    if (Bun.spawnSync(["test", "-x", p]).exitCode === 0) return p;
+  }
+  // Check PATH
+  const which = Bun.spawnSync(["which", "deno"]);
+  if (which.exitCode === 0) return which.stdout.toString().trim();
+  return null;
+}
+
+let _denoBin: string | null | undefined;
+function getDeno(): string | null {
+  if (_denoBin === undefined) _denoBin = findDeno();
+  return _denoBin;
+}
+
 /**
  * Strip absolute paths from output to prevent leaking filesystem structure.
  */
@@ -80,7 +103,18 @@ async function executeCode(args: Record<string, unknown>): Promise<Document> {
     await Bun.write(tmpFile, fullCode);
 
     try {
-      const proc = Bun.spawn(["bun", "run", tmpFile], {
+      const deno = getDeno();
+      const cmd = deno
+        ? [
+            deno,
+            "run",
+            `--allow-net=127.0.0.1:${bridge.port}`, // bridge only
+            "--no-prompt", // fail instead of prompting for permissions
+            tmpFile,
+          ]
+        : ["bun", "run", tmpFile]; // fallback: no OS-level sandboxing
+
+      const proc = Bun.spawn(cmd, {
         cwd: sessionDir,
         stdout: "pipe",
         stderr: "pipe",
@@ -88,7 +122,7 @@ async function executeCode(args: Record<string, unknown>): Promise<Document> {
           // Pass minimal env — no API keys, no secrets
           HOME: process.env.HOME,
           PATH: process.env.PATH,
-          TMPDIR: sessionDir, // redirect temp files to session dir
+          TMPDIR: sessionDir,
         },
       });
 
