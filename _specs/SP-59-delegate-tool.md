@@ -12,7 +12,6 @@ The tool registry supports dynamic schema construction (see `register()` in `src
 
 ## Out of scope
 
-- Recursive delegation (subagents spawning subagents)
 - Shared session / message history between parent and child
 - Streaming child progress back to the parent
 - Inter-agent file sharing (child output goes to its own session)
@@ -26,7 +25,7 @@ The tool registry supports dynamic schema construction (see `register()` in `src
 
 - Must use OpenAI strict-mode-compatible schema — no `oneOf`, `anyOf`, or type arrays
 - Agent names in the enum must be generated dynamically using Zod (no hardcoded JSON)
-- The `delegate` tool must NOT be available to subagents (prevents recursion)
+- Recursion prevention is handled by agent config: only the `default` agent lists `delegate` in its `tools` array; subagents simply don't have it
 - Child session must be fully isolated: own session ID, own message history, own output directory
 - Child agent runs synchronously from the parent's perspective — the parent waits for the result
 
@@ -37,7 +36,7 @@ The tool registry supports dynamic schema construction (see `register()` in `src
 - [ ] The tool description includes a short summary of each available agent (name + capabilities from frontmatter)
 - [ ] Calling `delegate` creates a new child session and runs the specified agent with the given prompt
 - [ ] The parent agent receives the child's final answer text as the tool result (Document)
-- [ ] The child agent cannot use the `delegate` tool (no recursion)
+- [ ] Only the `default` agent includes `delegate` in its `tools` list — other agents don't have access (no recursion by design)
 - [ ] The child session is logged independently (own log directory under `workspace/sessions/`)
 - [ ] The parent's log includes a reference to the child session ID for traceability
 - [ ] If the child agent fails or hits max iterations without answering, the tool returns an actionable error
@@ -53,29 +52,21 @@ The tool registry supports dynamic schema construction (see `register()` in `src
    - Export `default { name: "delegate", handler }` satisfying `ToolDefinition`
    - Handler validates `agent` against known agents, validates `prompt` (non-empty, max length)
    - Creates a child session via `executeTurn({ prompt, assistant: agent })`
-   - Strips the `delegate` tool from the child's toolset before execution
    - Returns the child's final answer as a Document, including child session ID in metadata
 
-3. **Create `src/schemas/delegate.json` as a minimal stub**
-   - Contains `name`, `description`, and `parameters` with `agent` (string, no enum yet) and `prompt` (string)
-   - The actual enum values for `agent` will be injected dynamically
+3. **Define Zod schema in the tool file** (per SP-60 convention)
+   - At startup, call `agentsService.listAgents()` to get available agent names + descriptions
+   - Build a Zod schema with `agent` as `z.enum([...agentNames])` and `prompt` as `z.string()`
+   - Include agent descriptions in the tool-level description string
 
-4. **Extend the registry to support dynamic schema enrichment**
-   - Add a `register()` overload or post-registration hook that allows injecting enum values into a parameter after initial registration
-   - Alternatively: the `delegate` tool's registration in `index.ts` reads agent list and patches the schema before calling `register()`
-   - Preferred approach: build the schema object in `index.ts` at registration time rather than loading from JSON — call `agentsService.listAgents()`, construct the schema with the enum populated, then `register()`
+4. **Register in `src/tools/index.ts`**
+   - Import and register `delegate` like any other tool — schema is embedded in the export
 
-5. **Register in `src/tools/index.ts`**
-   - Import delegate tool + base schema
-   - Call `agentsService.listAgents()` to get available agents
-   - Inject agent names as `enum` on the `agent` parameter, and build a description that lists each agent with a one-line summary
-   - Call `register(delegate, enrichedSchema)`
+5. **Add `delegate` to `default.agent.md` tools list**
+   - Only the default agent gets access; other agents' `tools` arrays remain unchanged
+   - This naturally prevents recursion without any special filtering logic
 
-6. **Ensure child agent excludes `delegate` tool**
-   - In the delegate handler, when calling `executeTurn` or `runAgent`, pass an option that filters out `delegate` from the child's resolved tools
-   - Simplest approach: add an `excludeTools?: string[]` option to `executeTurn` / the agent resolution path
-
-7. **Add child session reference to parent log**
+6. **Add child session reference to parent log**
    - Emit an event or log entry in the parent session with the child session ID
    - The tool result Document metadata should include `childSessionId`
 
@@ -85,6 +76,21 @@ The tool registry supports dynamic schema construction (see `register()` in `src
 - **Unknown agent**: pass an agent name not in the enum, verify actionable error
 - **Empty prompt**: pass empty string, verify validation error
 - **Dynamic enum**: add a new `.agent.md` file, restart, verify it appears in the tool schema
-- **No recursion**: verify the child agent's resolved toolset does not contain `delegate`
+- **No recursion**: verify that non-default agents (e.g. `proxy`) don't have `delegate` in their resolved toolset
 - **Child failure**: mock a child agent that exceeds max iterations, verify parent gets an error Document with explanation
 - **Logging**: verify child session creates its own log directory and parent log references child session ID
+
+## Implementation notes
+
+### Circular dependency avoidance
+
+`delegate.ts` cannot statically import `agentsService` (from `agents.ts`) or `executeTurn` (from `orchestrator.ts`) because both transitively import `tools/index.ts`, which imports `delegate.ts` — creating a cycle. Two techniques break it:
+
+1. **Agent scanning**: `delegate.ts` scans `workspace/agents/*.agent.md` directly using `Bun.Glob` + `gray-matter` at top-level `await`, bypassing `agentsService`.
+2. **Lazy orchestrator import**: `executeTurn` is loaded via dynamic `import()` inside the handler, deferring resolution until call time.
+
+### MarkdownLogger sandbox fix
+
+When a child session is spawned from a parent's async context, `narrowOutputPaths()` in `file.ts` reads `getSessionId()` from `AsyncLocalStorage` — which still returns the **parent's** session ID at logger construction time (before `runWithContext` sets the child's context). This caused "Access denied" when the child's `MarkdownLogger` tried to `mkdir` its own log directory.
+
+**Fix**: Scope the `MarkdownLogger`'s `FileProvider` to the exact session directory (`sessions/{date}/{sessionId}`) at construction time, rather than passing the broad `sessionsDir` and relying on runtime context narrowing.
