@@ -9,11 +9,6 @@ Support tool_search capability
 ---
 ### Problems
 
-
-system wieloagentowy - odpalający agentów
-logi są per agent + głowny log orkiestratora
-operational memory
-
 eventowanie aplikacji streaming
 dodanie langfuse
 
@@ -28,3 +23,13 @@ routing zapytań do dedykowanego modelu
 narzędzie 
 publish - udostępniania plików na zewnątrz ( security !!!)
 share - udostępenianie plików dla innych agentów
+
+
+heartbeat
+
+rozbicie agentów na faktyczne skillesety
+
+przeredagowanie promptów
+
+
+dzielenie przestrzeni pamięci to jedno, czym innym jest dzielenie logów
