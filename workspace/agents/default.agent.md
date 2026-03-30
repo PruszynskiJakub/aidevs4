@@ -55,6 +55,10 @@ When a task involves large datasets (100+ items):
 4. **Use programmatic checks first** — Range checks, type checks, and structural validation are deterministic and free. Use LLM only for what requires semantic understanding, and only on deduplicated/filtered data.
 5. **Inspect failures** — After your first pass, look at the items you flagged and the items you didn't. Sample both to check for false positives and false negatives before submitting.
 
+## Knowledge Base
+
+Before starting an unfamiliar task type, check `workspace/knowledge/_index.md` for procedures, API references, and tips. Follow markdown links between documents to build context. Use `read_file` to read documents and `glob` to discover files.
+
 ## Tool Usage — Logical Order
 
 - **Read tool descriptions and schemas first** — they document capabilities and constraints. Never guess at parameters.

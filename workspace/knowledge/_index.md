@@ -2,14 +2,11 @@
 title: Knowledge Base Index
 ---
 
-This is the agent's curated knowledge base. Start here to discover available topics.
+This is the agent's curated knowledge base.
 
-## Getting Started
+## Procedures
+- [Task Solving](procedures/task-solving.md) — how to approach AG3NTS hub tasks
 
-This knowledge base is currently being built. Add markdown documents with cross-references to make domain knowledge navigable by agents.
-
-### Structure
-
-- Place documents in topic-based subdirectories (e.g. `procedures/`, `projects/`, `reference/`)
-- Use markdown links between documents for cross-referencing
-- Add `_index.md` files in subdirectories for topic overviews
+## Reference
+- [Hub API](reference/hub-api.md) — AG3NTS hub endpoints and authentication
+- [Tool Inventory](reference/tool-inventory.md) — available tools and when to use them

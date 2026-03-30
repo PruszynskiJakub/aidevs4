@@ -1,5 +1,9 @@
 # SP-63 Knowledge Tool (Reverse RAG)
 
+> **Superseded by SP-64.** The dedicated knowledge tool was removed in favor of
+> using existing file tools (`read_file`, `glob`, `grep`) with a structured
+> `workspace/knowledge/` directory and a system prompt hint.
+
 ## Main objective
 
 Give agents a `knowledge` tool for navigating a curated, agent-friendly
