@@ -15,6 +15,7 @@ import glob from "./glob.ts";
 import grep from "./grep.ts";
 import execute_code from "./execute_code.ts";
 import delegate from "./delegate.ts";
+import knowledge from "./knowledge.ts";
 
 register(think);
 register(bash);
@@ -31,5 +32,6 @@ register(glob);
 register(grep);
 register(execute_code);
 register(delegate);
+register(knowledge);
 
 export { register, getTools, getToolsByName, dispatch, reset };
