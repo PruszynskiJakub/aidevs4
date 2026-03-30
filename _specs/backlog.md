@@ -5,6 +5,7 @@
 ### Brain dump
 Support tool_search capability
 
+mcp support
 
 ---
 ### Problems
