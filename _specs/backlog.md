@@ -27,6 +27,7 @@ share - udostępenianie plików dla innych agentów
 
 
 heartbeat
+wsparcie workflows oraz knowledge
 
 rozbicie agentów na faktyczne skillesety
 
