@@ -11,7 +11,14 @@ export interface ImagePart {
   mimeType: string;
 }
 
-export type ContentPart = TextPart | ImagePart;
+export interface ResourceRef {
+  type: "resource";
+  uri: string;
+  description: string;
+  mimeType?: string;
+}
+
+export type ContentPart = TextPart | ImagePart | ResourceRef;
 
 export interface LLMSystemMessage {
   role: "system";

@@ -2,12 +2,18 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { join } from "path";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
 import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
 import glob from "./glob.ts";
 
 let tmpDir: string;
 let restore: () => void;
+
+/** Extract text from ToolResult */
+function getText(result: ToolResult): string {
+  const part = result.content[0];
+  return part.type === "text" ? part.text : "";
+}
 
 beforeAll(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "glob_test_"));
@@ -28,34 +34,34 @@ afterAll(async () => {
 
 describe("glob tool", () => {
   it("finds files matching a pattern", async () => {
-    const result = await glob.handler({ pattern: "*.txt", path: tmpDir }) as Document;
-    expect(result.text).toContain("a.txt");
-    expect(result.text).toContain("b.txt");
-    expect(result.text).not.toContain("c.json");
+    const result = await glob.handler({ pattern: "*.txt", path: tmpDir });
+    expect(getText(result)).toContain("a.txt");
+    expect(getText(result)).toContain("b.txt");
+    expect(getText(result)).not.toContain("c.json");
   });
 
   it("returns results sorted alphabetically", async () => {
-    const result = await glob.handler({ pattern: "*.txt", path: tmpDir }) as Document;
-    const lines = result.text.split("\n").filter(l => l.endsWith(".txt"));
+    const result = await glob.handler({ pattern: "*.txt", path: tmpDir });
+    const lines = getText(result).split("\n").filter(l => l.endsWith(".txt"));
     const sorted = [...lines].sort();
     expect(lines).toEqual(sorted);
   });
 
   it("finds files recursively with **", async () => {
-    const result = await glob.handler({ pattern: "**/*.txt", path: tmpDir }) as Document;
-    expect(result.text).toContain("a.txt");
-    expect(result.text).toContain("d.txt");
+    const result = await glob.handler({ pattern: "**/*.txt", path: tmpDir });
+    expect(getText(result)).toContain("a.txt");
+    expect(getText(result)).toContain("d.txt");
   });
 
   it("shows total count", async () => {
-    const result = await glob.handler({ pattern: "**/*", path: tmpDir }) as Document;
-    expect(result.text).toContain("Total:");
-    expect(result.text).toContain("file(s)");
+    const result = await glob.handler({ pattern: "**/*", path: tmpDir });
+    expect(getText(result)).toContain("Total:");
+    expect(getText(result)).toContain("file(s)");
   });
 
   it("reports no matches gracefully", async () => {
-    const result = await glob.handler({ pattern: "*.xyz", path: tmpDir }) as Document;
-    expect(result.text).toContain("No files matched");
+    const result = await glob.handler({ pattern: "*.xyz", path: tmpDir });
+    expect(getText(result)).toContain("No files matched");
   });
 
   it("rejects empty pattern", async () => {
@@ -83,7 +89,7 @@ describe("glob tool", () => {
   });
 
   it("includes hint", async () => {
-    const result = await glob.handler({ pattern: "*.txt", path: tmpDir }) as Document;
-    expect(result.text).toContain("Note:");
+    const result = await glob.handler({ pattern: "*.txt", path: tmpDir });
+    expect(getText(result)).toContain("Note:");
   });
 });

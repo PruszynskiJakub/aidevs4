@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
 
 // Mock the LLM service — must come before importing the tool
 const mockCompletion = mock(() =>
@@ -32,6 +32,12 @@ mock.module("../llm/prompt.ts", () => ({
   },
 }));
 
+/** Extract text from ToolResult */
+function getText(result: ToolResult): string {
+  const part = result.content[0];
+  return part.type === "text" ? part.text : "";
+}
+
 describe("prompt_engineer tool", () => {
   beforeEach(() => {
     mockCompletion.mockClear();
@@ -44,13 +50,12 @@ describe("prompt_engineer tool", () => {
       context: "Items have {id} and {description} placeholders",
       current_prompt: "",
       feedback: "",
-    }) as Document;
+    });
 
-    const data = JSON.parse(result.text);
+    const data = JSON.parse(getText(result));
     expect(data.prompt).toContain("Classify");
     expect(data.token_estimate).toBe(18);
     expect(data.reasoning).toBeTruthy();
-    expect(result.metadata.type).toBe("document");
     expect(mockCompletion).toHaveBeenCalledTimes(1);
   });
 

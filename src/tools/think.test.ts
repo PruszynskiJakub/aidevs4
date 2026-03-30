@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
 
 // Mock llm before importing the tool
 const completionMock = mock(() => Promise.resolve("The best approach is to call the API endpoint first."));
@@ -13,6 +13,12 @@ mock.module("../llm/llm.ts", () => ({
 
 const { default: thinkTool } = await import("./think.ts");
 
+/** Extract text from ToolResult */
+function getText(result: ToolResult): string {
+  const part = result.content[0];
+  return part.type === "text" ? part.text : "";
+}
+
 describe("think tool", () => {
   beforeEach(() => {
     completionMock.mockClear();
@@ -22,16 +28,12 @@ describe("think tool", () => {
     expect(thinkTool.name).toBe("think");
   });
 
-  it("returns Document with reasoning from LLM completion", async () => {
+  it("returns ToolResult with reasoning from LLM completion", async () => {
     const result = await thinkTool.handler({
       thought: "Which API endpoint should I call? Task requires fetching user data. Available endpoints: /users, /profiles.",
-    }) as Document;
+    });
 
-    expect(result.text).toBe("The best approach is to call the API endpoint first.");
-    expect(result.description).toContain("Reasoning about:");
-    expect(result.metadata.type).toBe("document");
-    expect(result.metadata.mimeType).toBe("text/plain");
-    expect(result.metadata.source).toBeNull();
+    expect(getText(result)).toBe("The best approach is to call the API endpoint first.");
   });
 
   it("passes question and context to LLM", async () => {

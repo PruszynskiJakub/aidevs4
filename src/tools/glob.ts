@@ -1,14 +1,13 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
-import { createDocument } from "../infra/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { files } from "../infra/file.ts";
-import { getSessionId } from "../agent/context.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
 
 const MAX_RESULTS = 500;
 
-async function glob(args: Record<string, unknown>): Promise<Document> {
+async function glob(args: Record<string, unknown>): Promise<ToolResult> {
   validateKeys(args);
 
   const pattern = args.pattern as string;
@@ -43,24 +42,20 @@ async function glob(args: Record<string, unknown>): Promise<Document> {
 
   results.sort();
 
-  let text: string;
+  let output: string;
   if (results.length === 0) {
-    text = `No files matched pattern "${pattern}" in ${path}.`;
+    output = `No files matched pattern "${pattern}" in ${path}.`;
   } else {
-    text = results.join("\n");
-    text += `\n\nTotal: ${results.length} file(s)`;
+    output = results.join("\n");
+    output += `\n\nTotal: ${results.length} file(s)`;
     if (truncated) {
-      text += ` (truncated at ${MAX_RESULTS} — narrow the pattern for complete results)`;
+      output += ` (truncated at ${MAX_RESULTS} — narrow the pattern for complete results)`;
     }
   }
 
   const hint = "\nNote: Read any matched file for full contents, or narrow the pattern to reduce results.";
 
-  return createDocument(text + hint, `glob: ${pattern} in ${path} → ${results.length} file(s)`, {
-    source: path,
-    type: "document",
-    mimeType: "text/plain",
-  }, getSessionId());
+  return text(output + hint);
 }
 
 export default {

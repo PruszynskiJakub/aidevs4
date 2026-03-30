@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { Document } from "./document.ts";
+import type { ToolResult } from "./tool-result.ts";
 
 export interface SimpleToolSchema {
   name: string;
@@ -23,5 +23,5 @@ export type ToolSchema = SimpleToolSchema | MultiActionToolSchema;
 export interface ToolDefinition {
   name: string;
   schema: ToolSchema;
-  handler: (args: Record<string, unknown>) => Promise<Document | Document[]>;
+  handler: (args: Record<string, unknown>) => Promise<ToolResult>;
 }

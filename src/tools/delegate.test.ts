@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach, spyOn } from "bun:test";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
 
 // Mock orchestrator (no circular dep — delegate lazy-imports it)
 const mockExecuteTurn = mock(() =>
@@ -14,6 +14,12 @@ const { default: delegateTool } = await import("./delegate.ts");
 
 // Spy on context functions after import
 import * as context from "../agent/context.ts";
+
+/** Extract text from ToolResult */
+function getText(result: ToolResult): string {
+  const part = result.content[0];
+  return part.type === "text" ? part.text : "";
+}
 
 describe("delegate tool", () => {
   beforeEach(() => {
@@ -34,13 +40,12 @@ describe("delegate tool", () => {
     expect(desc).toContain("s2e1");
   });
 
-  it("returns a document with child answer on success", async () => {
+  it("returns a ToolResult with child answer on success", async () => {
     spyOn(context, "getSessionId").mockReturnValueOnce("parent-session-456");
     spyOn(context, "getLogger").mockReturnValueOnce({ info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as any);
 
-    const result = (await delegateTool.handler({ agent: "proxy", prompt: "Hello" })) as Document;
-    expect(result.text).toBe("child answer");
-    expect(result.description).toContain("proxy");
+    const result = await delegateTool.handler({ agent: "proxy", prompt: "Hello" });
+    expect(getText(result)).toBe("child answer");
     expect(mockExecuteTurn).toHaveBeenCalledWith({ prompt: "Hello", assistant: "proxy" });
   });
 

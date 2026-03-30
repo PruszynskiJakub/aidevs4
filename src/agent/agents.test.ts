@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { agentsService } from "./agents.ts";
 import { register, reset } from "../tools/index.ts";
 import type { ToolDefinition } from "../types/tool.ts";
-import { createDocument } from "../infra/document.ts";
+import { text } from "../types/tool-result.ts";
 
 function registerTool(name: string) {
   const tool: ToolDefinition = {
@@ -13,8 +13,7 @@ function registerTool(name: string) {
       description: `${name} tool`,
       schema: z.object({}),
     },
-    handler: async () =>
-      createDocument("ok", name, { source: null, type: "document", mimeType: "text/plain" }),
+    handler: async () => text("ok"),
   };
   register(tool);
 }

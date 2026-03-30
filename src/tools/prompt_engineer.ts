@@ -1,12 +1,11 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { llm } from "../llm/llm.ts";
 import { promptService } from "../llm/prompt.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength, safeParse } from "../utils/parse.ts";
-import { createDocument } from "../infra/document.ts";
-import { getSessionId } from "../agent/context.ts";
 
 const MAX_GOAL = 2_000;
 const MAX_CONSTRAINTS = 1_000;
@@ -24,7 +23,7 @@ interface PromptEngineerArgs {
 
 async function promptEngineer(
   args: Record<string, unknown>,
-): Promise<Document> {
+): Promise<ToolResult> {
   const typedArgs = args as unknown as PromptEngineerArgs;
   assertMaxLength(typedArgs.goal, "goal", MAX_GOAL);
   assertMaxLength(typedArgs.constraints, "constraints", MAX_CONSTRAINTS);
@@ -74,17 +73,13 @@ async function promptEngineer(
     throw new Error("LLM did not return a valid prompt field. Try again with more specific goal and constraints.");
   }
 
-  const text = JSON.stringify({
+  const output = JSON.stringify({
     prompt: parsed.prompt,
     token_estimate: parsed.token_estimate ?? null,
     reasoning: parsed.reasoning ?? null,
   });
 
-  return createDocument(text, `Engineered prompt for: ${typedArgs.goal.slice(0, 80)}`, {
-    source: null,
-    type: "document",
-    mimeType: "application/json",
-  }, getSessionId());
+  return text(output);
 }
 
 export default {

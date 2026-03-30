@@ -8,12 +8,15 @@ import { emptyMemoryState } from "../types/memory.ts";
 // Stub dispatcher — we control dispatch results per test
 let dispatchResults: Record<string, () => Promise<string>> = {};
 mock.module("../tools/index.ts", () => ({
+  register: () => {},
   getTools: async () => [],
-  dispatch: async (name: string, _argsJson: string) => {
+  getToolsByName: () => undefined,
+  dispatch: async (name: string, _argsJson: string, _toolCallId?: string) => {
     const fn = dispatchResults[name];
-    if (!fn) return { xml: `<document id="err" description="Error from ${name}">Error: Unknown tool: ${name}</document>`, isError: true };
-    return { xml: await fn(), isError: false };
+    if (!fn) return { content: `Error: Unknown tool: ${name}`, isError: true };
+    return { content: await fn(), isError: false };
   },
+  reset: () => {},
 }));
 
 // Must import after mocks are installed
@@ -52,10 +55,6 @@ function makeState(prompt: string, overrides?: Partial<AgentState>): AgentState 
     memory: emptyMemoryState(),
     ...overrides,
   };
-}
-
-function xmlDoc(id: string, desc: string, text: string): string {
-  return `<document id="${id}" description="${desc}">${text}</document>`;
 }
 
 beforeEach(() => {
@@ -179,7 +178,7 @@ describe("agent plan-act loop", () => {
     const planCalls: LLMMessage[][] = [];
 
     dispatchResults = {
-      tool_a: async () => xmlDoc("a1", "Tool A result", "result A"),
+      tool_a: async () => "result A",
     };
 
     let callIndex = 0;
@@ -230,13 +229,13 @@ describe("agent parallel tool calling", () => {
         order.push("a_start");
         await Bun.sleep(50);
         order.push("a_end");
-        return xmlDoc("a1", "A", "result A");
+        return "result A";
       },
       tool_b: async () => {
         order.push("b_start");
         await Bun.sleep(10);
         order.push("b_end");
-        return xmlDoc("b1", "B", "result B");
+        return "result B";
       },
     };
 
@@ -266,10 +265,10 @@ describe("agent parallel tool calling", () => {
     dispatchResults = {
       slow: async () => {
         await Bun.sleep(40);
-        return xmlDoc("s1", "slow", "slow result");
+        return "slow result";
       },
       fast: async () => {
-        return xmlDoc("f1", "fast", "fast result");
+        return "fast result";
       },
     };
 
@@ -308,7 +307,7 @@ describe("agent parallel tool calling", () => {
 
   it("handles mixed success and failure", async () => {
     dispatchResults = {
-      good: async () => xmlDoc("g1", "good", "ok result"),
+      good: async () => "ok result",
       bad: async () => { throw new Error("boom"); },
     };
 
@@ -341,7 +340,7 @@ describe("agent parallel tool calling", () => {
     const toolMessages = capturedMessages.filter(m => m.role === "tool");
     expect(toolMessages).toHaveLength(2);
 
-    // First tool succeeded — contains XML document
+    // First tool succeeded — plain text
     expect((toolMessages[0] as any).content).toContain("ok result");
 
     // Second tool failed — Promise.allSettled catches the thrown error
@@ -350,7 +349,7 @@ describe("agent parallel tool calling", () => {
 
   it("handles single tool call unchanged", async () => {
     dispatchResults = {
-      solo: async () => xmlDoc("s1", "solo", "solo result"),
+      solo: async () => "solo result",
     };
 
     let capturedMessages: LLMMessage[] = [];

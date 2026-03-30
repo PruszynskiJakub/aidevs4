@@ -1,14 +1,5 @@
-import type { DocumentMetadata } from "../types/document.ts";
-
-/** Shared document metadata for hub.ag3nts.org API responses. */
-export const HUB_DOC_META: Pick<DocumentMetadata, "source" | "type" | "mimeType"> = {
-  source: "hub.ag3nts.org",
-  type: "document",
-  mimeType: "application/json",
-};
-
 /**
- * Coerce unknown response value to string for document text or error messages.
+ * Coerce unknown response value to string for tool result text or error messages.
  */
 export function stringify(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);

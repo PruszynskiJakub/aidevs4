@@ -3,8 +3,8 @@ import { $ } from "bun";
 import { z } from "zod";
 import { config } from "../config/index.ts";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
-import { createDocument } from "../infra/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { getSessionId } from "../agent/context.ts";
 
 const MAX_OUTPUT = 20_000;
@@ -41,7 +41,7 @@ function assertWritesInSessionDir(command: string, cwd: string): void {
   }
 }
 
-async function bash(args: Record<string, unknown>): Promise<Document> {
+async function bash(args: Record<string, unknown>): Promise<ToolResult> {
   const { command } = args as { command: string };
 
   // Clamp timeout to [1000, 120000], default 30000
@@ -71,12 +71,7 @@ async function bash(args: Record<string, unknown>): Promise<Document> {
     output = output.slice(0, MAX_OUTPUT) + "\n...(truncated)";
   }
 
-  const snippet = command.slice(0, 80);
-  return createDocument(output, `Bash output for: ${snippet}`, {
-    source: null,
-    type: "document",
-    mimeType: "text/plain",
-  }, getSessionId());
+  return text(output);
 }
 
 export default {

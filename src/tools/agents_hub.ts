@@ -1,14 +1,13 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { files } from "../infra/file.ts";
 import { config } from "../config/index.ts";
 import { safeParse, validateKeys, assertMaxLength } from "../utils/parse.ts";
-import { createDocument } from "../infra/document.ts";
-import { HUB_DOC_META, hubPost, stringify } from "../utils/hub-fetch.ts";
-import { getSessionId } from "../agent/context.ts";
+import { hubPost, stringify } from "../utils/hub-fetch.ts";
 
-async function verify(payload: { task: string; answer: string }): Promise<Document> {
+async function verify(payload: { task: string; answer: string }): Promise<ToolResult> {
   assertMaxLength(payload.task, "task", 100);
   assertMaxLength(payload.answer, "answer", 100_000);
 
@@ -20,13 +19,13 @@ async function verify(payload: { task: string; answer: string }): Promise<Docume
     config.limits.fetchTimeout,
   );
 
-  return createDocument(stringify(response), `Verification result for task '${payload.task}'`, HUB_DOC_META, getSessionId());
+  return text(stringify(response));
 }
 
 async function apiRequest(payload: {
   path: string;
   body: string;
-}): Promise<Document> {
+}): Promise<ToolResult> {
   assertMaxLength(payload.path, "path", 200);
   assertMaxLength(payload.body, "body", 100_000);
 
@@ -43,7 +42,7 @@ async function apiRequest(payload: {
     config.limits.fetchTimeout,
   );
 
-  return createDocument(stringify(response), `Response from /api/${payload.path}`, HUB_DOC_META, getSessionId());
+  return text(stringify(response));
 }
 
 async function apiBatch(payload: {
@@ -51,7 +50,7 @@ async function apiBatch(payload: {
   data_file: string;
   field_map_json: string;
   output_file: string;
-}): Promise<Document[]> {
+}): Promise<ToolResult> {
   assertMaxLength(payload.path, "path", 200);
   assertMaxLength(payload.data_file, "data_file", 500);
   assertMaxLength(payload.field_map_json, "field_map_json", 100_000);
@@ -97,16 +96,15 @@ async function apiBatch(payload: {
 
   await files.write(payload.output_file, JSON.stringify(results, null, 2));
 
-  return results.map((r, i) =>
-    createDocument(stringify(r.response), `Batch row ${i + 1}/${results.length} from /api/${payload.path}`, HUB_DOC_META, getSessionId()),
-  );
+  const parts = results.map((r, i) => `Row ${i + 1}/${results.length}: ${stringify(r.response)}`);
+  return text(parts.join("\n"));
 }
 
 async function verifyBatch(payload: {
   task: string;
   answers: string;
   output_file: string;
-}): Promise<Document[]> {
+}): Promise<ToolResult> {
   assertMaxLength(payload.task, "task", 100);
   assertMaxLength(payload.answers, "answers", 100_000);
   assertMaxLength(payload.output_file, "output_file", 500);
@@ -140,12 +138,11 @@ async function verifyBatch(payload: {
 
   await files.write(payload.output_file, JSON.stringify(results, null, 2));
 
-  return results.map((r) =>
-    createDocument(stringify(r.response), `Verify batch item ${r.index} for task '${payload.task}'`, HUB_DOC_META, getSessionId()),
-  );
+  const parts = results.map((r) => `Item ${r.index}: ${stringify(r.response)}`);
+  return text(parts.join("\n"));
 }
 
-async function agentsHub(args: Record<string, unknown>): Promise<Document | Document[]> {
+async function agentsHub(args: Record<string, unknown>): Promise<ToolResult> {
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "verify":

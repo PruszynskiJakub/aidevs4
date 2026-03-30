@@ -3,13 +3,19 @@ import { join } from "path";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { createHash } from "crypto";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
 import type { FileProvider } from "../types/file.ts";
 import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
 import read_file from "./read_file.ts";
 
 let tmpDir: string;
 let restore: () => void;
+
+/** Extract text from ToolResult */
+function getText(result: ToolResult): string {
+  const part = result.content[0];
+  return part.type === "text" ? part.text : "";
+}
 
 beforeAll(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "read_file_test_"));
@@ -29,17 +35,16 @@ afterAll(async () => {
 
 describe("read_file tool", () => {
   it("reads a file with line numbers in cat -n format", async () => {
-    const result = await read_file.handler({ file_path: join(tmpDir, "hello.txt") }) as Document;
-    expect(result.text).toContain("  1\tline1");
-    expect(result.text).toContain("  2\tline2");
-    expect(result.metadata.type).toBe("document");
+    const result = await read_file.handler({ file_path: join(tmpDir, "hello.txt") });
+    expect(getText(result)).toContain("  1\tline1");
+    expect(getText(result)).toContain("  2\tline2");
   });
 
   it("returns md5 checksum", async () => {
     const content = "line1\nline2\nline3\nline4\nline5\n";
     const expected = createHash("md5").update(content).digest("hex");
-    const result = await read_file.handler({ file_path: join(tmpDir, "hello.txt") }) as Document;
-    expect(result.text).toContain(`Checksum: ${expected}`);
+    const result = await read_file.handler({ file_path: join(tmpDir, "hello.txt") });
+    expect(getText(result)).toContain(`Checksum: ${expected}`);
   });
 
   it("supports offset and limit pagination", async () => {
@@ -47,26 +52,27 @@ describe("read_file tool", () => {
       file_path: join(tmpDir, "twenty.txt"),
       offset: 5,
       limit: 3,
-    }) as Document;
-    expect(result.text).toContain("  5\tline5");
-    expect(result.text).toContain("  6\tline6");
-    expect(result.text).toContain("  7\tline7");
-    expect(result.text).not.toContain("  4\t");
-    expect(result.text).not.toContain("  8\t");
+    });
+    const t = getText(result);
+    expect(t).toContain("  5\tline5");
+    expect(t).toContain("  6\tline6");
+    expect(t).toContain("  7\tline7");
+    expect(t).not.toContain("  4\t");
+    expect(t).not.toContain("  8\t");
   });
 
   it("handles offset beyond total lines", async () => {
     const result = await read_file.handler({
       file_path: join(tmpDir, "hello.txt"),
       offset: 999,
-    }) as Document;
-    expect(result.text).toContain("Nothing to show");
-    expect(result.text).toContain("Checksum:");
+    });
+    expect(getText(result)).toContain("Nothing to show");
+    expect(getText(result)).toContain("Checksum:");
   });
 
   it("includes line count in output", async () => {
-    const result = await read_file.handler({ file_path: join(tmpDir, "twenty.txt") }) as Document;
-    expect(result.text).toContain("Lines: 20");
+    const result = await read_file.handler({ file_path: join(tmpDir, "twenty.txt") });
+    expect(getText(result)).toContain("Lines: 20");
   });
 
   it("rejects empty file_path", async () => {
@@ -97,7 +103,7 @@ describe("read_file tool", () => {
   });
 
   it("includes hint about adjusting offset/limit", async () => {
-    const result = await read_file.handler({ file_path: join(tmpDir, "hello.txt") }) as Document;
-    expect(result.text).toContain("Note:");
+    const result = await read_file.handler({ file_path: join(tmpDir, "hello.txt") });
+    expect(getText(result)).toContain("Note:");
   });
 });

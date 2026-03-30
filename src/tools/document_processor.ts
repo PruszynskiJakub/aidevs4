@@ -1,29 +1,22 @@
 import { basename, extname } from "path";
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import type { ContentPart } from "../types/llm.ts";
 import { files } from "../infra/file.ts";
 import { llm } from "../llm/llm.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { createDocument, documentService } from "../infra/document.ts";
-import { getSessionId } from "../agent/context.ts";
 import { config } from "../config";
 import { IMAGE_EXTENSIONS, TEXT_EXTENSIONS, ALL_SUPPORTED_EXTENSIONS, inferMimeType } from "../utils/media-types.ts";
+import { resolveUri } from "../utils/uri.ts";
 
-function resolveFilePath(doc: Document): string {
-  const source = doc.metadata.source;
-  if (!source) throw new Error(`Document "${doc.uuid}" has no source path`);
-  return source;
-}
-
-async function buildContentPart(doc: Document): Promise<ContentPart> {
-  const path = resolveFilePath(doc);
+async function buildContentPart(path: string): Promise<ContentPart> {
   const ext = extname(path).toLowerCase();
 
   if (!IMAGE_EXTENSIONS.has(ext) && !TEXT_EXTENSIONS.has(ext)) {
     throw new Error(
-      `Unsupported file extension "${ext}" for document "${doc.uuid}". Supported: ${ALL_SUPPORTED_EXTENSIONS.join(", ")}`,
+      `Unsupported file extension "${ext}" for file "${basename(path)}". Supported: ${ALL_SUPPORTED_EXTENSIONS.join(", ")}`,
     );
   }
 
@@ -38,30 +31,33 @@ async function buildContentPart(doc: Document): Promise<ContentPart> {
   return { type: "text", text: `--- FILE: ${basename(path)} ---\n${content}` };
 }
 
-async function ask(payload: {
-  uuids: string[];
-  question: string;
-}): Promise<Document> {
-  const { uuids, question } = payload;
-
-  if (!Array.isArray(uuids) || uuids.length === 0) {
-    throw new Error("uuids must be a non-empty array of document UUIDs");
+/** Resolve a path that may be a file:// URI or a plain path. */
+function toAbsolutePath(pathOrUri: string): string {
+  if (pathOrUri.startsWith("file://")) {
+    return resolveUri(pathOrUri);
   }
-  if (uuids.length > config.limits.docMaxFiles) {
-    throw new Error(`Too many documents: ${uuids.length}. Maximum is ${config.limits.docMaxFiles}.`);
+  return pathOrUri;
+}
+
+async function ask(payload: {
+  file_paths: string[];
+  question: string;
+}): Promise<ToolResult> {
+  const { file_paths, question } = payload;
+
+  if (!Array.isArray(file_paths) || file_paths.length === 0) {
+    throw new Error("file_paths must be a non-empty array of file paths");
+  }
+  if (file_paths.length > config.limits.docMaxFiles) {
+    throw new Error(`Too many files: ${file_paths.length}. Maximum is ${config.limits.docMaxFiles}.`);
   }
   if (question.trim().length === 0) {
     throw new Error("question must be a non-empty string");
   }
   assertMaxLength(question, "question", 2000);
 
-  const docs = uuids.map((uuid) => {
-    const doc = documentService.get(uuid);
-    if (!doc) throw new Error(`Document not found: "${uuid}"`);
-    return doc;
-  });
-
-  const contentParts = await Promise.all(docs.map(buildContentPart));
+  const resolvedPaths = file_paths.map(toAbsolutePath);
+  const contentParts = await Promise.all(resolvedPaths.map(buildContentPart));
   contentParts.push({ type: "text", text: question });
 
   const response = await llm.chatCompletion({
@@ -70,21 +66,14 @@ async function ask(payload: {
   });
 
   const answer = response.content ?? "";
-  const docDescriptions = docs.map((d) => d.description).join(", ");
-
-  const shortQuestion = question.length > 120 ? question.slice(0, 117) + "..." : question;
-  return createDocument(answer, `Answer to "${shortQuestion}" based on ${docs.length} document(s): ${docDescriptions}`, {
-    source: docs[0].metadata.source,
-    type: "document",
-    mimeType: "text/plain",
-  }, getSessionId());
+  return text(answer);
 }
 
-async function documentProcessor(args: Record<string, unknown>): Promise<Document> {
+async function documentProcessor(args: Record<string, unknown>): Promise<ToolResult> {
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "ask":
-      return ask(payload as { uuids: string[]; question: string });
+      return ask(payload as { file_paths: string[]; question: string });
     default:
       throw new Error(`Unknown document_processor action: ${action}`);
   }
@@ -94,12 +83,12 @@ export default {
   name: "document_processor",
   schema: {
     name: "document_processor",
-    description: "Analyze documents (text files, images) using AI vision models. Accepts document UUIDs returned by other tools (e.g. web__download). Supports cross-referencing multiple documents to answer questions.",
+    description: "Analyze documents (text files, images) using AI vision models. Accepts file paths from previous tool results (e.g. web__download). Supports cross-referencing multiple documents to answer questions.",
     actions: {
       ask: {
-        description: "Ask a question about one or more documents using AI vision. Supports text (.md, .txt, .csv, .json, .xml, .html) and image (.png, .jpg, .jpeg, .gif, .webp) documents. Pass UUIDs from previous tool results (e.g. web__download). Returns a text answer synthesized from all provided documents.",
+        description: "Ask a question about one or more documents using AI vision. Supports text (.md, .txt, .csv, .json, .xml, .html) and image (.png, .jpg, .jpeg, .gif, .webp) documents. Pass file paths from previous tool results (e.g. web__download). Returns a text answer synthesized from all provided documents.",
         schema: z.object({
-          uuids: z.array(z.string()).describe("UUIDs of documents to analyze (max 10). Use document IDs returned by other tools such as web__download."),
+          file_paths: z.array(z.string()).describe("File paths to analyze (max 10). Use paths returned by other tools such as web__download. Supports file:// URIs."),
           question: z.string().describe("Question to answer based on the documents. Be specific about what information you need."),
         }),
       },

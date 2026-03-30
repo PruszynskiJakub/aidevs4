@@ -1,14 +1,13 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { llm } from "../llm/llm.ts";
 import { promptService } from "../llm/prompt.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { createDocument } from "../infra/document.ts";
-import { getSessionId } from "../agent/context.ts";
 
-async function think(args: Record<string, unknown>): Promise<Document> {
+async function think(args: Record<string, unknown>): Promise<ToolResult> {
   const { thought } = args as { thought: string };
   assertMaxLength(thought, "question", 5_000);
 
@@ -21,12 +20,7 @@ async function think(args: Record<string, unknown>): Promise<Document> {
     ...(prompt.temperature !== undefined && { temperature: prompt.temperature }),
   });
 
-  const snippet = thought.slice(0, 80);
-  return createDocument(result, `Reasoning about: ${snippet}`, {
-    source: null,
-    type: "document",
-    mimeType: "text/plain",
-  }, getSessionId());
+  return text(result);
 }
 
 export default {

@@ -11,7 +11,6 @@ import { MarkdownLogger } from "../infra/log/markdown.ts";
 import { ConsoleLogger } from "../infra/log/console.ts";
 import { createCompositeLogger } from "../infra/log/composite.ts";
 import { runWithContext, requireState } from "./context.ts";
-import { createErrorDocument, formatDocumentsXml } from "../infra/document.ts";
 import { processMemory, flushMemory } from "./memory/processor.ts";
 import { saveState } from "./memory/persistence.ts";
 import { bus } from "../infra/events.ts";
@@ -149,7 +148,7 @@ async function dispatchTools(
   const settled = await Promise.allSettled(
     functionCalls.map(async (tc) => {
       const start = performance.now();
-      const result = await dispatch(tc.function.name, tc.function.arguments);
+      const result = await dispatch(tc.function.name, tc.function.arguments, tc.id);
       return { ...result, durationMs: performance.now() - start };
     })
   );
@@ -159,7 +158,7 @@ async function dispatchTools(
     const outcome = settled[j];
 
     if (outcome.status === "fulfilled") {
-      const { xml, isError, durationMs } = outcome.value;
+      const { content, isError, durationMs } = outcome.value;
       if (isError) {
         failed++;
         bus.emit("tool.completed", {
@@ -167,7 +166,7 @@ async function dispatchTools(
           name: tc.function.name,
           ok: false,
           durationMs,
-          error: xml,
+          error: content,
         });
       } else {
         succeeded++;
@@ -176,13 +175,13 @@ async function dispatchTools(
           name: tc.function.name,
           ok: true,
           durationMs,
-          result: xml,
+          result: content,
         });
       }
       state.messages.push({
         role: "tool",
         toolCallId: tc.id,
-        content: xml,
+        content,
       });
     } else {
       failed++;
@@ -197,7 +196,7 @@ async function dispatchTools(
       state.messages.push({
         role: "tool",
         toolCallId: tc.id,
-        content: formatDocumentsXml(createErrorDocument(tc.function.name, errorMsg)),
+        content: `Error: ${errorMsg}`,
       });
     }
   }

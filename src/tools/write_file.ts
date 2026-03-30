@@ -1,13 +1,12 @@
 import { dirname } from "path";
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
-import { createDocument } from "../infra/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { files } from "../infra/file.ts";
-import { getSessionId } from "../agent/context.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
 
-async function write_file(args: Record<string, unknown>): Promise<Document> {
+async function write_file(args: Record<string, unknown>): Promise<ToolResult> {
   validateKeys(args);
 
   const filePath = args.file_path as string;
@@ -28,14 +27,10 @@ async function write_file(args: Record<string, unknown>): Promise<Document> {
   await files.write(filePath, content);
 
   const bytes = new TextEncoder().encode(content).length;
-  const text = `Wrote ${bytes} bytes to ${filePath}`;
+  const result = `Wrote ${bytes} bytes to ${filePath}`;
   const hint = "\nNote: Verify contents or process the file further.";
 
-  return createDocument(text + hint, `write_file: ${filePath} (${bytes} bytes)`, {
-    source: filePath,
-    type: "document",
-    mimeType: "text/plain",
-  }, getSessionId());
+  return text(result + hint);
 }
 
 export default {

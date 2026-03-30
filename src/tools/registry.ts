@@ -1,8 +1,11 @@
 import { z } from "zod";
 import type { LLMTool } from "../types/llm.ts";
+import type { ContentPart } from "../types/llm.ts";
 import type { ToolDefinition, ToolSchema } from "../types/tool.ts";
+import type { ToolResult } from "../types/tool-result.ts";
 import { safeParse } from "../utils/parse.ts";
-import { createErrorDocument, documentService, formatDocumentsXml } from "../infra/document.ts";
+import { estimateTokens } from "../utils/tokens.ts";
+import { resultStore } from "../infra/result-store.ts";
 
 const SEPARATOR = "__";
 
@@ -68,31 +71,56 @@ export function getToolsByName(name: string): LLMTool[] | undefined {
 }
 
 export interface DispatchResult {
-  xml: string;
+  content: string;
   isError: boolean;
+}
+
+/** Serialize content parts to plain text. */
+export function serializeContent(parts: ContentPart[]): string {
+  return parts.map((part) => {
+    switch (part.type) {
+      case "text":
+        return part.text;
+      case "image": {
+        const sizeKB = Math.ceil(part.data.length * 3 / 4 / 1024);
+        return `[Image: ${part.mimeType}, ${sizeKB}KB]`;
+      }
+      case "resource":
+        return `${part.description} (ref: ${part.uri})`;
+    }
+  }).join("\n\n");
 }
 
 async function tryDispatch(
   name: string,
   tool: ToolDefinition,
   args: Record<string, unknown>,
+  toolCallId: string,
 ): Promise<DispatchResult> {
   try {
     const result = await tool.handler(args);
-    const docs = Array.isArray(result) ? result : [result];
-    for (const doc of docs) documentService.add(doc);
-    return { xml: formatDocumentsXml(result), isError: false };
+    const content = serializeContent(result.content);
+    const tokens = estimateTokens(content);
+    resultStore.complete(toolCallId, result, tokens);
+    return { content, isError: result.isError ?? false };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    return { xml: formatDocumentsXml(createErrorDocument(name, message)), isError: true };
+    const errorResult: ToolResult = { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
+    const content = `Error: ${message}`;
+    const tokens = estimateTokens(content);
+    resultStore.complete(toolCallId, errorResult, tokens);
+    return { content, isError: true };
   }
 }
 
-export async function dispatch(name: string, argsJson: string): Promise<DispatchResult> {
+export async function dispatch(name: string, argsJson: string, toolCallId: string = ""): Promise<DispatchResult> {
   const parsed = safeParse<Record<string, unknown>>(argsJson, name);
 
   const tool = handlers.get(name);
-  if (tool) return tryDispatch(name, tool, parsed);
+  if (tool) {
+    resultStore.create(toolCallId, name, parsed);
+    return tryDispatch(name, tool, parsed, toolCallId);
+  }
 
   // Multi-action routing: tool_name__action_name -> handler(tool_name) with { action, payload }
   const sepIdx = name.indexOf(SEPARATOR);
@@ -101,13 +129,22 @@ export async function dispatch(name: string, argsJson: string): Promise<Dispatch
     const actionName = name.slice(sepIdx + SEPARATOR.length);
     const multiTool = handlers.get(toolName);
 
-    if (multiTool) return tryDispatch(name, multiTool, { action: actionName, payload: parsed });
+    if (multiTool) {
+      const multiArgs = { action: actionName, payload: parsed };
+      resultStore.create(toolCallId, name, multiArgs);
+      return tryDispatch(name, multiTool, multiArgs, toolCallId);
+    }
   }
 
-  return { xml: formatDocumentsXml(createErrorDocument(name, `Unknown tool: ${name}`)), isError: true };
+  const errorContent = `Error: Unknown tool: ${name}`;
+  const errorResult: ToolResult = { content: [{ type: "text", text: errorContent }], isError: true };
+  resultStore.create(toolCallId, name, parsed);
+  resultStore.complete(toolCallId, errorResult, estimateTokens(errorContent));
+  return { content: errorContent, isError: true };
 }
 
 export function reset(): void {
   handlers.clear();
   expandedTools.length = 0;
+  resultStore.clear();
 }

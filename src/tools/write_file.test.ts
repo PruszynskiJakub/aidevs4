@@ -2,12 +2,18 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { join } from "path";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
 import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
 import write_file from "./write_file.ts";
 
 let tmpDir: string;
 let restore: () => void;
+
+/** Extract text from ToolResult */
+function getText(result: ToolResult): string {
+  const part = result.content[0];
+  return part.type === "text" ? part.text : "";
+}
 
 beforeAll(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "write_file_test_"));
@@ -23,17 +29,17 @@ afterAll(async () => {
 describe("write_file tool", () => {
   it("creates a new file with correct content", async () => {
     const filePath = join(tmpDir, "new.txt");
-    const result = await write_file.handler({ file_path: filePath, content: "hello world" }) as Document;
-    expect(result.text).toContain("Wrote");
-    expect(result.text).toContain("bytes");
+    const result = await write_file.handler({ file_path: filePath, content: "hello world" });
+    expect(getText(result)).toContain("Wrote");
+    expect(getText(result)).toContain("bytes");
     const actual = await Bun.file(filePath).text();
     expect(actual).toBe("hello world");
   });
 
   it("auto-creates parent directories", async () => {
     const filePath = join(tmpDir, "a", "b", "c", "deep.txt");
-    const result = await write_file.handler({ file_path: filePath, content: "deep" }) as Document;
-    expect(result.text).toContain("Wrote");
+    const result = await write_file.handler({ file_path: filePath, content: "deep" });
+    expect(getText(result)).toContain("Wrote");
     const actual = await Bun.file(filePath).text();
     expect(actual).toBe("deep");
   });
@@ -48,9 +54,8 @@ describe("write_file tool", () => {
 
   it("reports correct byte count for unicode", async () => {
     const filePath = join(tmpDir, "unicode.txt");
-    const result = await write_file.handler({ file_path: filePath, content: "cześć" }) as Document;
-    // "cześć" is 7 bytes in UTF-8
-    expect(result.text).toContain("7 bytes");
+    const result = await write_file.handler({ file_path: filePath, content: "cześć" });
+    expect(getText(result)).toContain("7 bytes");
   });
 
   it("rejects empty file_path", async () => {
@@ -75,7 +80,7 @@ describe("write_file tool", () => {
 
   it("includes hint", async () => {
     const filePath = join(tmpDir, "hint.txt");
-    const result = await write_file.handler({ file_path: filePath, content: "x" }) as Document;
-    expect(result.text).toContain("Note:");
+    const result = await write_file.handler({ file_path: filePath, content: "x" });
+    expect(getText(result)).toContain("Note:");
   });
 });

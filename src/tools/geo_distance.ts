@@ -1,11 +1,10 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { files } from "../infra/file.ts";
 import { config } from "../config/index.ts";
 import { safeParse, assertMaxLength, assertNumericBounds } from "../utils/parse.ts";
-import { createDocument } from "../infra/document.ts";
-import { getSessionId } from "../agent/context.ts";
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -55,7 +54,7 @@ async function findNearby(payload: {
   references_file: string;
   queries_file: string;
   radius_km: number;
-}): Promise<Document> {
+}): Promise<ToolResult> {
   assertMaxLength(payload.references_file, "references_file", 500);
   assertMaxLength(payload.queries_file, "queries_file", 500);
   assertNumericBounds(payload.radius_km, "radius_km", 0.001, 40_075);
@@ -86,14 +85,7 @@ async function findNearby(payload: {
 
   matches.sort((a, b) => a.distance_km - b.distance_km);
 
-  const text = JSON.stringify({ count: matches.length, matches });
-  const note = matches.length > 50 ? " Many matches — consider narrowing the radius." : "";
-  return createDocument(
-    text,
-    `${matches.length} matches within ${payload.radius_km} km.${note}`,
-    { source: null, type: "document", mimeType: "application/json" },
-    getSessionId(),
-  );
+  return text(JSON.stringify({ count: matches.length, matches }));
 }
 
 function distance(payload: {
@@ -101,19 +93,14 @@ function distance(payload: {
   lon1: number;
   lat2: number;
   lon2: number;
-}): Document {
+}): ToolResult {
   validateCoord(payload.lat1, payload.lon1, "");
   validateCoord(payload.lat2, payload.lon2, "");
   const km = roundTo3(haversine(payload.lat1, payload.lon1, payload.lat2, payload.lon2));
-  return createDocument(
-    JSON.stringify({ distance_km: km }),
-    `Distance: ${km} km`,
-    { source: null, type: "document", mimeType: "application/json" },
-    getSessionId(),
-  );
+  return text(JSON.stringify({ distance_km: km }));
 }
 
-async function geoDistance(args: Record<string, unknown>): Promise<Document> {
+async function geoDistance(args: Record<string, unknown>): Promise<ToolResult> {
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "find_nearby":

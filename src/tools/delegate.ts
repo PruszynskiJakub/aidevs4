@@ -2,8 +2,8 @@ import { resolve } from "path";
 import { z } from "zod";
 import matter from "gray-matter";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
-import { createDocument } from "../infra/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { getSessionId, getLogger } from "../agent/context.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 
@@ -32,7 +32,7 @@ async function scanAgents(): Promise<AgentInfo[]> {
   return agents;
 }
 
-async function delegate(args: Record<string, unknown>): Promise<Document> {
+async function delegate(args: Record<string, unknown>): Promise<ToolResult> {
   const { agent, prompt } = args as { agent: string; prompt: string };
 
   assertMaxLength(prompt, "prompt", MAX_PROMPT_LENGTH);
@@ -58,17 +58,7 @@ async function delegate(args: Record<string, unknown>): Promise<Document> {
     logger.info(`[delegate] child session ${result.sessionId} (agent: ${agent})`);
   }
 
-  const snippet = prompt.slice(0, 80);
-  return createDocument(
-    result.answer,
-    `Delegation result from "${agent}": ${snippet}`,
-    {
-      source: null,
-      type: "document",
-      mimeType: "text/plain",
-    },
-    parentSessionId,
-  );
+  return text(result.answer);
 }
 
 const agents = await scanAgents();

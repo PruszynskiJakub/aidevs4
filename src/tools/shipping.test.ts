@@ -1,9 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll, mock, beforeEach } from "bun:test";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
 import { config } from "../config/index.ts";
 import shipping from "./shipping.ts";
 
 const handler = shipping.handler;
+
+/** Extract text from ToolResult */
+function getText(result: ToolResult): string {
+  const part = result.content[0];
+  return part.type === "text" ? part.text : "";
+}
 
 const originalFetch = globalThis.fetch;
 
@@ -32,15 +38,13 @@ describe("shipping check", () => {
       });
     }) as any;
 
-    const result = await handler({ action: "check", payload: { packageid: "PKG123" } }) as Document;
+    const result = await handler({ action: "check", payload: { packageid: "PKG123" } });
 
     expect(capturedUrl).toBe("https://hub.ag3nts.org/api/packages");
     expect(capturedBody.apikey).toBe(config.hub.apiKey);
     expect(capturedBody.action).toBe("check");
     expect(capturedBody.packageid).toBe("PKG123");
-    expect(result.text).toContain("in_transit");
-    expect(result.description).toContain("PKG123");
-    expect(result.metadata.type).toBe("document");
+    expect(getText(result)).toContain("in_transit");
   });
 });
 
@@ -59,16 +63,16 @@ describe("shipping redirect", () => {
     const result = await handler({
       action: "redirect",
       payload: { packageid: "PKG456", destination: "PWR6132PL", code: "SEC001" },
-    }) as Document;
+    });
 
     expect(capturedBody.apikey).toBe(config.hub.apiKey);
     expect(capturedBody.action).toBe("redirect");
     expect(capturedBody.packageid).toBe("PKG456");
     expect(capturedBody.destination).toBe("PWR6132PL");
     expect(capturedBody.code).toBe("SEC001");
-    expect(result.text).toContain("abc123");
-    expect(result.description).toContain("PKG456");
-    expect(result.description).toContain("Confirmation code: abc123");
+    expect(getText(result)).toContain("abc123");
+    expect(getText(result)).toContain("PKG456");
+    expect(getText(result)).toContain("Confirmation code: abc123");
   });
 });
 

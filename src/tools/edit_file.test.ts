@@ -3,7 +3,7 @@ import { join } from "path";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { createHash } from "crypto";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
 import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
 import edit_file from "./edit_file.ts";
 
@@ -13,6 +13,12 @@ const testFile = () => join(tmpDir, "target.txt");
 
 function md5(text: string): string {
   return createHash("md5").update(text).digest("hex");
+}
+
+/** Extract text from ToolResult */
+function getText(result: ToolResult): string {
+  const part = result.content[0];
+  return part.type === "text" ? part.text : "";
 }
 
 beforeAll(async () => {
@@ -40,8 +46,8 @@ describe("edit_file tool", () => {
       replace_all: false,
       checksum: "",
       dry_run: false,
-    }) as Document;
-    expect(result.text).toContain("replaced 1 occurrence");
+    });
+    expect(getText(result)).toContain("replaced 1 occurrence");
     const content = await Bun.file(testFile()).text();
     expect(content).toBe("alpha BETA gamma\n");
   });
@@ -65,8 +71,8 @@ describe("edit_file tool", () => {
       replace_all: true,
       checksum: "",
       dry_run: false,
-    }) as Document;
-    expect(result.text).toContain("replaced 2 occurrence");
+    });
+    expect(getText(result)).toContain("replaced 2 occurrence");
     const content = await Bun.file(testFile()).text();
     expect(content).toContain("FOO bar baz");
     expect(content).toContain("FOO second");
@@ -94,8 +100,8 @@ describe("edit_file tool", () => {
       replace_all: false,
       checksum,
       dry_run: false,
-    }) as Document;
-    expect(result.text).toContain("replaced 1");
+    });
+    expect(getText(result)).toContain("replaced 1");
   });
 
   it("rejects with incorrect checksum", async () => {
@@ -117,8 +123,8 @@ describe("edit_file tool", () => {
       replace_all: false,
       checksum: "",
       dry_run: false,
-    }) as Document;
-    expect(result.text).toContain("replaced 1");
+    });
+    expect(getText(result)).toContain("replaced 1");
   });
 
   it("returns new checksum after edit", async () => {
@@ -129,11 +135,11 @@ describe("edit_file tool", () => {
       replace_all: false,
       checksum: "",
       dry_run: false,
-    }) as Document;
-    expect(result.text).toContain("Checksum:");
+    });
+    expect(getText(result)).toContain("Checksum:");
     const newContent = await Bun.file(testFile()).text();
     const expectedHash = md5(newContent);
-    expect(result.text).toContain(expectedHash);
+    expect(getText(result)).toContain(expectedHash);
   });
 
   it("dry_run returns diff without modifying file", async () => {
@@ -145,10 +151,9 @@ describe("edit_file tool", () => {
       replace_all: false,
       checksum: "",
       dry_run: true,
-    }) as Document;
-    expect(result.description).toContain("Dry run");
-    expect(result.text).toContain("-hello world");
-    expect(result.text).toContain("+HELLO WORLD");
+    });
+    expect(getText(result)).toContain("-hello world");
+    expect(getText(result)).toContain("+HELLO WORLD");
     const afterContent = await Bun.file(testFile()).text();
     expect(afterContent).toBe(originalContent);
   });

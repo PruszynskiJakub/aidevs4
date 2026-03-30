@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { describe, it, expect, beforeEach } from "bun:test";
-import { register, getTools, getToolsByName, dispatch, reset } from "./registry.ts";
+import { register, getTools, getToolsByName, dispatch, reset, serializeContent } from "./registry.ts";
 import type { ToolDefinition } from "../types/tool.ts";
-import { createDocument } from "../infra/document.ts";
+import { text } from "../types/tool-result.ts";
 
 beforeEach(() => {
   reset();
@@ -19,7 +19,7 @@ describe("registry", () => {
           schema: z.object({ text: z.string() }),
         },
         handler: async (args: Record<string, unknown>) =>
-          createDocument((args as { text: string }).text, "echo result", { source: null, type: "document", mimeType: "text/plain" }),
+          text((args as { text: string }).text),
       };
 
       register(tool);
@@ -57,7 +57,7 @@ describe("registry", () => {
           },
         },
         handler: async (args: Record<string, unknown>) =>
-          createDocument("ok", `${(args as { action: string }).action}`, { source: null, type: "document", mimeType: "text/plain" }),
+          text(`${(args as { action: string }).action}`),
       };
 
       register(tool);
@@ -81,8 +81,7 @@ describe("registry", () => {
           description: "A tool",
           schema: z.object({}),
         },
-        handler: async () =>
-          createDocument("ok", "dup", { source: null, type: "document", mimeType: "text/plain" }),
+        handler: async () => text("ok"),
       };
 
       register(tool);
@@ -91,7 +90,7 @@ describe("registry", () => {
   });
 
   describe("dispatch (simple)", () => {
-    it("dispatches to registered handler and returns XML document", async () => {
+    it("dispatches to registered handler and returns plain text content", async () => {
       const tool: ToolDefinition = {
         name: "greet",
         schema: {
@@ -100,24 +99,21 @@ describe("registry", () => {
           schema: z.object({ name: z.string() }),
         },
         handler: async (args: Record<string, unknown>) =>
-          createDocument(`Hello, ${(args as { name: string }).name}!`, "greeting", { source: null, type: "document", mimeType: "text/plain" }),
+          text(`Hello, ${(args as { name: string }).name}!`),
       };
 
       register(tool);
-      const result = await dispatch("greet", '{"name":"World"}');
+      const result = await dispatch("greet", '{"name":"World"}', "call-1");
 
       expect(result.isError).toBe(false);
-      expect(result.xml).toContain("<document");
-      expect(result.xml).toContain("Hello, World!");
-      expect(result.xml).toContain("</document>");
+      expect(result.content).toBe("Hello, World!");
     });
 
-    it("returns error document for unknown tool", async () => {
-      const result = await dispatch("nonexistent", "{}");
+    it("returns error for unknown tool", async () => {
+      const result = await dispatch("nonexistent", "{}", "call-2");
 
       expect(result.isError).toBe(true);
-      expect(result.xml).toContain("<document");
-      expect(result.xml).toContain("Error: Unknown tool: nonexistent");
+      expect(result.content).toContain("Error: Unknown tool: nonexistent");
     });
   });
 
@@ -138,20 +134,20 @@ describe("registry", () => {
         },
         handler: async (args: Record<string, unknown>) => {
           received = args;
-          return createDocument("done", "ma result", { source: null, type: "document", mimeType: "text/plain" });
+          return text("done");
         },
       };
 
       register(tool);
-      const result = await dispatch("ma__run", '{"x":42}');
+      const result = await dispatch("ma__run", '{"x":42}', "call-3");
 
-      expect(result.xml).toContain("done");
+      expect(result.content).toBe("done");
       expect(received).toEqual({ action: "run", payload: { x: 42 } });
     });
   });
 
   describe("dispatch error handling", () => {
-    it("wraps handler errors as error document", async () => {
+    it("wraps handler errors as error result", async () => {
       const tool: ToolDefinition = {
         name: "fail",
         schema: {
@@ -163,12 +159,10 @@ describe("registry", () => {
       };
 
       register(tool);
-      const result = await dispatch("fail", "{}");
+      const result = await dispatch("fail", "{}", "call-4");
 
       expect(result.isError).toBe(true);
-      expect(result.xml).toContain("<document");
-      expect(result.xml).toContain("Error: boom");
-      expect(result.xml).toContain("Error from fail");
+      expect(result.content).toContain("Error: boom");
     });
   });
 
@@ -182,7 +176,7 @@ describe("registry", () => {
           schema: z.object({ text: z.string() }),
         },
         handler: async (args: Record<string, unknown>) =>
-          createDocument((args as { text: string }).text, "echo", { source: null, type: "document", mimeType: "text/plain" }),
+          text((args as { text: string }).text),
       };
 
       const multi: ToolDefinition = {
@@ -202,7 +196,7 @@ describe("registry", () => {
           },
         },
         handler: async (args: Record<string, unknown>) =>
-          createDocument("ok", `${(args as { action: string }).action}`, { source: null, type: "document", mimeType: "text/plain" }),
+          text(`${(args as { action: string }).action}`),
       };
 
       register(echo);
@@ -238,6 +232,31 @@ describe("registry", () => {
     });
   });
 
+  describe("serializeContent", () => {
+    it("serializes text part as-is", () => {
+      expect(serializeContent([{ type: "text", text: "hello" }])).toBe("hello");
+    });
+
+    it("serializes resource ref with description and uri", () => {
+      const result = serializeContent([{ type: "resource", uri: "file:///tmp/f.txt", description: "Full content" }]);
+      expect(result).toBe("Full content (ref: file:///tmp/f.txt)");
+    });
+
+    it("serializes image with placeholder", () => {
+      const data = "AAAA"; // 3 bytes
+      const result = serializeContent([{ type: "image", data, mimeType: "image/png" }]);
+      expect(result).toContain("[Image: image/png,");
+    });
+
+    it("joins multiple parts with double newline", () => {
+      const result = serializeContent([
+        { type: "text", text: "Summary" },
+        { type: "resource", uri: "file:///tmp/f.txt", description: "Full file" },
+      ]);
+      expect(result).toBe("Summary\n\nFull file (ref: file:///tmp/f.txt)");
+    });
+  });
+
   describe("reset", () => {
     it("clears all registered tools", async () => {
       const tool: ToolDefinition = {
@@ -247,8 +266,7 @@ describe("registry", () => {
           description: "Temporary",
           schema: z.object({}),
         },
-        handler: async () =>
-          createDocument("ok", "temp", { source: null, type: "document", mimeType: "text/plain" }),
+        handler: async () => text("ok"),
       };
 
       register(tool);

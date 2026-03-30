@@ -1,12 +1,11 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text, resource } from "../types/tool-result.ts";
 import { files } from "../infra/file.ts";
 import { sessionService } from "../agent/session.ts";
 import { config } from "../config";
 import { safeFilename, assertMaxLength } from "../utils/parse.ts";
-import { createDocument } from "../infra/document.ts";
-import { getSessionId } from "../agent/context.ts";
 import { inferCategory, inferMimeType } from "../utils/media-types.ts";
 import { condense } from "../infra/condense.ts";
 import { scrapeUrl } from "../infra/serper.ts";
@@ -22,7 +21,7 @@ function assertHostAllowed(hostname: string): void {
   }
 }
 
-async function download(payload: { url: string; filename: string }): Promise<Document> {
+async function download(payload: { url: string; filename: string }): Promise<ToolResult> {
   assertMaxLength(payload.url, "url", 2048);
   assertMaxLength(payload.filename, "filename", 255);
   safeFilename(payload.filename);
@@ -47,19 +46,17 @@ async function download(payload: { url: string; filename: string }): Promise<Doc
   await files.write(path, response);
 
   const contentTypeHeader = response.headers.get("content-type");
-  const type = inferCategory(payload.filename);
   const mimeType = contentTypeHeader || inferMimeType(payload.filename);
 
   // Use session-relative path to save tokens in LLM context.
-  // bash cwd is already the session output dir, so relative paths work directly.
   const relativePath = sessionService.toSessionPath(path);
-  const text = `File saved to ${relativePath}.\nNote: Verify contents or process the file further.`;
 
-  return createDocument(text, `Web download from ${payload.url}`, {
-    source: path,
-    type,
-    mimeType,
-  }, getSessionId());
+  return {
+    content: [
+      resource(`file://${path}`, `Downloaded: ${payload.filename}`, mimeType),
+      { type: "text", text: `File saved to ${relativePath}.\nNote: Verify contents or process the file further.` },
+    ],
+  };
 }
 
 function validateUrl(url: string): void {
@@ -71,24 +68,19 @@ function validateUrl(url: string): void {
   }
 }
 
-async function scrapeSingle(url: string): Promise<Document> {
+async function scrapeSingle(url: string): Promise<{ summary: string; fullPath: string | null }> {
   const result = await scrapeUrl(url);
 
-  const { text } = await condense({
+  const { text: summaryText, fullPath } = await condense({
     content: result.text,
     intent: `Web scrape of ${url}`,
     filename: `scrape-${new URL(url).hostname}.txt`,
   });
 
-  return createDocument(
-    text,
-    `Scraped content from ${url}`,
-    { source: url, type: "text" as const, mimeType: "text/plain" },
-    getSessionId(),
-  );
+  return { summary: summaryText, fullPath };
 }
 
-async function scrape(payload: { urls: string[] }): Promise<Document[]> {
+async function scrape(payload: { urls: string[] }): Promise<ToolResult> {
   const { urls } = payload;
 
   if (!Array.isArray(urls) || urls.length === 0) {
@@ -106,21 +98,32 @@ async function scrape(payload: { urls: string[] }): Promise<Document[]> {
 
   const results = await Promise.allSettled(urls.map((url) => scrapeSingle(url)));
 
-  return results.map((result, i) => {
+  const summaries: string[] = [];
+  const resourceRefs: ToolResult["content"] = [];
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
     if (result.status === "fulfilled") {
-      return result.value;
+      summaries.push(`## ${urls[i]}\n${result.value.summary}`);
+      if (result.value.fullPath) {
+        const sizeKB = Math.ceil((await files.stat(result.value.fullPath)).size / 1024);
+        resourceRefs.push(resource(`file://${result.value.fullPath}`, `Full content of ${urls[i]} (${sizeKB}KB)`));
+      }
+    } else {
+      const errorMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      summaries.push(`## ${urls[i]}\nError: ${errorMsg}`);
     }
-    const errorMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
-    return createDocument(
-      `Error scraping ${urls[i]}: ${errorMsg}`,
-      `Scrape error for ${urls[i]}`,
-      { source: urls[i], type: "text" as const, mimeType: "text/plain" },
-      getSessionId(),
-    );
-  });
+  }
+
+  return {
+    content: [
+      { type: "text", text: summaries.join("\n\n") },
+      ...resourceRefs,
+    ],
+  };
 }
 
-async function web(args: Record<string, unknown>): Promise<Document | Document[]> {
+async function web(args: Record<string, unknown>): Promise<ToolResult> {
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "download":

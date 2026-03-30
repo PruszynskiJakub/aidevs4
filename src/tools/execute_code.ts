@@ -3,8 +3,8 @@ import { mkdir, unlink } from "fs/promises";
 import { z } from "zod";
 import { config } from "../config/index.ts";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
-import { createDocument } from "../infra/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { getSessionId } from "../agent/context.ts";
 import { startBridge, type BridgeHandle } from "./sandbox/bridge.ts";
 import { generatePrelude } from "./sandbox/prelude.ts";
@@ -61,7 +61,7 @@ function getSessionDir(): string {
   return resolve(config.paths.sessionsDir);
 }
 
-async function executeCode(args: Record<string, unknown>): Promise<Document> {
+async function executeCode(args: Record<string, unknown>): Promise<ToolResult> {
   const code = args.code;
   const description = args.description;
 
@@ -175,12 +175,7 @@ async function executeCode(args: Record<string, unknown>): Promise<Document> {
           "\n...(truncated at 20KB — write large results to a file in SESSION_DIR and log the path)";
       }
 
-      return createDocument(
-        output,
-        `Code execution: ${description}`,
-        { source: null, type: "document", mimeType: "text/plain" },
-        getSessionId(),
-      );
+      return text(output);
     } finally {
       try {
         await unlink(tmpFile);

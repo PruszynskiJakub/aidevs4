@@ -1,13 +1,12 @@
 import { createHash } from "crypto";
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
-import { createDocument } from "../infra/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { files } from "../infra/file.ts";
-import { getSessionId } from "../agent/context.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
 
-async function read_file(args: Record<string, unknown>): Promise<Document> {
+async function read_file(args: Record<string, unknown>): Promise<ToolResult> {
   validateKeys(args);
 
   const filePath = args.file_path as string;
@@ -30,12 +29,7 @@ async function read_file(args: Record<string, unknown>): Promise<Document> {
   const totalLines = allLines.length;
 
   if (offset > totalLines) {
-    const text = `File has ${totalLines} lines but offset is ${offset}. Nothing to show.\nChecksum: ${checksum} | Lines: ${totalLines}`;
-    return createDocument(text, `read_file: ${filePath} (empty range)`, {
-      source: filePath,
-      type: "document",
-      mimeType: "text/plain",
-    }, getSessionId());
+    return text(`File has ${totalLines} lines but offset is ${offset}. Nothing to show.\nChecksum: ${checksum} | Lines: ${totalLines}`);
   }
 
   const clampedOffset = Math.min(offset, totalLines);
@@ -47,14 +41,10 @@ async function read_file(args: Record<string, unknown>): Promise<Document> {
   }).join("\n");
 
   const endLine = clampedOffset + selectedLines.length - 1;
-  const text = `${numbered}\nChecksum: ${checksum} | Lines: ${totalLines}`;
+  const result = `${numbered}\nChecksum: ${checksum} | Lines: ${totalLines}`;
   const hint = "\nNote: Adjust offset/limit to read other sections, or search within the file for specific content.";
 
-  return createDocument(text + hint, `read_file: ${filePath} lines ${clampedOffset}-${endLine} of ${totalLines}`, {
-    source: filePath,
-    type: "document",
-    mimeType: "text/plain",
-  }, getSessionId());
+  return text(result + hint);
 }
 
 export default {

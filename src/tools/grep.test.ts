@@ -2,12 +2,18 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { join } from "path";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
 import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
 import grep from "./grep.ts";
 
 let tmpDir: string;
 let restore: () => void;
+
+/** Extract text from ToolResult */
+function getText(result: ToolResult): string {
+  const part = result.content[0];
+  return part.type === "text" ? part.text : "";
+}
 
 beforeAll(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "grep_test_"));
@@ -35,9 +41,9 @@ describe("grep tool", () => {
       path: tmpDir,
       include: "*.ts",
       case_insensitive: false,
-    }) as Document;
-    expect(result.text).toContain("code.ts:1: const foo = 1;");
-    expect(result.text).not.toContain("FOO"); // case sensitive
+    });
+    expect(getText(result)).toContain("code.ts:1: const foo = 1;");
+    expect(getText(result)).not.toContain("FOO"); // case sensitive
   });
 
   it("supports case-insensitive search", async () => {
@@ -46,10 +52,10 @@ describe("grep tool", () => {
       path: tmpDir,
       include: "*.md",
       case_insensitive: true,
-    }) as Document;
-    expect(result.text).toContain("Hello World");
-    expect(result.text).toContain("hello again");
-    expect(result.text).toContain("HELLO CAPS");
+    });
+    expect(getText(result)).toContain("Hello World");
+    expect(getText(result)).toContain("hello again");
+    expect(getText(result)).toContain("HELLO CAPS");
   });
 
   it("respects include filter", async () => {
@@ -58,9 +64,9 @@ describe("grep tool", () => {
       path: tmpDir,
       include: "*.json",
       case_insensitive: false,
-    }) as Document;
-    expect(result.text).toContain("data.json");
-    expect(result.text).not.toContain("readme.md");
+    });
+    expect(getText(result)).toContain("data.json");
+    expect(getText(result)).not.toContain("readme.md");
   });
 
   it("caps at 20 matches per file", async () => {
@@ -69,9 +75,8 @@ describe("grep tool", () => {
       path: tmpDir,
       include: "many.txt",
       case_insensitive: false,
-    }) as Document;
-    // File has 50 matches but should be capped at 20
-    const matchLines = result.text.split("\n").filter(l => l.includes("many.txt:"));
+    });
+    const matchLines = getText(result).split("\n").filter(l => l.includes("many.txt:"));
     expect(matchLines.length).toBe(20);
   });
 
@@ -81,9 +86,9 @@ describe("grep tool", () => {
       path: tmpDir,
       include: "*.ts",
       case_insensitive: false,
-    }) as Document;
-    expect(result.text).toContain("Matches:");
-    expect(result.text).toContain("line(s)");
+    });
+    expect(getText(result)).toContain("Matches:");
+    expect(getText(result)).toContain("line(s)");
   });
 
   it("reports no matches gracefully", async () => {
@@ -92,8 +97,8 @@ describe("grep tool", () => {
       path: tmpDir,
       include: "*",
       case_insensitive: false,
-    }) as Document;
-    expect(result.text).toContain("No matches");
+    });
+    expect(getText(result)).toContain("No matches");
   });
 
   it("rejects invalid regex", async () => {
@@ -139,7 +144,7 @@ describe("grep tool", () => {
       path: tmpDir,
       include: "*",
       case_insensitive: false,
-    }) as Document;
-    expect(result.text).toContain("Note:");
+    });
+    expect(getText(result)).toContain("Note:");
   });
 });

@@ -1,16 +1,15 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
-import { createDocument } from "../infra/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { files, FileSizeLimitError } from "../infra/file.ts";
-import { getSessionId } from "../agent/context.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
 
 const MAX_TOTAL_LINES = 200;
 const MAX_FILES_WITH_MATCHES = 50;
 const PER_FILE_CAP = 20;
 
-async function grep(args: Record<string, unknown>): Promise<Document> {
+async function grep(args: Record<string, unknown>): Promise<ToolResult> {
   validateKeys(args);
 
   const pattern = args.pattern as string;
@@ -99,24 +98,20 @@ async function grep(args: Record<string, unknown>): Promise<Document> {
     }
   }
 
-  let text: string;
+  let output: string;
   if (matches.length === 0) {
-    text = `No matches for pattern "${pattern}" in ${path}.`;
+    output = `No matches for pattern "${pattern}" in ${path}.`;
   } else {
-    text = matches.join("\n");
-    text += `\n\nMatches: ${matches.length} line(s) in ${filesWithMatches} file(s)`;
+    output = matches.join("\n");
+    output += `\n\nMatches: ${matches.length} line(s) in ${filesWithMatches} file(s)`;
     if (truncated) {
-      text += ` (truncated — refine pattern or include filter for complete results)`;
+      output += ` (truncated — refine pattern or include filter for complete results)`;
     }
   }
 
   const hint = "\nNote: Read any matched file for full context around the matches, or refine the pattern to narrow results.";
 
-  return createDocument(text + hint, `grep: "${pattern}" in ${path} → ${matches.length} match(es)`, {
-    source: path,
-    type: "document",
-    mimeType: "text/plain",
-  }, getSessionId());
+  return text(output + hint);
 }
 
 export default {

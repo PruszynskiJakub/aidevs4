@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
 import geoDistance from "./geo_distance.ts";
 import { haversine } from "./geo_distance.ts";
 import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
@@ -12,6 +12,12 @@ const handler = geoDistance.handler;
 
 let tmp: string;
 let restoreFiles: () => void;
+
+/** Extract text from ToolResult */
+function getText(result: ToolResult): string {
+  const part = result.content[0];
+  return part.type === "text" ? part.text : "";
+}
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "geo-distance-test-"));
@@ -46,9 +52,9 @@ describe("geo_distance distance", () => {
     const result = await handler({
       action: "distance",
       payload: { lat1: 52.23, lon1: 21.01, lat2: 50.06, lon2: 19.94 },
-    }) as Document;
+    });
 
-    const data = JSON.parse(result.text);
+    const data = JSON.parse(getText(result));
     expect(data.distance_km).toBeGreaterThan(247);
     expect(data.distance_km).toBeLessThan(257);
   });
@@ -57,9 +63,9 @@ describe("geo_distance distance", () => {
     const result = await handler({
       action: "distance",
       payload: { lat1: 50.0, lon1: 20.0, lat2: 50.0, lon2: 20.0 },
-    }) as Document;
+    });
 
-    const data = JSON.parse(result.text);
+    const data = JSON.parse(getText(result));
     expect(data.distance_km).toBe(0);
   });
 });
@@ -71,9 +77,9 @@ describe("geo_distance find_nearby", () => {
       { latitude: 50.06, longitude: 19.94, name: "Kraków" },
     ];
     const queries = [
-      { latitude: 52.25, longitude: 21.0, person: "Alice" },   // ~2 km from Warsaw
-      { latitude: 50.05, longitude: 19.95, person: "Bob" },     // ~1 km from Kraków
-      { latitude: 40.0, longitude: 10.0, person: "Charlie" },   // far from both
+      { latitude: 52.25, longitude: 21.0, person: "Alice" },
+      { latitude: 50.05, longitude: 19.95, person: "Bob" },
+      { latitude: 40.0, longitude: 10.0, person: "Charlie" },
     ];
 
     const refsFile = join(tmp, "refs.json");
@@ -84,11 +90,10 @@ describe("geo_distance find_nearby", () => {
     const result = await handler({
       action: "find_nearby",
       payload: { references_file: refsFile, queries_file: queriesFile, radius_km: 10 },
-    }) as Document;
+    });
 
-    const data = JSON.parse(result.text);
+    const data = JSON.parse(getText(result));
     expect(data.count).toBe(2);
-    expect(result.description).toContain("2 matches");
     expect(data.matches[0].query.person).toBe("Bob");
     expect(data.matches[0].reference.name).toBe("Kraków");
     expect(data.matches[1].query.person).toBe("Alice");
@@ -108,9 +113,9 @@ describe("geo_distance find_nearby", () => {
     const result = await handler({
       action: "find_nearby",
       payload: { references_file: refsFile, queries_file: queriesFile, radius_km: 1 },
-    }) as Document;
+    });
 
-    const data = JSON.parse(result.text);
+    const data = JSON.parse(getText(result));
     expect(data.count).toBe(0);
     expect(data.matches).toEqual([]);
   });
@@ -127,9 +132,9 @@ describe("geo_distance find_nearby", () => {
     const result = await handler({
       action: "find_nearby",
       payload: { references_file: refsFile, queries_file: queriesFile, radius_km: 1 },
-    }) as Document;
+    });
 
-    const data = JSON.parse(result.text);
+    const data = JSON.parse(getText(result));
     expect(data.count).toBe(1);
     expect(data.matches[0].reference.code).toBe("PL-01");
     expect(data.matches[0].reference.type).toBe("plant");
@@ -138,7 +143,7 @@ describe("geo_distance find_nearby", () => {
   });
 
   it("throws when item lacks latitude/longitude", async () => {
-    const refs = [{ latitude: 50.0 }]; // missing longitude
+    const refs = [{ latitude: 50.0 }];
     const refsFile = join(tmp, "refs_bad.json");
     const queriesFile = join(tmp, "queries_ok.json");
     await Bun.write(refsFile, JSON.stringify(refs));

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, mock, beforeEach } from "bun
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
 import web from "./web.ts";
 import { config } from "../config/index.ts";
 import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
@@ -12,6 +12,14 @@ const handler = web.handler;
 let tmp: string;
 let restoreFiles: () => void;
 const originalFetch = globalThis.fetch;
+
+/** Extract text from ToolResult */
+function getText(result: ToolResult): string {
+  for (const part of result.content) {
+    if (part.type === "text") return part.text;
+  }
+  return "";
+}
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "web-test-"));
@@ -48,13 +56,14 @@ describe("web download", () => {
         url: "https://hub.ag3nts.org/data/{{hub_api_key}}/people.csv",
         filename: "people.csv",
       },
-    }) as Document;
+    });
 
     expect(capturedUrl).toBe(`https://hub.ag3nts.org/data/${config.hub.apiKey}/people.csv`);
-    expect(result.text).toContain("File saved to");
-    expect(result.text).toMatch(/\.csv/);
-    expect(result.description).toContain("Web download from");
-    expect(result.metadata.source).toMatch(/\.csv$/);
+    expect(getText(result)).toContain("File saved to");
+    expect(getText(result)).toMatch(/\.csv/);
+    // Should have a resource ref
+    const hasResource = result.content.some(p => p.type === "resource");
+    expect(hasResource).toBe(true);
   });
 
   it("downloads without placeholders", async () => {
@@ -71,10 +80,10 @@ describe("web download", () => {
         url: "https://centrala.ag3nts.org/files/report.txt",
         filename: "report.txt",
       },
-    }) as Document;
+    });
 
     expect(capturedUrl).toBe("https://centrala.ag3nts.org/files/report.txt");
-    expect(result.text).toContain("File saved to");
+    expect(getText(result)).toContain("File saved to");
   });
 
   it("passes unknown placeholders through unchanged", async () => {
@@ -185,7 +194,7 @@ describe("web download", () => {
 });
 
 describe("web scrape", () => {
-  it("scrapes a single URL and returns Document[]", async () => {
+  it("scrapes a single URL and returns ToolResult with text", async () => {
     globalThis.fetch = mock(async () => {
       return new Response(JSON.stringify({ text: "Hello from page" }), {
         status: 200,
@@ -193,14 +202,13 @@ describe("web scrape", () => {
       });
     }) as any;
 
-    const results = (await handler({
+    const result = await handler({
       action: "scrape",
       payload: { urls: ["https://example.com/page"] },
-    })) as Document[];
+    });
 
-    expect(results).toHaveLength(1);
-    expect(results[0].text).toBe("Hello from page");
-    expect(results[0].description).toContain("https://example.com/page");
+    expect(getText(result)).toContain("Hello from page");
+    expect(getText(result)).toContain("example.com/page");
   });
 
   it("scrapes multiple URLs in parallel", async () => {
@@ -213,13 +221,14 @@ describe("web scrape", () => {
       });
     }) as any;
 
-    const results = (await handler({
+    const result = await handler({
       action: "scrape",
       payload: { urls: ["https://a.com", "https://b.com", "https://c.com"] },
-    })) as Document[];
+    });
 
-    expect(results).toHaveLength(3);
     expect(callCount).toBe(3);
+    // All summaries in one text part
+    expect(result.content.length).toBeGreaterThanOrEqual(1);
   });
 
   it("handles partial failure — one bad URL does not block others", async () => {
@@ -234,15 +243,14 @@ describe("web scrape", () => {
       });
     }) as any;
 
-    const results = (await handler({
+    const result = await handler({
       action: "scrape",
       payload: { urls: ["https://good.com", "https://bad.com"] },
-    })) as Document[];
+    });
 
-    expect(results).toHaveLength(2);
-    expect(results[0].text).toBe("OK");
-    expect(results[1].text).toContain("Error scraping");
-    expect(results[1].text).toContain("404");
+    const t = getText(result);
+    expect(t).toContain("OK");
+    expect(t).toContain("Error");
   });
 
   it("rejects empty urls array", async () => {
@@ -268,22 +276,5 @@ describe("web scrape", () => {
     await expect(
       handler({ action: "scrape", payload: { urls: [123 as any] } }),
     ).rejects.toThrow("must be a string");
-  });
-
-  it("falls back to JSON.stringify when no text field in response", async () => {
-    globalThis.fetch = mock(async () => {
-      return new Response(JSON.stringify({ custom: "data", nested: { a: 1 } }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }) as any;
-
-    const results = (await handler({
-      action: "scrape",
-      payload: { urls: ["https://example.com"] },
-    })) as Document[];
-
-    expect(results[0].text).toContain("custom");
-    expect(results[0].text).toContain("data");
   });
 });

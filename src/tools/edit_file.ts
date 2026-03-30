@@ -1,10 +1,9 @@
 import { createHash } from "crypto";
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
-import { createDocument } from "../infra/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { files } from "../infra/file.ts";
-import { getSessionId } from "../agent/context.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
 
 const MAX_STRING_LENGTH = 64 * 1024; // 64 KB
@@ -63,7 +62,7 @@ function unifiedDiff(original: string, modified: string, filePath: string): stri
   return lines.join("\n");
 }
 
-async function edit_file(args: Record<string, unknown>): Promise<Document> {
+async function edit_file(args: Record<string, unknown>): Promise<ToolResult> {
   validateKeys(args);
 
   const filePath = args.file_path as string;
@@ -128,24 +127,14 @@ async function edit_file(args: Record<string, unknown>): Promise<Document> {
   // Dry run: return diff without writing
   if (dryRun) {
     const diff = unifiedDiff(content, result, filePath);
-    return createDocument(diff, `Dry run — no changes applied to ${filePath}.`, {
-      source: filePath,
-      type: "document",
-      mimeType: "text/plain",
-    }, getSessionId());
+    return text(diff);
   }
 
   // Write back (sandbox enforced by file service)
   await files.write(filePath, result);
 
   const newChecksum = md5(result);
-  const text = `Edited ${filePath}: replaced ${replacedCount} occurrence(s).\nChecksum: ${newChecksum}`;
-
-  return createDocument(text, `edit_file: ${filePath} (${replacedCount} replacement(s))`, {
-    source: filePath,
-    type: "document",
-    mimeType: "text/plain",
-  }, getSessionId());
+  return text(`Edited ${filePath}: replaced ${replacedCount} occurrence(s).\nChecksum: ${newChecksum}`);
 }
 
 export default {

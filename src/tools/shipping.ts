@@ -1,11 +1,10 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
-import type { Document } from "../types/document.ts";
+import type { ToolResult } from "../types/tool-result.ts";
+import { text } from "../types/tool-result.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { createDocument } from "../infra/document.ts";
-import { HUB_DOC_META, hubPost, stringify } from "../utils/hub-fetch.ts";
-import { getSessionId } from "../agent/context.ts";
+import { hubPost, stringify } from "../utils/hub-fetch.ts";
 
 const PACKAGEID_RE = /^[A-Za-z0-9]+$/;
 const PACKAGES_URL = `${config.hub.baseUrl}/api/packages`;
@@ -16,7 +15,7 @@ function validateAlphanumeric(value: string, name: string): void {
   }
 }
 
-async function checkPackage(payload: { packageid: string }): Promise<Document> {
+async function checkPackage(payload: { packageid: string }): Promise<ToolResult> {
   assertMaxLength(payload.packageid, "packageid", 20);
   validateAlphanumeric(payload.packageid, "packageid");
 
@@ -27,19 +26,14 @@ async function checkPackage(payload: { packageid: string }): Promise<Document> {
     config.limits.fetchTimeout,
   );
 
-  return createDocument(
-    stringify(response),
-    `Package ${payload.packageid} status.\nNote: Reroute the package if the current destination is incorrect.`,
-    HUB_DOC_META,
-    getSessionId(),
-  );
+  return text(`${stringify(response)}\nNote: Reroute the package if the current destination is incorrect.`);
 }
 
 async function redirectPackage(payload: {
   packageid: string;
   destination: string;
   code: string;
-}): Promise<Document> {
+}): Promise<ToolResult> {
   assertMaxLength(payload.packageid, "packageid", 20);
   validateAlphanumeric(payload.packageid, "packageid");
   assertMaxLength(payload.destination, "destination", 20);
@@ -64,15 +58,10 @@ async function redirectPackage(payload: {
     : undefined;
 
   const confirmNote = confirmationCode ? ` Confirmation code: ${confirmationCode}.` : "";
-  return createDocument(
-    stringify(response),
-    `Redirect processed for ${payload.packageid}.${confirmNote} IMPORTANT: Always include the confirmation code in your reply.`,
-    HUB_DOC_META,
-    getSessionId(),
-  );
+  return text(`${stringify(response)}\nRedirect processed for ${payload.packageid}.${confirmNote} IMPORTANT: Always include the confirmation code in your reply.`);
 }
 
-async function shipping(args: Record<string, unknown>): Promise<Document> {
+async function shipping(args: Record<string, unknown>): Promise<ToolResult> {
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "check":
