@@ -1,6 +1,6 @@
-# Architecture Audit — March 2026 (Revision 3)
+# Architecture Audit — March 2026 (Revision 4)
 
-Reaudit of the agent system against AI Devs 4 course materials (S01–S03) and the previous audit (Revision 2). Reflects codebase state as of 2026-03-28.
+Reaudit of the agent system against AI Devs 4 course materials (S01–S03) and the previous audit (Revision 3). Reflects codebase state as of 2026-03-30.
 
 ---
 
@@ -9,7 +9,7 @@ Reaudit of the agent system against AI Devs 4 course materials (S01–S03) and t
 **Carried forward:**
 - **Tool safety model** remains production-grade. Input validation, sandboxing, path restrictions, prototype pollution checks. Aligns with S01E02's mandate for code-level (not prompt-level) security.
 - **Plan-Act loop** with separate prompts at different temperatures.
-- **Document UUID passing** between tools (instead of dumping content into context). Matches S01E02's "inter-tool data as files" pattern for ~50% efficiency gain.
+- **Lightweight `ToolResult` type** with MCP-aligned content parts (`TextContent`, `ImageContent`, `ResourceRef`). Tools return plain text by default; only large content uses `ResourceRef` file references. Replaced the previous `Document` UUID/XML system — eliminates ~30 tokens of XML envelope overhead per tool call while preserving the file-based reference pattern for large outputs (~50% context efficiency). Result store (`src/infra/result-store.ts`) tracks tool calls by `toolCallId` with two-phase lifecycle. Aligns with S01E03's MCP type compatibility.
 - **Multi-action tool schema** with `tool__action` expansion. Clean consolidation of related actions (e.g., `web__download`, `web__scrape`) — mirrors S01E03's recommendation to consolidate granular tools into logical groups.
 - **No tool-to-tool coupling** in hints — exactly what S02E01/S02E02 recommend.
 - **Provider abstraction** (OpenAI + Gemini behind `LLMProvider` interface). Course (S01E05) explicitly recommends unified interface for multiple providers.
@@ -24,6 +24,7 @@ Reaudit of the agent system against AI Devs 4 course materials (S01–S03) and t
 - **Sub-agent delegation is now implemented** via `delegate` tool (`src/tools/delegate.ts`). An agent can spawn a child agent in an isolated session with a different assistant config. The delegate tool dynamically discovers available agents from `workspace/agents/` and passes context through a prompt parameter. Child agents run with their own memory, logging, and tool sets. This was the #3 gap — now substantially addressed.
 - **Zod schema migration** (SP-60). All tool schemas migrated from hand-written JSON to Zod objects. Registry converts via `z.toJSONSchema()` with OpenAI `strict: true` enforcement. Eliminates schema drift, provides runtime validation at the type level, and makes schemas co-located with handler code.
 - **Event-driven telemetry matured.** JSONL writer compacts large fields (strips `fullText` from plans, `result` from tool completions) before persisting. Bridge pattern (`src/infra/log/bridge.ts`) converts bus events to logger calls. This is the foundation for the observability hierarchy S03E01 describes (Session → Trace → Span → Generation → Tool → Event) — the events exist, the analysis layer doesn't.
+- **ToolResult refactor** (SP-61). Replaced `Document` type with `ToolResult { content: ContentPart[]; isError?: boolean }`. Tool results are now plain text by default, with `ResourceRef` content parts only for large files. Registry serializes content parts to plain text (no XML). `document_processor` takes file paths instead of UUIDs. `resolveUri()` helper for `file://` URI conversion. All 15 tool handlers migrated in one pass.
 
 ---
 
@@ -56,21 +57,57 @@ The irony: the event bus and JSONL logs are *exactly* the data source an eval pi
 
 ---
 
-### 2. RAG is Static, Not Agentic (High — unchanged)
+### 2. No Knowledge Accumulation or Exploratory Retrieval (High — reframed)
 
-The `document_processor` tool still sends files to Gemini for one-shot Q&A. The course advocates **agentic RAG** where the agent autonomously decides what to search, iterates on results, and deepens queries. Missing:
+The previous audit framed this gap as "no vector store or embeddings." That misses the point. The course (S02E02, S02E03) presents a **spectrum** of retrieval approaches and explicitly says vector stores are not always necessary:
 
-- No vector store or embedding-based similarity search
-- No search/retrieval tool for a persistent knowledge base
-- No iterative query refinement loop
-- Document store (`src/infra/document.ts`) remains in-memory and session-scoped — no indexing, no persistence beyond session
-- The memory system captures observations but doesn't build a searchable knowledge base — it compresses, not indexes
+1. **Filesystem + grep/ripgrep** — simplest, no indexing overhead, often sufficient for markdown-based knowledge
+2. **SQLite + FTS5** — full-text search with minimal complexity
+3. **sqlite-vec / Qdrant** — semantic search when meaning-based matching is needed
+4. **Neo4j graphs** — for multi-hop relationship discovery across documents
 
-The course (S02E03) describes "reverse RAG" — agents building knowledge bases *for themselves*. The memory observer/reflector distills facts from conversations, but there's no retrieval mechanism to query accumulated knowledge semantically. S02E02 recommends hybrid search (lexical + semantic via Reciprocal Rank Fusion) and lists concrete options: SQLite + FTS5, sqlite-vec, Qdrant, Elasticsearch. None are present.
+The course says: *"instead of asking 'which approach is best?' ask 'which is best for the problem I'm solving?'"* (S02E02). The system already has `grep`, `glob`, `read_file` — basic exploration tools. For a markdown-based workspace, these could be sufficient for retrieval. **The real gap is not technology — it's the pattern.**
 
-S02E03 also describes graph-based memory (Neo4j) for semantic relationship discovery and multi-hop reasoning. The system has no graph structure.
+#### What's actually missing: Reverse RAG
 
-**Severity: High.**
+S02E03's central insight is **reverse RAG** — instead of connecting agents to existing human-written documents, agents **build knowledge bases for themselves**. The key difference:
+
+- **Traditional RAG**: chunk existing docs → index → search → hope the agent finds the right fragments
+- **Reverse RAG**: agent writes structured notes → navigates via internal references → always knows where things are
+
+The course illustrates this with a Task Manager agent that reads `workflows/` for instructions, follows a reference to `projects/overview.md`, discovers a project link, and navigates there — all through **document-internal references**, not similarity search. This mirrors how coding agents navigate codebases: grep to find an entry point, then follow imports/references to discover dependencies.
+
+The course identifies four navigation modes that make this work:
+- **Perspective** (bird's-eye view): overview of available materials
+- **Navigation** (search): searching filenames and content
+- **References** (links): cross-references between documents
+- **Details** (read): reading original document content
+
+The system has navigation (#2 via grep/glob) and details (#4 via read_file). What it lacks:
+
+- ❌ **No knowledge accumulation across sessions.** The memory system compresses observations into a running log, but doesn't write structured notes or documents that persist as searchable files. Observations are ephemeral summaries, not a growing knowledge base. An agent can't say "I learned X about project Y last week" and find the note.
+- ❌ **No perspective tool.** No way for an agent to get a bird's-eye overview of accumulated knowledge — a category map, a table of contents, or a directory listing of what it "knows."
+- ❌ **No reference-following pattern.** Documents don't contain cross-references to other documents. The agent can't follow a chain of `→ see also: ./related-topic.md` links.
+- ❌ **No dedicated knowledge directory.** The workspace has `sessions/` (ephemeral) and `shared/` (empty). There's no `knowledge/` or `notes/` directory where agents write persistent, structured notes that outlive sessions.
+- ❌ **No document-building agents.** S02E03 describes specialized agents for knowledge organization (e.g., a meeting transcription processor that writes structured notes). No such agents exist.
+- ❌ **`document_processor` is one-shot.** Sends files to Gemini for Q&A — no iterative deepening, no writing findings back to a persistent location.
+
+#### What this is NOT about
+
+This gap is **not** primarily about:
+- Needing a vector database (filesystem search may suffice for the current scale)
+- Needing embeddings (grep + glob cover lexical search)
+- Needing Neo4j (overkill without a clear multi-hop use case)
+
+It **is** about:
+- Agents writing structured notes that persist beyond sessions
+- A workspace directory structure designed for agent navigation (per S02E03's examples)
+- Cross-references between documents that agents can follow
+- The memory system feeding a searchable knowledge base, not just compressing into a running log
+
+The Observational Memory implementation is excellent for *within-session* context management. But S02E03's vision is broader: agents that accumulate knowledge *across sessions* by writing notes, organizing them, and navigating them later. The infrastructure (file tools, workspace, agent configs) is all there — the pattern just hasn't been applied.
+
+**Severity: High (reframed — the gap is knowledge accumulation and exploratory navigation, not specific technology).**
 
 ---
 
@@ -185,7 +222,15 @@ S01E02 also emphasizes prompt caching as the "highest priority optimization." Th
 
 ---
 
-## Resolved Since Revision 2
+## Resolved Since Revision 3
+
+| Previous Gap | Status | How Addressed |
+|---|---|---|
+| Document UUID/XML overhead (implicit) | **Resolved** | SP-61 ToolResult refactor. `Document` type replaced with lightweight `ToolResult`. Tool results are plain text by default. `ResourceRef` content parts for large files only. ~30 tokens saved per tool call. Result store tracks by `toolCallId`. `document_processor` uses file paths instead of UUIDs. MCP-aligned content part types. |
+
+---
+
+## Resolved Since Revision 2 (carried forward)
 
 | Previous Gap | Status | How Addressed |
 |---|---|---|
@@ -211,7 +256,7 @@ S01E02 also emphasizes prompt caching as the "highest priority optimization." Th
 | # | Gap | Rev 2 | Rev 3 | Trend |
 |---|-----|-------|-------|-------|
 | 1 | No evaluation pipeline | Critical | **Critical** | ⬆ worse (delegate + Zod add untested axes) |
-| 2 | Static RAG, no agentic search | High | **High** | ➡ unchanged |
+| 2 | No knowledge accumulation / exploratory retrieval | High | **High** | 🔄 reframed (pattern, not technology) |
 | 3 | Agent composition vertical only | Medium-High | **Medium** | ⬇ delegate tool landed |
 | 4 | No streaming | Medium | **Medium** | ➡ unchanged |
 | 5 | No workflow composition | Medium | **Medium** | ➡ unchanged |
@@ -230,12 +275,12 @@ How the system maps to each course module:
 |--------|-------|-----------|-------|
 | S01E01 | Structured outputs, few-shot, parallel processing | ✅ Strong | JSON schemas, batch tool dispatch, file-based progress |
 | S01E02 | Prompt caching, tool design, security | ⚠️ Partial | Tool design excellent; prompt caching not leveraged; progressive disclosure not implemented |
-| S01E03 | MCP, API design for AI, tool consolidation | ⚠️ Partial | Multi-action tools align well; no MCP server/client; no dynamic tool discovery |
+| S01E03 | MCP, API design for AI, tool consolidation | ⚠️ Partial | Multi-action tools align well; ToolResult content parts are MCP-aligned (TextContent, ImageContent, ResourceRef); no MCP server/client; no dynamic tool discovery |
 | S01E04 | Multimodal support | ✅ Strong | Gemini for multimodal, image handling in providers |
 | S01E05 | Limits, cost, heartbeat, event-driven | ⚠️ Partial | Token estimation and limits exist; no cost guards, no heartbeat, no per-user budgets |
 | S02E01 | Context management, workspace structure | ✅ Strong | Memory pipeline, context pruning, session workspace; workspace structure simpler than course recommends |
-| S02E02 | External context, RAG, hybrid search | ❌ Weak | Document processor is one-shot; no vector store, no hybrid search, no chunking pipeline |
-| S02E03 | Long-term memory, knowledge bases, graphs | ⚠️ Partial | Observation memory excellent; no searchable knowledge base, no graph structure |
+| S02E02 | External context, RAG, hybrid search | ⚠️ Partial | File exploration tools (grep, glob, read) cover lexical search. Missing: iterative query deepening, document-building agents, structured knowledge output |
+| S02E03 | Long-term memory, knowledge bases, graphs | ⚠️ Partial | Observation memory excellent for in-session compression. Missing: cross-session knowledge accumulation, reverse RAG pattern (agents writing persistent structured notes), reference-following navigation |
 | S02E04 | Multi-agent patterns, communication | ⚠️ Partial | Delegate enables vertical delegation; no horizontal communication, no parallel agents |
 | S02E05 | Agent design, prompt anatomy, tool assignment | ⚠️ Partial | Agent configs exist; prompt anatomy incomplete (no Voice, Protocol, CTA sections) |
 | S03E01 | Observability, evaluation, monitoring | ❌ Weak | Event bus + JSONL logs are the right foundation; zero eval/monitoring built on top |
@@ -247,15 +292,15 @@ How the system maps to each course module:
 
 ## Bottom Line
 
-The system continues to mature. The delegate tool resolves the most actionable gap from Revision 2 — agents can now spawn sub-agents for subtask delegation. The Zod schema migration eliminates a class of schema drift bugs. The event bus + JSONL telemetry provide a solid foundation that's ready to support evaluation and monitoring.
+The system continues to mature. The ToolResult refactor (SP-61) replaces the heavyweight Document/XML system with lightweight MCP-aligned content parts — tool results are now plain text by default, saving ~30 tokens per call and aligning with MCP's type system for future interoperability. The result store provides structured tracking of tool call lifecycle by `toolCallId`.
 
-**The evaluation gap remains the single most important issue** and is now more urgent. Every new capability (delegate, Zod, memory compression) adds an axis of potential regression that goes unmeasured. The telemetry infrastructure is in place — what's missing is the analysis layer on top: eval datasets, LLM-as-judge scoring, regression detection, and cost monitoring.
+**The evaluation gap remains the single most important issue** and is now more urgent. Every new capability (delegate, Zod, ToolResult, memory compression) adds an axis of potential regression that goes unmeasured. The telemetry infrastructure is in place — what's missing is the analysis layer on top: eval datasets, LLM-as-judge scoring, regression detection, and cost monitoring.
 
-Two new gaps were identified: proactive agent capabilities (S03E03) and prompt engineering refinements (S02E05). Neither is critical, but proactive triggers represent a pattern the course dedicates an entire lesson to.
+Two gaps identified in Revision 3 remain: proactive agent capabilities (S03E03) and prompt engineering refinements (S02E05). Neither is critical, but proactive triggers represent a pattern the course dedicates an entire lesson to.
 
 **Priority order:**
 1. **Evaluation pipeline** — the event bus and JSONL logs are the data source. Build eval datasets, wire up PromptFoo or Langfuse, add CI-gated regression checks. Start with tool selection accuracy and end-to-end task success rate.
-2. **Agentic RAG** — vector store + search tool + iterative query refinement. SQLite + FTS5 or sqlite-vec as a pragmatic starting point. Let the memory system feed a searchable knowledge base.
+2. **Knowledge accumulation (reverse RAG)** — agents write structured notes to a persistent `knowledge/` directory, with cross-references between documents. Start with filesystem + existing grep/glob tools — no vector store needed yet. Let the memory system feed a navigable knowledge base, not just a compressed log.
 3. **Horizontal agent communication** — the delegate tool handles vertical delegation. Add shared workspace directories (inbox/outbox per agent) and a `message` tool for bidirectional async communication. Enable parallel sub-agent spawning.
 4. **Human-in-the-loop gates** — the tool standard already describes the classification (read/create/mutate/destroy/irreversible). Wire the classification into dispatch with confirmation gates for destroy/irreversible actions.
 5. **Proactive capabilities** — cron-triggered agent runs, webhook listeners. Start with a simple heartbeat/polling mechanism.

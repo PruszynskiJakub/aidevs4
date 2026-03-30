@@ -14,10 +14,14 @@ Tools must be safe by construction — never rely on model behaviour.
 ## File & Export Convention
 
 - Tool: `src/tools/<tool_name>.ts` — exports `default { name, handler } satisfies ToolDefinition`
-- Schema: `src/schemas/<tool_name>.json` — matched by filename, registered in `src/tools/index.ts`
+- Schema: Zod objects co-located in the tool file (not separate JSON files).
+  Registered in `src/tools/index.ts`.
 - Naming: `snake_case`, unique and unambiguous (`send_email` not `send`)
 - Multi-action tools: use `{ action, payload }` handler shape with top-level
   `actions` key in schema. Dispatcher expands to `${tool}__${action}`.
+- Return type: `Promise<ToolResult>` from `src/types/tool-result.ts`. Use
+  `text(s)` for simple results, `error(msg)` for errors, `resource(uri, desc)`
+  for file references. Never return `Document` — that type no longer exists.
 
 ## Schema Rules
 
@@ -73,9 +77,12 @@ Support `dryRun: true` for high-impact actions. Consider `.history/` for undo.
 
 ## Response Design
 
-Return structured responses:
-```
-{ status: "ok"|"error", data: {…}, hints?: string[] }
+Handlers return `ToolResult` (`src/types/tool-result.ts`):
+```typescript
+import { text, resource } from "../types/tool-result.ts";
+// Simple: return text("result string");
+// Multi-part: return { content: [{ type: "text", text: "..." }, resource("file:///path", "desc")] };
+// Error: throw Error("message"); // dispatcher wraps it
 ```
 
 - **Success hints**: tell the model what it can do next with the result,

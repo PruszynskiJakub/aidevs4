@@ -55,15 +55,13 @@ The agent's toolbox grows with each completed task.
   │   │   └── prompt.ts               # Prompt loader (.md + YAML frontmatter)
   │   ├── infra/                      # I/O, side effects, external world
   │   │   ├── file.ts                 # Sandboxed file service
-  │   │   ├── document.ts             # Document store + XML formatting
+  │   │   ├── result-store.ts         # Tool call result store (by toolCallId)
   │   │   ├── guard.ts                # Input moderation (OpenAI Moderation API)
   │   │   └── log/                    # Logging (console, markdown, composite)
   │   ├── tools/                      # Tool implementations (auto-registered)
   │   │   ├── registry.ts             # Tool registry and dispatch logic
   │   │   ├── index.ts                # Explicit tool + schema registration
   │   │   └── <tool_name>.ts          # Each exports default ToolDefinition
-  │   ├── schemas/                    # OpenAI function calling schemas (JSON)
-  │   │   └── <tool_name>.json        # Matched to tools by filename
   │   ├── config/                     # Environment + path configuration
   │   ├── types/                      # Shared TypeScript interfaces
   │   ├── prompts/                    # Markdown prompt files (.md + YAML frontmatter)
@@ -133,15 +131,19 @@ The agent's toolbox grows with each completed task.
 
 - **Interface**: Each tool is a `{ name, handler }` satisfying `ToolDefinition`
   (src/types/tool.ts). Export as `export default { … } satisfies ToolDefinition`.
-- **File convention**: `src/tools/<tool_name>.ts` + `src/schemas/<tool_name>.json` —
-  dispatcher matches them by filename. Naming is snake_case.
+- **Return type**: Handlers return `Promise<ToolResult>` (from
+  `src/types/tool-result.ts`). Use the `text(s)` helper for simple text results,
+  or construct `{ content: ContentPart[] }` for multi-part results (e.g. text +
+  resource refs). Use `resource(uri, description, mimeType?)` to create
+  `ResourceRef` content parts for large files. Never return `Document` — that
+  type no longer exists.
+- **File convention**: `src/tools/<tool_name>.ts` — naming is snake_case.
+  Schemas are Zod objects co-located in the tool file (not separate JSON files).
 - **Registration**: Add the tool import and `register()` call in
   `src/tools/index.ts`. No auto-discovery — every tool is explicitly wired.
-- **Schemas**: Hand-written JSON in OpenAI function-calling format. Always set
-  `additionalProperties: false` on every object, list all properties in `required`.
-  Dispatcher adds `strict: true`. Avoid `oneOf`, `anyOf`, type arrays
-  (`["array", "null"]`), and free-form `"type": "object"` without defined
-  properties — these are not supported by OpenAI strict mode.
+- **Schemas**: Zod schemas in the tool file. Registry converts to JSON Schema
+  via `z.toJSONSchema()` with OpenAI `strict: true`. Avoid `oneOf`, `anyOf`,
+  type arrays — these are not supported by OpenAI strict mode.
 - **Multi-action tools**: Use `{ action: string, payload: Record<string, any> }`
   handler shape. Schema uses a top-level `actions` key (not `oneOf`) — the
   dispatcher expands each action into a separate OpenAI function named
@@ -152,7 +154,8 @@ The agent's toolbox grows with each completed task.
 - **Output files**: Use `sessionService.outputPath(filename)` from
   `src/agent/session.ts` for any tool-generated files. Output lands under
   `workspace/sessions/{date}/{sessionId}/{agentName}/output/`.
-- **Errors**: Throw `Error` — dispatcher catches and returns `{ error: message }`.
+- **Errors**: Throw `Error` — dispatcher catches and returns error as plain text
+  with `isError: true`.
 - **Response hints**: Tool results should hint at what can be done next with
   the result, but **never reference other tools by name** — describe the
   capability or goal instead. Format hints on a new line starting with
