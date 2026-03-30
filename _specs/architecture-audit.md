@@ -130,16 +130,18 @@ The course (S02E04) describes six multi-agent patterns: Pipeline, Blackboard, Or
 
 ---
 
-### 4. No Streaming or Real-Time Feedback (Medium — unchanged)
+### 4. Limited Streaming and Real-Time Feedback (Medium — partially resolved)
 
-The agent runs synchronously. `POST /chat` blocks until all iterations complete. No intermediate results, no streaming, no ability to interrupt or redirect mid-execution.
+SSE event streaming is now implemented (SP-62). `POST /chat` with `stream: true` returns a Server-Sent Events stream of all agent lifecycle events in real-time (tool dispatch, plan updates, answers, session lifecycle). Includes server-side event filtering (`?events=type1,type2`), 15-second heartbeat keepalive, and graceful disconnect cleanup. Non-streaming path unchanged for backward compatibility.
 
-- No streaming API in LLM providers (all `await chatCompletion()`)
-- No SSE/WebSocket endpoints on the server
-- For a 40-iteration loop with memory processing, this means potentially minutes of silence
-- S01E05 recommends a heartbeat mechanism to inform users of ongoing progress
+- ✅ SSE endpoint on the server (`POST /chat` with `stream: true`)
+- ✅ Real-time agent lifecycle events (tool calls, plan steps, answers)
+- ✅ Heartbeat mechanism (15s interval, per S01E05)
+- ✅ Server-side event filtering for bandwidth control
+- ❌ No token-level streaming from LLM providers (still `await chatCompletion()`)
+- ❌ No ability to interrupt or redirect mid-execution
 
-**Severity: Medium.**
+**Severity: Medium (downgraded from full gap — SSE streaming and heartbeat now work).**
 
 ---
 
@@ -258,7 +260,7 @@ S01E02 also emphasizes prompt caching as the "highest priority optimization." Th
 | 1 | No evaluation pipeline | Critical | **Critical** | ⬆ worse (delegate + Zod add untested axes) |
 | 2 | No knowledge accumulation / exploratory retrieval | High | **High** | 🔄 reframed (pattern, not technology) |
 | 3 | Agent composition vertical only | Medium-High | **Medium** | ⬇ delegate tool landed |
-| 4 | No streaming | Medium | **Medium** | ➡ unchanged |
+| 4 | Limited streaming | Medium | **Medium** | ⬇ SSE event streaming landed (SP-62) |
 | 5 | No workflow composition | Medium | **Medium** | ➡ unchanged |
 | 6 | No human-in-the-loop | Medium | **Medium** | ➡ delegate widens blast radius |
 | 7 | No circuit breakers/cost guards | Low-Medium | **Low-Medium** | ➡ delegate amplifies risk |
@@ -277,7 +279,7 @@ How the system maps to each course module:
 | S01E02 | Prompt caching, tool design, security | ⚠️ Partial | Tool design excellent; prompt caching not leveraged; progressive disclosure not implemented |
 | S01E03 | MCP, API design for AI, tool consolidation | ⚠️ Partial | Multi-action tools align well; ToolResult content parts are MCP-aligned (TextContent, ImageContent, ResourceRef); no MCP server/client; no dynamic tool discovery |
 | S01E04 | Multimodal support | ✅ Strong | Gemini for multimodal, image handling in providers |
-| S01E05 | Limits, cost, heartbeat, event-driven | ⚠️ Partial | Token estimation and limits exist; no cost guards, no heartbeat, no per-user budgets |
+| S01E05 | Limits, cost, heartbeat, event-driven | ⚠️ Partial | Token estimation and limits exist; heartbeat via SSE (SP-62); no cost guards, no per-user budgets |
 | S02E01 | Context management, workspace structure | ✅ Strong | Memory pipeline, context pruning, session workspace; workspace structure simpler than course recommends |
 | S02E02 | External context, RAG, hybrid search | ⚠️ Partial | File exploration tools (grep, glob, read) cover lexical search. Missing: iterative query deepening, document-building agents, structured knowledge output |
 | S02E03 | Long-term memory, knowledge bases, graphs | ⚠️ Partial | Observation memory excellent for in-session compression. Missing: cross-session knowledge accumulation, reverse RAG pattern (agents writing persistent structured notes), reference-following navigation |
@@ -304,4 +306,4 @@ Two gaps identified in Revision 3 remain: proactive agent capabilities (S03E03) 
 3. **Horizontal agent communication** — the delegate tool handles vertical delegation. Add shared workspace directories (inbox/outbox per agent) and a `message` tool for bidirectional async communication. Enable parallel sub-agent spawning.
 4. **Human-in-the-loop gates** — the tool standard already describes the classification (read/create/mutate/destroy/irreversible). Wire the classification into dispatch with confirmation gates for destroy/irreversible actions.
 5. **Proactive capabilities** — cron-triggered agent runs, webhook listeners. Start with a simple heartbeat/polling mechanism.
-6. Everything else (streaming, workflows, prompt refinement) builds on these five.
+6. Everything else (token-level streaming, workflows, prompt refinement) builds on these five.
