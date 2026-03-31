@@ -10,7 +10,6 @@ mcp support
 ---
 ### Problems
 
-eventowanie aplikacji streaming
 dodanie langfuse
 
 nie mam pojecia ile tokeów lata
