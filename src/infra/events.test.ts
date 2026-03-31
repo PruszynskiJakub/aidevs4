@@ -34,14 +34,14 @@ describe("EventBus", () => {
     bus.onAny((e) => received.push(e.type));
 
     bus.emit("tool.dispatched", { callId: "c1", name: "web_search", args: "{}", batchIndex: 0, batchSize: 1 });
-    bus.emit("tool.completed", {
+    bus.emit("tool.succeeded", {
       callId: "c1",
       name: "web_search",
-      ok: true,
       durationMs: 100,
+      result: "ok",
     });
 
-    expect(received).toEqual(["tool.dispatched", "tool.completed"]);
+    expect(received).toEqual(["tool.dispatched", "tool.succeeded"]);
   });
 
   it("does not deliver events to unrelated exact listeners", () => {

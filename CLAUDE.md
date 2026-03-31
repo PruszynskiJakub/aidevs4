@@ -106,6 +106,18 @@ The agent's toolbox grows with each completed task.
 
 ## Architecture
 
+### Events
+
+- **Registry**: `EventMap` in `src/types/events.ts` — each key is a domain
+  state transition, the value is the structured payload.
+- **Dedicated events over boolean flags**: Prefer separate event types for
+  distinct outcomes instead of a single event with a boolean discriminator.
+  For example, use `tool.succeeded` and `tool.failed` instead of
+  `tool.completed` with `ok: boolean` and optional `result`/`error` fields.
+  This eliminates branching in subscribers and makes payloads non-optional.
+- **Naming**: `domain.past_tense` (e.g. `session.opened`, `tool.succeeded`).
+  Subscribers can listen to event groups by domain prefix.
+
 ## Prompts
 
 - **Format**: Every prompt is a `.md` file in `src/prompts/` with YAML frontmatter.

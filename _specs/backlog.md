@@ -7,6 +7,9 @@ Support tool_search capability
 
 mcp support
 
+skills
+workflows
+
 ---
 ### Problems
 
@@ -26,7 +29,6 @@ share - udostępenianie plików dla innych agentów
 
 
 heartbeat
-wsparcie workflows oraz knowledge
 
 rozbicie agentów na faktyczne skillesety
 

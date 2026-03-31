@@ -106,11 +106,11 @@ describe("JsonlWriter", () => {
     const { bus, writer } = await setup();
 
     bus.emit("tool.dispatched", { callId: "c1", name: "web_search", args: "{}", batchIndex: 0, batchSize: 1 });
-    bus.emit("tool.completed", {
+    bus.emit("tool.succeeded", {
       callId: "c1",
       name: "web_search",
-      ok: true,
       durationMs: 500,
+      result: "found it",
     });
     bus.emit("batch.completed", {
       count: 1,

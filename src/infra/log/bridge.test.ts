@@ -103,12 +103,12 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(toolCalls[1].args).toEqual(["read_file", '{"path":"/tmp"}']);
   });
 
-  it("tool.completed ok → log.toolOk()", () => {
-    bus.emit("tool.completed", {
+  it("tool.succeeded → log.toolOk()", () => {
+    bus.emit("tool.succeeded", {
       callId: "c1",
       name: "web_search",
-      ok: true,
       durationMs: 1200,
+      result: "",
     });
 
     const call = calls.find((c) => c.method === "toolOk");
@@ -117,11 +117,10 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args[1]).toBe("1.20s");
   });
 
-  it("tool.completed error → log.toolErr()", () => {
-    bus.emit("tool.completed", {
+  it("tool.failed → log.toolErr()", () => {
+    bus.emit("tool.failed", {
       callId: "c1",
       name: "web_search",
-      ok: false,
       durationMs: 0,
       error: "timeout",
     });

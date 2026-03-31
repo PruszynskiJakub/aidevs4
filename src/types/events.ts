@@ -48,14 +48,8 @@ export interface EventMap {
 
   // ── Tool execution ───────────────────────────────────────
   "tool.dispatched": { callId: string; name: string; args: string; batchIndex: number; batchSize: number };
-  "tool.completed": {
-    callId: string;
-    name: string;
-    ok: boolean;
-    durationMs: number;
-    result?: string;
-    error?: string;
-  };
+  "tool.succeeded": { callId: string; name: string; durationMs: number; result: string };
+  "tool.failed": { callId: string; name: string; durationMs: number; error: string };
   "batch.completed": {
     count: number;
     durationMs: number;
@@ -75,7 +69,8 @@ export interface EventMap {
   "agent.answer": { text: string | null };
 
   // ── Moderation ───────────────────────────────────────────
-  "input.moderated": { flagged: boolean; categories?: string[] };
+  "input.flagged": { categories: string[] };
+  "input.clean": {};
 }
 
 // ── Envelope ────────────────────────────────────────────────

@@ -87,7 +87,7 @@ function compactData(type: string, data: Record<string, unknown>): Record<string
     const { fullText, ...rest } = data;
     return rest;
   }
-  if (type === "tool.completed") {
+  if (type === "tool.succeeded") {
     const { result, ...rest } = data;
     return rest;
   }

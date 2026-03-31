@@ -76,12 +76,14 @@ export function attachLoggerListener(bus: EventBus, log: Logger): () => void {
   );
 
   unsubs.push(
-    bus.on("tool.completed", (e) => {
-      if (e.data.ok) {
-        log.toolOk(e.data.name, formatMs(e.data.durationMs), e.data.result ?? "");
-      } else {
-        log.toolErr(e.data.name, e.data.error ?? "unknown error");
-      }
+    bus.on("tool.succeeded", (e) => {
+      log.toolOk(e.data.name, formatMs(e.data.durationMs), e.data.result);
+    }),
+  );
+
+  unsubs.push(
+    bus.on("tool.failed", (e) => {
+      log.toolErr(e.data.name, e.data.error);
     }),
   );
 

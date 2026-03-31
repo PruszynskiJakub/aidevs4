@@ -161,19 +161,17 @@ async function dispatchTools(
       const { content, isError, durationMs } = outcome.value;
       if (isError) {
         failed++;
-        bus.emit("tool.completed", {
+        bus.emit("tool.failed", {
           callId: tc.id,
           name: tc.function.name,
-          ok: false,
           durationMs,
           error: content,
         });
       } else {
         succeeded++;
-        bus.emit("tool.completed", {
+        bus.emit("tool.succeeded", {
           callId: tc.id,
           name: tc.function.name,
-          ok: true,
           durationMs,
           result: content,
         });
@@ -186,10 +184,9 @@ async function dispatchTools(
     } else {
       failed++;
       const errorMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
-      bus.emit("tool.completed", {
+      bus.emit("tool.failed", {
         callId: tc.id,
         name: tc.function.name,
-        ok: false,
         durationMs: 0,
         error: errorMsg,
       });
