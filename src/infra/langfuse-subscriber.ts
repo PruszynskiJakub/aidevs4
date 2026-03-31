@@ -18,6 +18,15 @@ interface AgentEntry {
   ctx: Context; // OTel context captured inside propagateAttributes
 }
 
+function toDate(epoch: number): Date {
+  return new Date(epoch);
+}
+
+function truncate(s: string, max = 2000): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max) + `… [truncated, ${s.length} chars total]`;
+}
+
 /**
  * Attaches a Langfuse subscriber to the event bus.
  * Maps domain events → Langfuse observations.
@@ -50,7 +59,9 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
 
   const agentMap = new Map<string, AgentEntry>();
   const turnMap = new Map<string, Observation>();   // agentId → current turn span
+  const turnStartMap = new Map<string, number>();   // agentId → turn start epoch
   const toolMap = new Map<string, Observation>();    // callId  → tool span
+  const agentAnswerMap = new Map<string, string>();  // agentId → answer text
   const unsubs: (() => void)[] = [];
 
   /** Run `fn` inside the saved OTel context for the given agent. */
@@ -109,13 +120,18 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     bus.on("turn.began", (e) => {
       const agentId = e.agentId;
       if (!agentId) return;
+      const now = Date.now();
       withAgentCtx(agentId, () => {
         const agentObs = agentMap.get(agentId)!.obs;
         const turn = agentObs.startObservation(
           `turn-${e.data.iteration}`,
-          { input: { iteration: e.data.iteration, messageCount: e.data.messageCount } },
+          {
+            input: { iteration: e.data.iteration, messageCount: e.data.messageCount },
+            startTime: toDate(now),
+          },
         );
         turnMap.set(agentId, turn);
+        turnStartMap.set(agentId, now);
       });
     }),
   );
@@ -128,9 +144,13 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
       if (!agentId) return;
       const turn = turnMap.get(agentId);
       if (!turn) return;
-      turn.update({ output: { outcome: e.data.outcome } });
+      turn.update({
+        output: { outcome: e.data.outcome },
+        endTime: toDate(Date.now()),
+      });
       turn.end();
       turnMap.delete(agentId);
+      turnStartMap.delete(agentId);
     }),
   );
 
@@ -146,7 +166,11 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
 
         const gen = parent.startObservation(
           `${e.data.name}-llm`,
-          { model: e.data.model, input: e.data.input },
+          {
+            model: e.data.model,
+            input: e.data.input,
+            startTime: toDate(e.data.startTime),
+          },
           { asType: "generation" },
         );
         gen.update({
@@ -155,6 +179,7 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
             input: e.data.usage.input,
             output: e.data.usage.output,
           },
+          endTime: toDate(e.data.startTime + e.data.durationMs),
         });
         gen.end();
       });
@@ -173,7 +198,10 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
 
         const toolObs = parent.startObservation(
           e.data.name,
-          { input: e.data.args },
+          {
+            input: e.data.args,
+            startTime: toDate(e.data.startTime),
+          },
           { asType: "tool" },
         );
         toolMap.set(e.data.callId, toolObs);
@@ -187,7 +215,10 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     bus.on("tool.succeeded", (e) => {
       const toolObs = toolMap.get(e.data.callId);
       if (!toolObs) return;
-      toolObs.update({ output: e.data.result });
+      toolObs.update({
+        output: e.data.result,
+        endTime: toDate((e.data.startTime ?? Date.now()) + e.data.durationMs),
+      });
       toolObs.end();
       toolMap.delete(e.data.callId);
     }),
@@ -203,23 +234,32 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
         output: e.data.error,
         level: "ERROR",
         statusMessage: e.data.error,
+        endTime: toDate((e.data.startTime ?? Date.now()) + e.data.durationMs),
       });
       toolObs.end();
       toolMap.delete(e.data.callId);
     }),
   );
 
-  // ── agent.answer → set trace-level output ─────────────────
+  // ── agent.answer → set output on agent obs + trace ────────
 
   unsubs.push(
     bus.on("agent.answer", (e) => {
       const agentId = e.agentId;
-      const depth = e.depth ?? 0;
-      if (!agentId || depth !== 0) return;
+      if (!agentId) return;
       const entry = agentMap.get(agentId);
       if (!entry) return;
+
+      const answerText = e.data.text ?? "";
+      agentAnswerMap.set(agentId, answerText);
+
       otelContext.with(entry.ctx, () => {
-        entry.obs.setTraceIO({ output: e.data.text });
+        // Set answer as output on the agent observation (root + child)
+        entry.obs.update({ output: truncate(answerText, 5000) });
+        // For root agent, also set at trace level
+        if ((e.depth ?? 0) === 0) {
+          entry.obs.setTraceIO({ output: e.data.text });
+        }
       });
     }),
   );
@@ -241,6 +281,8 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
         turnMap.delete(agentId);
       }
 
+      const answer = agentAnswerMap.get(agentId);
+
       otelContext.with(entry.ctx, () => {
         if (e.data.reason === "error") {
           entry.obs.update({
@@ -248,10 +290,67 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
             statusMessage: e.data.error ?? "Unknown error",
           });
         }
-        entry.obs.update({ output: { reason: e.data.reason, iterations: e.data.iterations } });
+
+        const totalInput = e.data.tokens.plan.promptTokens + e.data.tokens.act.promptTokens;
+        const totalOutput = e.data.tokens.plan.completionTokens + e.data.tokens.act.completionTokens;
+
+        entry.obs.update({
+          output: {
+            reason: e.data.reason,
+            iterations: e.data.iterations,
+            ...(answer && { answer: truncate(answer, 2000) }),
+          },
+          metadata: {
+            totalTokens: { input: totalInput, output: totalOutput, total: totalInput + totalOutput },
+          },
+          endTime: toDate(Date.now()),
+        });
         entry.obs.end();
       });
       agentMap.delete(agentId);
+      agentAnswerMap.delete(agentId);
+    }),
+  );
+
+  // ── memory.observation → memory compression span ──────────
+
+  unsubs.push(
+    bus.on("memory.observation", (e) => {
+      const agentId = e.agentId;
+      if (!agentId) return;
+      withAgentCtx(agentId, () => {
+        const parent = parentFor(agentId);
+        if (!parent) return;
+        const obs = parent.startObservation("memory-observation", {
+          input: { tokensBefore: e.data.tokensBefore },
+        });
+        obs.update({
+          output: { tokensAfter: e.data.tokensAfter, compression: `${e.data.tokensBefore} → ${e.data.tokensAfter}` },
+          level: "DEBUG",
+        });
+        obs.end();
+      });
+    }),
+  );
+
+  // ── memory.reflection → memory reflection span ───────────
+
+  unsubs.push(
+    bus.on("memory.reflection", (e) => {
+      const agentId = e.agentId;
+      if (!agentId) return;
+      withAgentCtx(agentId, () => {
+        const parent = parentFor(agentId);
+        if (!parent) return;
+        const obs = parent.startObservation(`memory-reflection-L${e.data.level}`, {
+          input: { level: e.data.level, tokensBefore: e.data.tokensBefore },
+        });
+        obs.update({
+          output: { tokensAfter: e.data.tokensAfter, compression: `${e.data.tokensBefore} → ${e.data.tokensAfter}` },
+          level: "DEBUG",
+        });
+        obs.end();
+      });
     }),
   );
 
@@ -259,6 +358,8 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     for (const unsub of unsubs) unsub();
     agentMap.clear();
     turnMap.clear();
+    turnStartMap.clear();
     toolMap.clear();
+    agentAnswerMap.clear();
   };
 }
