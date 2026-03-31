@@ -4,7 +4,7 @@ import type { PromptResult } from "../llm/prompt.ts";
 import type { AgentState } from "../types/agent-state.ts";
 import { llm as defaultLLM } from "../llm/llm.ts";
 import { config } from "../config/index.ts";
-import { dispatch } from "../tools/index.ts";
+import { dispatch } from "../tools/registry.ts";
 import { promptService } from "../llm/prompt.ts";
 import { agentsService } from "./agents.ts";
 import { MarkdownLogger } from "../infra/log/markdown.ts";

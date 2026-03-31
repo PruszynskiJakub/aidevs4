@@ -3,7 +3,7 @@ import matter from "gray-matter";
 import type { AgentConfig } from "../types/assistant.ts";
 import type { LLMTool } from "../types/llm.ts";
 import { files } from "../infra/file.ts";
-import { getTools, getToolsByName } from "../tools/index.ts";
+import { getTools, getToolsByName } from "../tools/registry.ts";
 
 const AGENTS_DIR = resolve(import.meta.dir, "../../workspace/agents");
 

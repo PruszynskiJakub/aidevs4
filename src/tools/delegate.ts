@@ -1,36 +1,13 @@
-import { resolve } from "path";
 import { z } from "zod";
-import matter from "gray-matter";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import { getSessionId, getLogger } from "../agent/context.ts";
 import { assertMaxLength } from "../utils/parse.ts";
+import { executeTurn } from "../agent/orchestrator.ts";
+import { agentsService } from "../agent/agents.ts";
 
 const MAX_PROMPT_LENGTH = 10_000;
-const AGENTS_DIR = resolve(import.meta.dir, "../../workspace/agents");
-
-interface AgentInfo {
-  name: string;
-  description: string;
-}
-
-async function scanAgents(): Promise<AgentInfo[]> {
-  const entries = await Array.fromAsync(
-    new Bun.Glob("*.agent.md").scan({ cwd: AGENTS_DIR }),
-  );
-  const agents: AgentInfo[] = [];
-  for (const entry of entries) {
-    const raw = await Bun.file(resolve(AGENTS_DIR, entry)).text();
-    const { data } = matter(raw);
-    const name = (data.name as string) ?? entry.replace(/\.agent\.md$/, "");
-    const caps = Array.isArray(data.capabilities)
-      ? (data.capabilities as string[]).join(", ")
-      : "";
-    agents.push({ name, description: caps || name });
-  }
-  return agents;
-}
 
 async function delegate(args: Record<string, unknown>): Promise<ToolResult> {
   const { agent, prompt } = args as { agent: string; prompt: string };
@@ -42,9 +19,6 @@ async function delegate(args: Record<string, unknown>): Promise<ToolResult> {
 
   const parentSessionId = getSessionId();
   const logger = getLogger();
-
-  // Lazy import to avoid circular dependency: delegate -> orchestrator -> agents -> tools/index -> delegate
-  const { executeTurn } = await import("../agent/orchestrator.ts");
 
   let result;
   try {
@@ -61,7 +35,7 @@ async function delegate(args: Record<string, unknown>): Promise<ToolResult> {
   return text(result.answer);
 }
 
-const agents = await scanAgents();
+const agents = await agentsService.listAgents();
 const agentNames = agents.map((a) => a.name) as [string, ...string[]];
 const agentDescriptions = agents
   .map((a) => `- **${a.name}**: ${a.description}`)
