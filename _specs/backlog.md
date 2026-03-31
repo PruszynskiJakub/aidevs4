@@ -5,16 +5,11 @@
 ### Brain dump
 Support tool_search capability
 
-mcp support
-
 skills
 workflows
 
 ---
 ### Problems
-
-dodanie langfuse
-
 nie mam pojecia ile tokeów lata
 
 

@@ -250,12 +250,12 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
       const entry = agentMap.get(agentId);
       if (!entry) return;
 
-      const answerText = e.data.text ?? "";
+      const answerText = truncate(e.data.text ?? "", 5000);
       agentAnswerMap.set(agentId, answerText);
 
       otelContext.with(entry.ctx, () => {
         // Set answer as output on the agent observation (root + child)
-        entry.obs.update({ output: truncate(answerText, 5000) });
+        entry.obs.update({ output: answerText });
         // For root agent, also set at trace level
         if ((e.depth ?? 0) === 0) {
           entry.obs.setTraceIO({ output: e.data.text });
@@ -292,7 +292,7 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
       const totalOutput = tokens.plan.completionTokens + tokens.act.completionTokens;
 
       entry.obs.update({
-        output: answer ? truncate(answer, 5000) : null,
+        output: answer || null,
         metadata: {
           reason,
           iterations,
