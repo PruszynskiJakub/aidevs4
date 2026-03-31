@@ -3,6 +3,7 @@ import { sessionService } from "./session.ts";
 import { agentsService } from "./agents.ts";
 import { log } from "../infra/log/logger.ts";
 import { moderateInput, assertNotFlagged } from "../infra/guard.ts";
+import { randomUUID } from "node:crypto";
 import { randomSessionId } from "../utils/id.ts";
 import type { LLMMessage } from "../types/llm.ts";
 import type { AgentState } from "../types/agent-state.ts";
@@ -15,6 +16,9 @@ interface ExecuteTurnOpts {
   prompt: string;
   assistant?: string;
   model?: string;
+  parentAgentId?: string;
+  parentTraceId?: string;
+  parentDepth?: number;
 }
 
 interface ExecuteTurnResult {
@@ -60,8 +64,17 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
 
   const persisted = await loadState(sessionId);
 
+  const agentId = randomUUID();
+  const traceId = opts.parentTraceId ?? randomUUID();
+  const depth = opts.parentAgentId ? (opts.parentDepth ?? 0) + 1 : 0;
+
   const state: AgentState = {
     sessionId,
+    agentName: assistantName,
+    agentId,
+    parentAgentId: opts.parentAgentId,
+    traceId,
+    depth,
     messages,
     tokens: {
       plan: { promptTokens: 0, completionTokens: 0 },

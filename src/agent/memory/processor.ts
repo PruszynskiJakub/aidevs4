@@ -97,7 +97,7 @@ export async function processMemory(
   const updatedObservations = combineObservations(state.activeObservations, newObservations);
 
   const observationTokens = estimateTokens(updatedObservations);
-  bus.emit("memory.compressed", { phase: "observation", tokensBefore, tokensAfter: observationTokens });
+  bus.emit("memory.observation", { tokensBefore, tokensAfter: observationTokens });
 
   // Save observer debug artifact
   await saveDebugArtifact(sessionId, "observer", newObservations || "(no new observations)", {
@@ -130,8 +130,7 @@ export async function processMemory(
     newState.observationTokenCount = compressedTokens;
     newState.generationCount += 1;
 
-    bus.emit("memory.compressed", {
-      phase: "reflection",
+    bus.emit("memory.reflection", {
       level: newState.generationCount,
       tokensBefore: reflectTokensBefore,
       tokensAfter: compressedTokens,
@@ -182,7 +181,7 @@ export async function flushMemory(
   const updatedObservations = combineObservations(state.activeObservations, newObservations);
 
   const observationTokens = estimateTokens(updatedObservations);
-  bus.emit("memory.compressed", { phase: "observation", tokensBefore, tokensAfter: observationTokens });
+  bus.emit("memory.observation", { tokensBefore, tokensAfter: observationTokens });
 
   await saveDebugArtifact(sessionId, "observer", newObservations, {
     flush: true,

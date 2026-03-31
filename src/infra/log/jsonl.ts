@@ -83,8 +83,8 @@ export function createJsonlWriter(
 
 /** Strip large rendering-only fields from event data before persisting. */
 function compactData(type: string, data: Record<string, unknown>): Record<string, unknown> {
-  if (type === "plan.produced") {
-    const { fullText, ...rest } = data;
+  if (type === "generation.completed") {
+    const { input, ...rest } = data;
     return rest;
   }
   if (type === "tool.succeeded") {

@@ -70,5 +70,10 @@ export const config = deepFreeze({
   moderation: {
     enabled: true,
   },
+  langfuse: {
+    publicKey: env.langfusePublicKey,
+    secretKey: env.langfuseSecretKey,
+    baseUrl: env.langfuseBaseUrl ?? "https://cloud.langfuse.com",
+  },
   assistant: env.assistant,
 });

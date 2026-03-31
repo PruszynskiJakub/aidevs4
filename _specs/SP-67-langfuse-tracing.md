@@ -4,7 +4,11 @@
 
 Add Langfuse observability to the agent system via a new event bus subscriber,
 providing nested traces for agent runs, LLM generations, and tool executions —
-without changing existing logging behavior.
+without changing existing logging behavior. Along the way, consolidate
+LLM-related events into generic `generation.started`/`generation.completed`
+(replacing `plan.produced` and `turn.acted`) and split `memory.compressed`
+into `memory.observation`/`memory.reflection` per the project's
+"dedicated events over boolean flags" convention.
 
 ## Context
 
@@ -16,20 +20,28 @@ a new subscriber that translates domain events into external traces.
 
 **What's missing today:**
 
-1. **No LLM generation event.** `plan.produced` and `turn.acted` carry token
-   counts and durations but not the actual messages sent to/from the LLM.
+1. **No unified LLM generation event.** `plan.produced` and `turn.acted` carry
+   token counts and durations but not the actual messages sent to/from the LLM.
    Langfuse generations need full input/output for display and evaluation.
+   These two events also overlap conceptually — both represent an LLM call
+   completion but use different shapes and names.
 
-2. **No agent identity on events.** The `BusEvent` envelope carries only
+2. **`memory.compressed` violates the "dedicated events" convention.**
+   It uses `phase: "observation" | "reflection"` as a boolean discriminator,
+   forcing subscribers to branch. The bridge already calls different log
+   methods per phase. Should be two events: `memory.observation` and
+   `memory.reflection`.
+
+3. **No agent identity on events.** The `BusEvent` envelope carries only
    `sessionId`. There is no `agentId`, `parentAgentId`, `traceId`, or `depth`.
    The delegate tool creates a separate session with no parent link — child
    agent events are completely disconnected.
 
-3. **`session.closed` never emitted on error.** If `runAgent` throws, the
+4. **`session.closed` never emitted on error.** If `runAgent` throws, the
    `finally` block does cleanup but no error event fires. The `reason: "error"`
    case in the type definition is dead code.
 
-4. **Tool events lack timing and input context.** `tool.dispatched` has no
+5. **Tool events lack timing and input context.** `tool.dispatched` has no
    `startTime`. `tool.succeeded`/`tool.failed` have no `args` (only the name
    and result/error).
 
@@ -59,7 +71,6 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
 ## Out of scope
 
 - Structured logging (pino) — keep existing console + markdown
-- Modifying existing subscriber behavior (bridge, JSONL)
 - Tracing memory compression LLM calls (observer/reflector)
 - Cost tracking or token budget features
 - Langfuse prompt management integration
@@ -69,7 +80,9 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
 
 - Tracing is **fully optional** — graceful no-op when `LANGFUSE_PUBLIC_KEY` /
   `LANGFUSE_SECRET_KEY` are absent. No startup errors, no performance impact.
-- **No changes** to existing logging output (console, markdown, JSONL).
+- **Logging output unchanged** — console, markdown, and JSONL produce the same
+  output. Existing subscribers (bridge, JSONL) are updated to listen to the
+  renamed events, but their visible behavior is identical.
 - New event fields are **additive** (optional) — existing subscribers ignore them.
 - Bun runtime — use `NodeSDK` from `@opentelemetry/sdk-node`. If Bun's
   `async_hooks` support causes issues, fall back to manual `TracerProvider`
@@ -89,8 +102,9 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
 - [ ] Delegated child agents appear as nested agent observations within the parent's trace (single `traceId`)
 - [ ] Error cases produce traces with `ERROR` level and status message
 - [ ] `session.closed` with `reason: "error"` is emitted when `runAgent` throws
-- [ ] Existing logging (console, markdown, JSONL) is unchanged — all existing tests pass
-- [ ] `generation.completed` event is emitted for every LLM call (plan and act phases)
+- [ ] Existing logging output (console, markdown, JSONL) is unchanged — all existing tests pass (bridge/JSONL updated to new event names)
+- [ ] `generation.started` + `generation.completed` events replace `plan.produced` and `turn.acted` for every LLM call
+- [ ] `memory.compressed` replaced by `memory.observation` and `memory.reflection` (dedicated events, no phase discriminator)
 - [ ] `BusEvent` envelope carries `agentId`, `parentAgentId`, `traceId`, `depth` (auto-populated from context)
 - [ ] `shutdownTracing()` flushes pending spans before process exit
 - [ ] HTTP server exposes `X-Session-Id` in response headers
@@ -103,42 +117,64 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
    Add optional fields: `agentId?: string`, `parentAgentId?: string`,
    `traceId?: string`, `depth?: number`. Existing subscribers ignore them.
 
-2. **Add `generation.completed` event** to `EventMap` (`src/types/events.ts`):
+2. **Replace `plan.produced` and `turn.acted` with generic generation events**
+   (`src/types/events.ts`). Remove `plan.produced` and `turn.acted` from
+   `EventMap`. Add:
    ```
-   phase: "plan" | "act"
-   model: string
-   input: unknown[]            // messages sent to LLM
-   output: {
-     content: string | null
-     toolCalls?: { id: string; name: string; arguments: string }[]
+   "generation.started": {
+     name: string             // "plan", "act" (future: "observation", "reflection")
+     model: string
+     startTime: number        // epoch ms
    }
-   usage: { input: number; output: number; total: number }
-   durationMs: number
-   startTime: number           // epoch ms (Date.now() before the LLM call)
+
+   "generation.completed": {
+     name: string
+     model: string
+     input: unknown[]         // messages sent to LLM
+     output: {
+       content: string | null
+       toolCalls?: { id: string; name: string; arguments: string }[]
+     }
+     usage: { input: number; output: number; total: number }
+     durationMs: number
+     startTime: number
+   }
    ```
 
-3. **Enrich existing event payloads** (`src/types/events.ts`):
+3. **Split `memory.compressed` into dedicated events** (`src/types/events.ts`).
+   Remove `memory.compressed`. Add:
+   ```
+   "memory.observation": {
+     tokensBefore: number
+     tokensAfter: number
+   }
+
+   "memory.reflection": {
+     level: number            // no longer optional — reflection always has a level
+     tokensBefore: number
+     tokensAfter: number
+   }
+   ```
+
+4. **Enrich existing event payloads** (`src/types/events.ts`):
    - `session.opened` — add `userInput?: string`
    - `session.closed` — add `error?: string`
-   - `tool.dispatched` — add `startTime: number`
-   - `tool.succeeded` — add `args?: string`, `startTime?: number`
-   - `tool.failed` — add `args?: string`, `startTime?: number`
 
-4. **Add tracing identity to `AgentState`** (`src/types/agent-state.ts`):
+5. **Add tracing identity to `AgentState`** (`src/types/agent-state.ts`):
    `agentId?: string`, `parentAgentId?: string`, `traceId?: string`,
    `depth?: number`.
 
 ### Phase 2 — Context plumbing
 
-5. **Add context accessors** (`src/agent/context.ts`).
+6. **Add context accessors** (`src/agent/context.ts`).
    New functions: `getAgentId()`, `getParentAgentId()`, `getTraceId()`,
    `getDepth()` — same pattern as existing `getSessionId()`.
 
-6. **Auto-populate envelope** (`src/infra/events.ts`).
+7. **Auto-populate envelope** (`src/infra/events.ts`).
    Import new accessors. In `emit()`, add `agentId`, `parentAgentId`,
    `traceId`, `depth` to the `BusEvent` construction alongside `sessionId`.
 
-7. **Generate agent identity** (`src/agent/orchestrator.ts`).
+8. **Generate agent identity** (`src/agent/orchestrator.ts`).
    Extend `ExecuteTurnOpts` with optional `parentAgentId`, `parentTraceId`,
    `parentDepth`. When building `AgentState`:
    - `agentId = randomUUID()` (always fresh)
@@ -146,35 +182,50 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
    - `depth = opts.parentAgentId ? (opts.parentDepth ?? 0) + 1 : 0`
    - `agentName = assistantName` (fix: populate the currently-unused field)
 
-8. **Thread context through delegate** (`src/tools/delegate.ts`).
+9. **Thread context through delegate** (`src/tools/delegate.ts`).
    Import `getAgentId`, `getTraceId`, `getDepth` from context. Pass
    `parentAgentId`, `parentTraceId`, `parentDepth` into `executeTurn()`.
 
 ### Phase 3 — Emit new/enriched events
 
-9. **Emit `generation.completed`** (`src/agent/loop.ts`).
-   In `executePlanPhase`: capture `startEpoch = Date.now()` before the LLM
-   call. After existing `bus.emit("plan.produced", ...)`, emit
-   `generation.completed` with `phase: "plan"`, full `planMessages` as input,
-   `{ content: planText }` as output.
-   In `executeActPhase`: same pattern with `phase: "act"`, `actMessages` as
-   input, `{ content, toolCalls }` as output.
+10. **Replace `plan.produced`/`turn.acted` emissions with generation events**
+    (`src/agent/loop.ts`).
+    In `executePlanPhase`: capture `startEpoch = Date.now()` before the LLM
+    call. Emit `generation.started` with `name: "plan"`. Replace the existing
+    `bus.emit("plan.produced", ...)` with `bus.emit("generation.completed", ...)`
+    carrying `name: "plan"`, full `planMessages` as input, `{ content: planText }`
+    as output, and usage/duration.
+    In `executeActPhase`: same pattern with `name: "act"`. Replace
+    `bus.emit("turn.acted", ...)` with `generation.started` + `generation.completed`.
 
-10. **Enrich existing emissions** (`src/agent/loop.ts`).
-    - `session.opened`: add `userInput` (available as `userPrompt`)
-    - `tool.dispatched`: add `startTime: Date.now()`
-    - `tool.succeeded`/`tool.failed`: add `args: tc.function.arguments`, compute `startTime`
+11. **Replace `memory.compressed` emissions** (`src/agent/memory/processor.ts`).
+    Replace `bus.emit("memory.compressed", { phase: "observation", ... })` with
+    `bus.emit("memory.observation", { tokensBefore, tokensAfter })`.
+    Replace `bus.emit("memory.compressed", { phase: "reflection", ... })` with
+    `bus.emit("memory.reflection", { level, tokensBefore, tokensAfter })`.
 
-11. **Emit `session.closed` on error** (`src/agent/loop.ts`).
+12. **Enrich `session.opened`** (`src/agent/loop.ts`).
+    Add `userInput` (available as `userPrompt`).
+
+13. **Emit `session.closed` on error** (`src/agent/loop.ts`).
     Wrap main try block with catch that emits `session.closed` with
     `reason: "error"` and `error: message`, then re-throws.
 
+14. **Update existing subscribers** (`src/infra/log/bridge.ts`, `src/infra/log/jsonl.ts`).
+    - Bridge: replace `bus.on("plan.produced", ...)` with
+      `bus.on("generation.completed", ...)` filtered by `name === "plan"`.
+      Replace `bus.on("turn.acted", ...)` with filter by `name === "act"`.
+      Replace `bus.on("memory.compressed", ...)` with separate listeners for
+      `memory.observation` and `memory.reflection`.
+    - JSONL: same event name updates — the writer logs all events so just the
+      type names change.
+
 ### Phase 4 — Config
 
-12. **Add Langfuse env vars** (`src/config/env.ts`).
+15. **Add Langfuse env vars** (`src/config/env.ts`).
     Optional: `langfusePublicKey`, `langfuseSecretKey`, `langfuseBaseUrl`.
 
-13. **Add config section** (`src/config/index.ts`).
+16. **Add config section** (`src/config/index.ts`).
     ```
     langfuse: {
       publicKey: env.langfusePublicKey,
@@ -185,11 +236,11 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
 
 ### Phase 5 — Tracing infrastructure (new files)
 
-14. **Create `src/infra/tracing.ts`** — OTel/Langfuse init and shutdown.
+17. **Create `src/infra/tracing.ts`** — OTel/Langfuse init and shutdown.
     Exports: `isTracingEnabled()`, `initTracing()`, `shutdownTracing()`.
     Uses `LangfuseSpanProcessor` + `NodeSDK`. No-op when keys absent.
 
-15. **Create `src/infra/langfuse-subscriber.ts`** — event-to-Langfuse mapping.
+18. **Create `src/infra/langfuse-subscriber.ts`** — event-to-Langfuse mapping.
     Global subscriber attached once at startup. Two internal maps:
     - `agentObsMap: Map<agentId, observation>` — open agent spans
     - `toolObsMap: Map<callId, observation>` — open tool spans
@@ -199,7 +250,7 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
     | Bus Event | Langfuse Action |
     |-----------|-----------------|
     | `session.opened` | Root agents (depth=0): `propagateAttributes({ sessionId, traceName })` + `startObservation(name, { input }, { asType: "agent" })` + `setTraceIO({ input })`. Child agents: `parentObs.startObservation(name, { input }, { asType: "agent" })`. Store in `agentObsMap`. |
-    | `generation.completed` | `agentObs.startObservation(phase+"-llm", { model, input }, { asType: "generation" })` → `.update({ output, usageDetails })` → `.end()` |
+    | `generation.completed` | `agentObs.startObservation(name+"-llm", { model, input }, { asType: "generation" })` → `.update({ output, usageDetails })` → `.end()` |
     | `tool.dispatched` | `agentObs.startObservation(name, { input: args }, { asType: "tool" })`. Store in `toolObsMap`. |
     | `tool.succeeded` | `toolObs.update({ output: result })` → `.end()`. Delete from map. |
     | `tool.failed` | `toolObs.update({ output: error, level: "ERROR", statusMessage })` → `.end()`. Delete from map. |
@@ -211,16 +262,16 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
 
 ### Phase 6 — Wiring
 
-16. **CLI** (`src/cli.ts`).
+19. **CLI** (`src/cli.ts`).
     Import and call `initTracing()` at top. Call `await shutdownTracing()`
     after `executeTurn` completes.
 
-17. **Server** (`src/server.ts`).
+20. **Server** (`src/server.ts`).
     Import and call `initTracing()` at module level. Add `SIGTERM`/`SIGINT`
     handlers calling `await shutdownTracing()`. Add `X-Session-Id` and
     `Access-Control-Expose-Headers` headers on `/chat` responses.
 
-18. **Attach subscriber** (`src/cli.ts` and `src/server.ts`).
+21. **Attach subscriber** (`src/cli.ts` and `src/server.ts`).
     After `initTracing()`, call `attachLangfuseSubscriber(bus)`. This is a
     global singleton — attached once, not per session.
 
@@ -229,8 +280,10 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
 ```
 CLI: executeTurn({ prompt }) → agentId=A1, traceId=T1, depth=0
   session.opened       → Langfuse: root agent obs [A1], propagateAttributes({ sessionId })
-  generation.completed → Langfuse: generation child of A1 (plan phase)
-  generation.completed → Langfuse: generation child of A1 (act phase)
+  generation.started   → (no-op, informational)
+  generation.completed → Langfuse: generation child of A1 (name: "plan")
+  generation.started   → (no-op, informational)
+  generation.completed → Langfuse: generation child of A1 (name: "act")
   tool.dispatched      → Langfuse: tool "delegate" child of A1
     └─ executeTurn({ parentAgentId=A1, parentTraceId=T1, parentDepth=0 })
          → agentId=A2, traceId=T1 (inherited), depth=1
@@ -250,13 +303,17 @@ All observations share `traceId=T1` → single Langfuse trace with full nesting.
 
 | File | Action |
 |------|--------|
-| `src/types/events.ts` | Modify — extend `BusEvent`, add `generation.completed`, enrich payloads |
+| `src/types/events.ts` | Modify — extend `BusEvent`, replace `plan.produced`/`turn.acted` with `generation.started`/`generation.completed`, split `memory.compressed` into `memory.observation`/`memory.reflection`, enrich payloads |
 | `src/types/agent-state.ts` | Modify — add 4 optional tracing identity fields |
 | `src/agent/context.ts` | Modify — add 4 accessor functions |
 | `src/infra/events.ts` | Modify — auto-populate tracing fields in envelope |
 | `src/agent/orchestrator.ts` | Modify — accept parent context, generate identity, populate `agentName` |
 | `src/tools/delegate.ts` | Modify — pass parent context to `executeTurn` |
-| `src/agent/loop.ts` | Modify — emit `generation.completed`, enrich events, error handling |
+| `src/agent/loop.ts` | Modify — replace `plan.produced`/`turn.acted` with `generation.started`/`generation.completed`, enrich events, error handling |
+| `src/agent/memory/processor.ts` | Modify — replace `memory.compressed` with `memory.observation`/`memory.reflection` |
+| `src/infra/log/bridge.ts` | Modify — update listeners for renamed events (same output) |
+| `src/infra/log/jsonl.ts` | Modify — update for renamed event types |
+| `src/infra/log/bridge.test.ts` | Modify — update test event names |
 | `src/config/env.ts` | Modify — add 3 optional Langfuse env vars |
 | `src/config/index.ts` | Modify — add `langfuse` config section |
 | `src/cli.ts` | Modify — init/shutdown tracing, attach subscriber |

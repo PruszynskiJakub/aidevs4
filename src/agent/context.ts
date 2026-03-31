@@ -56,3 +56,21 @@ export function requireSessionId(): string {
 export function getAgentName(): string {
   return asyncLocalStorage.getStore()?.state.agentName ?? "default";
 }
+
+// ── Tracing identity accessors ──────────────────────────────
+
+export function getAgentId(): string | undefined {
+  return asyncLocalStorage.getStore()?.state.agentId;
+}
+
+export function getParentAgentId(): string | undefined {
+  return asyncLocalStorage.getStore()?.state.parentAgentId;
+}
+
+export function getTraceId(): string | undefined {
+  return asyncLocalStorage.getStore()?.state.traceId;
+}
+
+export function getDepth(): number | undefined {
+  return asyncLocalStorage.getStore()?.state.depth;
+}

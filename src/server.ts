@@ -6,6 +6,8 @@ import { log } from "./infra/log/logger.ts";
 import { config } from "./config/index.ts";
 import { bus } from "./infra/events.ts";
 import { initMcpTools, shutdownMcp } from "./tools/index.ts";
+import { initTracing, shutdownTracing } from "./infra/tracing.ts";
+import { attachLangfuseSubscriber } from "./infra/langfuse-subscriber.ts";
 
 interface ChatRequest {
   sessionId: string;
@@ -67,6 +69,9 @@ app.post("/chat", async (c) => {
   }
 
   const { sessionId, msg, requestedAssistant, stream: wantsStream } = parsed;
+
+  c.header("X-Session-Id", sessionId);
+  c.header("Access-Control-Expose-Headers", "X-Session-Id");
 
   if (wantsStream) {
     const allowedEvents = parseEventFilter(c.req.query("events"));
@@ -143,10 +148,25 @@ app.post("/chat", async (c) => {
   }
 });
 
+initTracing();
+attachLangfuseSubscriber(bus);
 await initMcpTools();
 
-process.on("beforeExit", async () => {
+async function gracefulShutdown() {
+  await shutdownTracing();
   await shutdownMcp();
+}
+
+process.on("beforeExit", async () => {
+  await gracefulShutdown();
+});
+process.on("SIGTERM", async () => {
+  await gracefulShutdown();
+  process.exit(0);
+});
+process.on("SIGINT", async () => {
+  await gracefulShutdown();
+  process.exit(0);
 });
 
 const port = config.server.port;

@@ -1,6 +1,9 @@
 import { config } from "./config/index.ts";
 import { executeTurn } from "./agent/orchestrator.ts";
 import { initMcpTools, shutdownMcp } from "./tools/index.ts";
+import { initTracing, shutdownTracing } from "./infra/tracing.ts";
+import { attachLangfuseSubscriber } from "./infra/langfuse-subscriber.ts";
+import { bus } from "./infra/events.ts";
 
 function extractFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
@@ -33,6 +36,8 @@ if (args.length >= 2) {
   process.exit(1);
 }
 
+initTracing();
+attachLangfuseSubscriber(bus);
 await initMcpTools();
 
 const { answer, sessionId: resolvedSessionId } = await executeTurn({
@@ -45,4 +50,5 @@ const { answer, sessionId: resolvedSessionId } = await executeTurn({
 console.log(`\nSession: ${resolvedSessionId}`);
 if (answer) console.log(answer);
 
+await shutdownTracing();
 await shutdownMcp();

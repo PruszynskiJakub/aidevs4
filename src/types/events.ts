@@ -26,25 +26,28 @@ export interface EventMap {
     model: string;
     messageCount: number;
   };
-  "turn.acted": {
-    toolCount: number;
-    durationMs: number;
-    tokensIn: number;
-    tokensOut: number;
-  };
   "turn.ended": {
     iteration: number;
     outcome: "continue" | "answer" | "max_iterations";
   };
 
-  // ── Planning ─────────────────────────────────────────────
-  "plan.produced": {
+  // ── LLM Generation ─────────────────────────────────────
+  "generation.started": {
+    name: string;
     model: string;
+    startTime: number;
+  };
+  "generation.completed": {
+    name: string;
+    model: string;
+    input: unknown[];
+    output: {
+      content: string | null;
+      toolCalls?: { id: string; name: string; arguments: string }[];
+    };
+    usage: { input: number; output: number; total: number };
     durationMs: number;
-    tokensIn: number;
-    tokensOut: number;
-    summary: string;
-    fullText: string;
+    startTime: number;
   };
 
   // ── Tool execution ───────────────────────────────────────
@@ -59,9 +62,12 @@ export interface EventMap {
   };
 
   // ── Memory ───────────────────────────────────────────────
-  "memory.compressed": {
-    phase: "observation" | "reflection";
-    level?: number;
+  "memory.observation": {
+    tokensBefore: number;
+    tokensAfter: number;
+  };
+  "memory.reflection": {
+    level: number;
     tokensBefore: number;
     tokensAfter: number;
   };

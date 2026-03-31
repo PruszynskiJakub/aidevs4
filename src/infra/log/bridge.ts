@@ -45,24 +45,22 @@ export function attachLoggerListener(bus: EventBus, log: Logger): () => void {
   );
 
   unsubs.push(
-    bus.on("turn.acted", (e) => {
-      log.llm(
-        formatMs(e.data.durationMs),
-        e.data.tokensIn,
-        e.data.tokensOut,
-      );
-    }),
-  );
-
-  unsubs.push(
-    bus.on("plan.produced", (e) => {
-      log.plan(
-        e.data.fullText,
-        e.data.model,
-        formatMs(e.data.durationMs),
-        e.data.tokensIn,
-        e.data.tokensOut,
-      );
+    bus.on("generation.completed", (e) => {
+      if (e.data.name === "plan") {
+        log.plan(
+          e.data.output.content ?? "",
+          e.data.model,
+          formatMs(e.data.durationMs),
+          e.data.usage.input,
+          e.data.usage.output,
+        );
+      } else if (e.data.name === "act") {
+        log.llm(
+          formatMs(e.data.durationMs),
+          e.data.usage.input,
+          e.data.usage.output,
+        );
+      }
     }),
   );
 
@@ -100,16 +98,18 @@ export function attachLoggerListener(bus: EventBus, log: Logger): () => void {
   );
 
   unsubs.push(
-    bus.on("memory.compressed", (e) => {
-      if (e.data.phase === "observation") {
-        log.memoryObserve(e.data.tokensBefore, e.data.tokensAfter);
-      } else {
-        log.memoryReflect(
-          e.data.level ?? 0,
-          e.data.tokensBefore,
-          e.data.tokensAfter,
-        );
-      }
+    bus.on("memory.observation", (e) => {
+      log.memoryObserve(e.data.tokensBefore, e.data.tokensAfter);
+    }),
+  );
+
+  unsubs.push(
+    bus.on("memory.reflection", (e) => {
+      log.memoryReflect(
+        e.data.level,
+        e.data.tokensBefore,
+        e.data.tokensAfter,
+      );
     }),
   );
 

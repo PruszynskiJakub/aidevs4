@@ -9,6 +9,10 @@ export interface TokenUsage {
 export interface AgentState {
   sessionId: string;
   agentName?: string;
+  agentId?: string;
+  parentAgentId?: string;
+  traceId?: string;
+  depth?: number;
   messages: LLMMessage[];
   tokens: { plan: TokenUsage; act: TokenUsage };
   iteration: number;

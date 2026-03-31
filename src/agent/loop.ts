@@ -60,6 +60,9 @@ async function executePlanPhase(
     ...state.messages,
   ];
 
+  const startTime = Date.now();
+  bus.emit("generation.started", { name: "plan", model: planPrompt.model!, startTime });
+
   const planStart = performance.now();
   const planResponse = await provider.chatCompletion({
     model: planPrompt.model!,
@@ -76,13 +79,14 @@ async function executePlanPhase(
   state.tokens.plan.promptTokens += tokensIn;
   state.tokens.plan.completionTokens += tokensOut;
 
-  bus.emit("plan.produced", {
+  bus.emit("generation.completed", {
+    name: "plan",
     model: planPrompt.model!,
+    input: planMessages,
+    output: { content: planText },
+    usage: { input: tokensIn, output: tokensOut, total: tokensIn + tokensOut },
     durationMs,
-    tokensIn,
-    tokensOut,
-    summary: planText.slice(0, 200),
-    fullText: planText,
+    startTime,
   });
 
   return planText;
@@ -100,6 +104,9 @@ async function executeActPhase(
     { role: "assistant", content: `## Current Plan\n\n${planText}` },
   ];
 
+  const startTime = Date.now();
+  bus.emit("generation.started", { name: "act", model: state.model, startTime });
+
   const actStart = performance.now();
   const response = await provider.chatCompletion({
     model: state.model,
@@ -113,11 +120,23 @@ async function executeActPhase(
   state.tokens.act.promptTokens += tokensIn;
   state.tokens.act.completionTokens += tokensOut;
 
-  bus.emit("turn.acted", {
-    toolCount: response.toolCalls.length,
+  bus.emit("generation.completed", {
+    name: "act",
+    model: state.model,
+    input: actMessages,
+    output: {
+      content: response.content,
+      ...(response.toolCalls.length && {
+        toolCalls: response.toolCalls.map((tc) => ({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        })),
+      }),
+    },
+    usage: { input: tokensIn, output: tokensOut, total: tokensIn + tokensOut },
     durationMs,
-    tokensIn,
-    tokensOut,
+    startTime,
   });
 
   state.messages.push({
@@ -134,6 +153,7 @@ async function dispatchTools(
 ): Promise<void> {
   const state = requireState();
 
+  const dispatchTime = Date.now();
   for (let idx = 0; idx < functionCalls.length; idx++) {
     const tc = functionCalls[idx];
     bus.emit("tool.dispatched", {
@@ -142,6 +162,7 @@ async function dispatchTools(
       args: tc.function.arguments,
       batchIndex: idx,
       batchSize: functionCalls.length,
+      startTime: dispatchTime,
     });
   }
 
@@ -170,6 +191,8 @@ async function dispatchTools(
           name: tc.function.name,
           durationMs,
           error: content,
+          args: tc.function.arguments,
+          startTime: dispatchTime,
         });
       } else {
         succeeded++;
@@ -178,6 +201,8 @@ async function dispatchTools(
           name: tc.function.name,
           durationMs,
           result: content,
+          args: tc.function.arguments,
+          startTime: dispatchTime,
         });
       }
       state.messages.push({
@@ -193,6 +218,8 @@ async function dispatchTools(
         name: tc.function.name,
         durationMs: 0,
         error: errorMsg,
+        args: tc.function.arguments,
+        startTime: dispatchTime,
       });
       state.messages.push({
         role: "tool",
@@ -251,6 +278,7 @@ export async function runAgent(
       bus.emit("session.opened", {
         assistant: state.assistant,
         model: state.model,
+        userInput: typeof userPrompt === "string" ? userPrompt : undefined,
       });
 
       const actSystemPrompt = resolved.prompt;
@@ -320,6 +348,14 @@ export async function runAgent(
       });
 
       return { answer: "", messages: state.messages.slice(inputLength) };
+    } catch (err) {
+      bus.emit("session.closed", {
+        reason: "error",
+        iterations: state.iteration + 1,
+        tokens: { ...state.tokens },
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
     } finally {
       detachLogger();
       detachJsonl();

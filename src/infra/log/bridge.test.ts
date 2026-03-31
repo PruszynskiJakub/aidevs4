@@ -44,30 +44,34 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args).toEqual([3, 40, "gpt-4.1", 5]);
   });
 
-  it("plan.produced → log.plan() with fullText", () => {
-    bus.emit("plan.produced", {
+  it("generation.completed (plan) → log.plan() with content", () => {
+    bus.emit("generation.completed", {
+      name: "plan",
       model: "gpt-4.1",
+      input: [],
+      output: { content: "1. Search for docs\n2. Extract endpoints" },
+      usage: { input: 1000, output: 200, total: 1200 },
       durationMs: 1500,
-      tokensIn: 1000,
-      tokensOut: 200,
-      summary: "Search for docs",
-      fullText: "1. Search for docs\n2. Extract endpoints",
+      startTime: Date.now(),
     });
 
     const call = calls.find((c) => c.method === "plan");
     expect(call).toBeDefined();
-    expect(call!.args[0]).toBe("1. Search for docs\n2. Extract endpoints"); // fullText
-    expect(call!.args[1]).toBe("gpt-4.1");         // model
-    expect(call!.args[3]).toBe(1000);               // tokensIn
-    expect(call!.args[4]).toBe(200);                // tokensOut
+    expect(call!.args[0]).toBe("1. Search for docs\n2. Extract endpoints");
+    expect(call!.args[1]).toBe("gpt-4.1");
+    expect(call!.args[3]).toBe(1000);
+    expect(call!.args[4]).toBe(200);
   });
 
-  it("turn.acted → log.llm()", () => {
-    bus.emit("turn.acted", {
-      toolCount: 2,
+  it("generation.completed (act) → log.llm()", () => {
+    bus.emit("generation.completed", {
+      name: "act",
+      model: "gpt-4.1",
+      input: [],
+      output: { content: "response" },
+      usage: { input: 800, output: 150, total: 950 },
       durationMs: 450,
-      tokensIn: 800,
-      tokensOut: 150,
+      startTime: Date.now(),
     });
 
     const call = calls.find((c) => c.method === "llm");
@@ -84,6 +88,7 @@ describe("attachLoggerListener (Bus→Logger)", () => {
       args: '{"query":"test"}',
       batchIndex: 0,
       batchSize: 2,
+      startTime: Date.now(),
     });
     bus.emit("tool.dispatched", {
       callId: "c2",
@@ -91,6 +96,7 @@ describe("attachLoggerListener (Bus→Logger)", () => {
       args: '{"path":"/tmp"}',
       batchIndex: 1,
       batchSize: 2,
+      startTime: Date.now(),
     });
 
     const headers = calls.filter((c) => c.method === "toolHeader");
@@ -145,9 +151,8 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args[1]).toBe("2.50s");
   });
 
-  it("memory.compressed observation → log.memoryObserve()", () => {
-    bus.emit("memory.compressed", {
-      phase: "observation",
+  it("memory.observation → log.memoryObserve()", () => {
+    bus.emit("memory.observation", {
       tokensBefore: 30000,
       tokensAfter: 15000,
     });
@@ -157,9 +162,8 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args).toEqual([30000, 15000]);
   });
 
-  it("memory.compressed reflection → log.memoryReflect()", () => {
-    bus.emit("memory.compressed", {
-      phase: "reflection",
+  it("memory.reflection → log.memoryReflect()", () => {
+    bus.emit("memory.reflection", {
       level: 2,
       tokensBefore: 40000,
       tokensAfter: 20000,
