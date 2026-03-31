@@ -71,14 +71,16 @@ async function executePlanPhase(
   const durationMs = performance.now() - planStart;
   const planText = planResponse.content ?? "";
 
-  state.tokens.plan.promptTokens += planResponse.usage?.promptTokens ?? 0;
-  state.tokens.plan.completionTokens += planResponse.usage?.completionTokens ?? 0;
+  const tokensIn = planResponse.usage?.promptTokens ?? 0;
+  const tokensOut = planResponse.usage?.completionTokens ?? 0;
+  state.tokens.plan.promptTokens += tokensIn;
+  state.tokens.plan.completionTokens += tokensOut;
 
   bus.emit("plan.produced", {
     model: planPrompt.model!,
     durationMs,
-    tokensIn: planResponse.usage?.promptTokens ?? 0,
-    tokensOut: planResponse.usage?.completionTokens ?? 0,
+    tokensIn,
+    tokensOut,
     summary: planText.slice(0, 200),
     fullText: planText,
   });
@@ -106,14 +108,16 @@ async function executeActPhase(
   });
   const durationMs = performance.now() - actStart;
 
-  state.tokens.act.promptTokens += response.usage?.promptTokens ?? 0;
-  state.tokens.act.completionTokens += response.usage?.completionTokens ?? 0;
+  const tokensIn = response.usage?.promptTokens ?? 0;
+  const tokensOut = response.usage?.completionTokens ?? 0;
+  state.tokens.act.promptTokens += tokensIn;
+  state.tokens.act.completionTokens += tokensOut;
 
   bus.emit("turn.acted", {
     toolCount: response.toolCalls.length,
     durationMs,
-    tokensIn: response.usage?.promptTokens ?? 0,
-    tokensOut: response.usage?.completionTokens ?? 0,
+    tokensIn,
+    tokensOut,
   });
 
   state.messages.push({

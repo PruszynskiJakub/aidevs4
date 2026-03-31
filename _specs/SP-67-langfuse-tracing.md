@@ -30,7 +30,8 @@ a new subscriber that translates domain events into external traces.
    case in the type definition is dead code.
 
 4. **Tool events lack timing and input context.** `tool.dispatched` has no
-   `startTime`. `tool.completed` has no `args` (only the name and result).
+   `startTime`. `tool.succeeded`/`tool.failed` have no `args` (only the name
+   and result/error).
 
 **Dependencies already installed:** `@langfuse/tracing@^5`, `@langfuse/otel@^5`,
 `@opentelemetry/sdk-node@^0.214`.
@@ -120,7 +121,8 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
    - `session.opened` — add `userInput?: string`
    - `session.closed` — add `error?: string`
    - `tool.dispatched` — add `startTime: number`
-   - `tool.completed` — add `args?: string`, `startTime?: number`
+   - `tool.succeeded` — add `args?: string`, `startTime?: number`
+   - `tool.failed` — add `args?: string`, `startTime?: number`
 
 4. **Add tracing identity to `AgentState`** (`src/types/agent-state.ts`):
    `agentId?: string`, `parentAgentId?: string`, `traceId?: string`,
@@ -161,7 +163,7 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
 10. **Enrich existing emissions** (`src/agent/loop.ts`).
     - `session.opened`: add `userInput` (available as `userPrompt`)
     - `tool.dispatched`: add `startTime: Date.now()`
-    - `tool.completed`: add `args: tc.function.arguments`, compute `startTime`
+    - `tool.succeeded`/`tool.failed`: add `args: tc.function.arguments`, compute `startTime`
 
 11. **Emit `session.closed` on error** (`src/agent/loop.ts`).
     Wrap main try block with catch that emits `session.closed` with
@@ -199,7 +201,8 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
     | `session.opened` | Root agents (depth=0): `propagateAttributes({ sessionId, traceName })` + `startObservation(name, { input }, { asType: "agent" })` + `setTraceIO({ input })`. Child agents: `parentObs.startObservation(name, { input }, { asType: "agent" })`. Store in `agentObsMap`. |
     | `generation.completed` | `agentObs.startObservation(phase+"-llm", { model, input }, { asType: "generation" })` → `.update({ output, usageDetails })` → `.end()` |
     | `tool.dispatched` | `agentObs.startObservation(name, { input: args }, { asType: "tool" })`. Store in `toolObsMap`. |
-    | `tool.completed` | `toolObs.update({ output })` → `.end()`. If error: `.update({ level: "ERROR", statusMessage })`. Delete from map. |
+    | `tool.succeeded` | `toolObs.update({ output: result })` → `.end()`. Delete from map. |
+    | `tool.failed` | `toolObs.update({ output: error, level: "ERROR", statusMessage })` → `.end()`. Delete from map. |
     | `agent.answer` | If depth=0: `agentObs.setTraceIO({ output: text })` |
     | `session.closed` | If error: `.update({ level: "ERROR", statusMessage })`. Always: `.update({ output })` → `.end()`. Delete from map. |
 
@@ -234,9 +237,9 @@ CLI: executeTurn({ prompt }) → agentId=A1, traceId=T1, depth=0
          session.opened       → Langfuse: agent child of A1 (via agentObsMap[A1])
          generation.completed → Langfuse: generation child of A2
          tool.dispatched      → Langfuse: tool child of A2
-         tool.completed       → end tool obs
+         tool.succeeded       → end tool obs
          session.closed       → end A2 obs, delete from maps
-  tool.completed       → end "delegate" tool obs
+  tool.succeeded       → end "delegate" tool obs
   agent.answer         → setTraceIO({ output }) on A1
   session.closed       → end A1 obs, delete from maps
 ```

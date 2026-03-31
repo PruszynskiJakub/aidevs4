@@ -11,11 +11,12 @@ export type TokenPair = { promptTokens: number; completionTokens: number };
  */
 export interface EventMap {
   // ── Session ──────────────────────────────────────────────
-  "session.opened": { assistant: string; model: string };
+  "session.opened": { assistant: string; model: string; userInput?: string };
   "session.closed": {
     reason: "answer" | "max_iterations" | "error";
     iterations: number;
     tokens: { plan: TokenPair; act: TokenPair };
+    error?: string;
   };
 
   // ── Turn ─────────────────────────────────────────────────
@@ -47,9 +48,9 @@ export interface EventMap {
   };
 
   // ── Tool execution ───────────────────────────────────────
-  "tool.dispatched": { callId: string; name: string; args: string; batchIndex: number; batchSize: number };
-  "tool.succeeded": { callId: string; name: string; durationMs: number; result: string };
-  "tool.failed": { callId: string; name: string; durationMs: number; error: string };
+  "tool.dispatched": { callId: string; name: string; args: string; batchIndex: number; batchSize: number; startTime: number };
+  "tool.succeeded": { callId: string; name: string; durationMs: number; result: string; args?: string; startTime?: number };
+  "tool.failed": { callId: string; name: string; durationMs: number; error: string; args?: string; startTime?: number };
   "batch.completed": {
     count: number;
     durationMs: number;
@@ -81,6 +82,10 @@ export interface BusEvent<T = unknown> {
   ts: number;
   sessionId?: string;
   correlationId?: string;
+  agentId?: string;
+  parentAgentId?: string;
+  traceId?: string;
+  depth?: number;
   data: T;
 }
 
