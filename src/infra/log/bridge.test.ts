@@ -31,8 +31,21 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     detach = attachLoggerListener(bus, logger);
   });
 
-  it("turn.began → log.step()", () => {
-    bus.emit("turn.began", {
+  it("agent.started → log.info()", () => {
+    bus.emit("agent.started", {
+      agentName: "solver",
+      model: "gpt-4.1",
+      task: "solve the puzzle",
+      depth: 0,
+    });
+
+    const call = calls.find((c) => c.method === "info");
+    expect(call).toBeDefined();
+    expect(call!.args[0]).toContain("solver");
+  });
+
+  it("turn.started → log.step()", () => {
+    bus.emit("turn.started", {
       iteration: 3,
       maxIterations: 40,
       model: "gpt-4.1",
@@ -81,8 +94,8 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args[2]).toBe(150);
   });
 
-  it("tool.dispatched → log.toolHeader() on first + log.toolCall()", () => {
-    bus.emit("tool.dispatched", {
+  it("tool.called → log.toolHeader() on first + log.toolCall()", () => {
+    bus.emit("tool.called", {
       callId: "c1",
       name: "web_search",
       args: '{"query":"test"}',
@@ -90,7 +103,7 @@ describe("attachLoggerListener (Bus→Logger)", () => {
       batchSize: 2,
       startTime: Date.now(),
     });
-    bus.emit("tool.dispatched", {
+    bus.emit("tool.called", {
       callId: "c2",
       name: "read_file",
       args: '{"path":"/tmp"}',
@@ -139,6 +152,7 @@ describe("attachLoggerListener (Bus→Logger)", () => {
 
   it("batch.completed → log.batchDone()", () => {
     bus.emit("batch.completed", {
+      batchId: "b1",
       count: 3,
       durationMs: 2500,
       succeeded: 2,
@@ -174,8 +188,8 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args).toEqual([2, 40000, 20000]);
   });
 
-  it("session.closed max_iterations → log.maxIter()", () => {
-    bus.emit("session.closed", {
+  it("session.completed max_iterations → log.maxIter()", () => {
+    bus.emit("session.completed", {
       reason: "max_iterations",
       iterations: 40,
       tokens: {
@@ -189,10 +203,25 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args[0]).toBe(40);
   });
 
+  it("session.failed → log.error()", () => {
+    bus.emit("session.failed", {
+      iterations: 3,
+      tokens: {
+        plan: { promptTokens: 0, completionTokens: 0 },
+        act: { promptTokens: 0, completionTokens: 0 },
+      },
+      error: "something went wrong",
+    });
+
+    const call = calls.find((c) => c.method === "error");
+    expect(call).toBeDefined();
+    expect(call!.args[0]).toBe("Session failed: something went wrong");
+  });
+
   it("detach() stops all event delivery", () => {
     detach();
 
-    bus.emit("turn.began", {
+    bus.emit("turn.started", {
       iteration: 1,
       maxIterations: 40,
       model: "m",

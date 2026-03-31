@@ -13,6 +13,7 @@ import { createCompositeLogger } from "../infra/log/composite.ts";
 import { runWithContext, requireState } from "./context.ts";
 import { processMemory, flushMemory } from "./memory/processor.ts";
 import { saveState } from "./memory/persistence.ts";
+import { randomUUID } from "node:crypto";
 import { bus } from "../infra/events.ts";
 import { createJsonlWriter } from "../infra/log/jsonl.ts";
 import { attachLoggerListener } from "../infra/log/bridge.ts";
@@ -153,10 +154,20 @@ async function dispatchTools(
 ): Promise<void> {
   const state = requireState();
 
+  const batchId = randomUUID();
   const dispatchTime = Date.now();
+
+  if (functionCalls.length > 1) {
+    bus.emit("batch.started", {
+      batchId,
+      callIds: functionCalls.map((tc) => tc.id),
+      count: functionCalls.length,
+    });
+  }
+
   for (let idx = 0; idx < functionCalls.length; idx++) {
     const tc = functionCalls[idx];
-    bus.emit("tool.dispatched", {
+    bus.emit("tool.called", {
       callId: tc.id,
       name: tc.function.name,
       args: tc.function.arguments,
@@ -231,6 +242,7 @@ async function dispatchTools(
 
   if (functionCalls.length > 1) {
     bus.emit("batch.completed", {
+      batchId,
       count: functionCalls.length,
       durationMs: performance.now() - batchStart,
       succeeded,
@@ -255,6 +267,7 @@ export async function runAgent(
 
   return runWithContext(state, log, async () => {
     let lastSavedJson = "";
+    const agentStartTime = performance.now();
 
     async function saveIfChanged(): Promise<void> {
       const json = JSON.stringify(state.memory);
@@ -281,12 +294,22 @@ export async function runAgent(
         userInput: typeof userPrompt === "string" ? userPrompt : undefined,
       });
 
+      bus.emit("agent.started", {
+        agentName: state.agentName ?? state.assistant,
+        model: state.model,
+        task: typeof userPrompt === "string" ? userPrompt : "(structured)",
+        parentAgentId: state.parentAgentId,
+        depth: state.depth ?? 0,
+      });
+
       const actSystemPrompt = resolved.prompt;
 
+      let turnStartTime = 0;
       for (let i = 0; i < config.limits.maxIterations; i++) {
         state.iteration = i;
 
-        bus.emit("turn.began", {
+        turnStartTime = performance.now();
+        bus.emit("turn.started", {
           iteration: i + 1,
           maxIterations: config.limits.maxIterations,
           model: state.model,
@@ -317,9 +340,21 @@ export async function runAgent(
           state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
           await saveIfChanged();
 
-          bus.emit("turn.ended", { iteration: i + 1, outcome: "answer" });
-          bus.emit("agent.answer", { text: response.content });
-          bus.emit("session.closed", {
+          bus.emit("turn.completed", {
+            iteration: i + 1,
+            outcome: "answer",
+            durationMs: performance.now() - turnStartTime,
+            tokens: { ...state.tokens },
+          });
+          bus.emit("agent.answered", { text: response.content });
+          bus.emit("agent.completed", {
+            agentName: state.agentName ?? state.assistant,
+            durationMs: performance.now() - agentStartTime,
+            iterations: i + 1,
+            tokens: { ...state.tokens },
+            result: response.content,
+          });
+          bus.emit("session.completed", {
             reason: "answer",
             iterations: i + 1,
             tokens: { ...state.tokens },
@@ -331,17 +366,31 @@ export async function runAgent(
         const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
         await dispatchTools(functionCalls);
 
-        bus.emit("turn.ended", { iteration: i + 1, outcome: "continue" });
+        bus.emit("turn.completed", {
+          iteration: i + 1,
+          outcome: "continue",
+          durationMs: performance.now() - turnStartTime,
+          tokens: { ...state.tokens },
+        });
       }
 
       state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
       await saveIfChanged();
 
-      bus.emit("turn.ended", {
+      bus.emit("turn.completed", {
         iteration: config.limits.maxIterations,
         outcome: "max_iterations",
+        durationMs: performance.now() - turnStartTime,
+        tokens: { ...state.tokens },
       });
-      bus.emit("session.closed", {
+      bus.emit("agent.completed", {
+        agentName: state.agentName ?? state.assistant,
+        durationMs: performance.now() - agentStartTime,
+        iterations: config.limits.maxIterations,
+        tokens: { ...state.tokens },
+        result: null,
+      });
+      bus.emit("session.completed", {
         reason: "max_iterations",
         iterations: config.limits.maxIterations,
         tokens: { ...state.tokens },
@@ -349,8 +398,13 @@ export async function runAgent(
 
       return { answer: "", messages: state.messages.slice(inputLength) };
     } catch (err) {
-      bus.emit("session.closed", {
-        reason: "error",
+      bus.emit("agent.failed", {
+        agentName: state.agentName ?? state.assistant,
+        durationMs: performance.now() - agentStartTime,
+        iterations: state.iteration + 1,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      bus.emit("session.failed", {
         iterations: state.iteration + 1,
         tokens: { ...state.tokens },
         error: err instanceof Error ? err.message : String(err),

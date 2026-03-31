@@ -17,6 +17,7 @@ interface ExecuteTurnOpts {
   assistant?: string;
   model?: string;
   parentAgentId?: string;
+  parentRootAgentId?: string;
   parentTraceId?: string;
   parentDepth?: number;
 }
@@ -72,6 +73,7 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
     sessionId,
     agentName: assistantName,
     agentId,
+    rootAgentId: opts.parentRootAgentId ?? agentId,
     parentAgentId: opts.parentAgentId,
     traceId,
     depth,

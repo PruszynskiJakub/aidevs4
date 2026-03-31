@@ -10,6 +10,7 @@ export interface AgentState {
   sessionId: string;
   agentName?: string;
   agentId?: string;
+  rootAgentId?: string;
   parentAgentId?: string;
   traceId?: string;
   depth?: number;

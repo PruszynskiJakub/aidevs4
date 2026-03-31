@@ -114,10 +114,10 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     }),
   );
 
-  // ── turn.began → create turn span ─────────────────────────
+  // ── turn.started → create turn span ─────────────────────────
 
   unsubs.push(
-    bus.on("turn.began", (e) => {
+    bus.on("turn.started", (e) => {
       const agentId = e.agentId;
       if (!agentId) return;
       const now = Date.now();
@@ -136,16 +136,16 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     }),
   );
 
-  // ── turn.ended → end turn span ────────────────────────────
+  // ── turn.completed → end turn span ────────────────────────────
 
   unsubs.push(
-    bus.on("turn.ended", (e) => {
+    bus.on("turn.completed", (e) => {
       const agentId = e.agentId;
       if (!agentId) return;
       const turn = turnMap.get(agentId);
       if (!turn) return;
       turn.update({
-        output: { outcome: e.data.outcome },
+        output: { outcome: e.data.outcome, durationMs: e.data.durationMs },
         endTime: toDate(Date.now()),
       });
       turn.end();
@@ -186,10 +186,10 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     }),
   );
 
-  // ── tool.dispatched → open tool observation ───────────────
+  // ── tool.called → open tool observation ───────────────
 
   unsubs.push(
-    bus.on("tool.dispatched", (e) => {
+    bus.on("tool.called", (e) => {
       const agentId = e.agentId;
       if (!agentId) return;
       withAgentCtx(agentId, () => {
@@ -241,10 +241,10 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     }),
   );
 
-  // ── agent.answer → set output on agent obs + trace ────────
+  // ── agent.answered → set output on agent obs + trace ────────
 
   unsubs.push(
-    bus.on("agent.answer", (e) => {
+    bus.on("agent.answereded", (e) => {
       const agentId = e.agentId;
       if (!agentId) return;
       const entry = agentMap.get(agentId);
@@ -264,51 +264,63 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     }),
   );
 
-  // ── session.closed → end agent observation ────────────────
+  // ── session.completed → end agent observation ──────────────
 
-  unsubs.push(
-    bus.on("session.closed", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      const entry = agentMap.get(agentId);
-      if (!entry) return;
+  function endAgentObs(agentId: string, reason: string, iterations: number, tokens: { plan: { promptTokens: number; completionTokens: number }; act: { promptTokens: number; completionTokens: number } }, errorMsg?: string): void {
+    const entry = agentMap.get(agentId);
+    if (!entry) return;
 
-      // End any dangling turn span
-      const turn = turnMap.get(agentId);
-      if (turn) {
-        turn.update({ output: { outcome: e.data.reason } });
-        turn.end();
-        turnMap.delete(agentId);
+    // End any dangling turn span
+    const turn = turnMap.get(agentId);
+    if (turn) {
+      turn.update({ output: { outcome: reason } });
+      turn.end();
+      turnMap.delete(agentId);
+    }
+
+    const answer = agentAnswerMap.get(agentId);
+
+    otelContext.with(entry.ctx, () => {
+      if (errorMsg) {
+        entry.obs.update({
+          level: "ERROR",
+          statusMessage: errorMsg,
+        });
       }
 
-      const answer = agentAnswerMap.get(agentId);
+      const totalInput = tokens.plan.promptTokens + tokens.act.promptTokens;
+      const totalOutput = tokens.plan.completionTokens + tokens.act.completionTokens;
 
-      otelContext.with(entry.ctx, () => {
-        if (e.data.reason === "error") {
-          entry.obs.update({
-            level: "ERROR",
-            statusMessage: e.data.error ?? "Unknown error",
-          });
-        }
-
-        const totalInput = e.data.tokens.plan.promptTokens + e.data.tokens.act.promptTokens;
-        const totalOutput = e.data.tokens.plan.completionTokens + e.data.tokens.act.completionTokens;
-
-        entry.obs.update({
-          output: {
-            reason: e.data.reason,
-            iterations: e.data.iterations,
-            ...(answer && { answer: truncate(answer, 2000) }),
-          },
-          metadata: {
-            totalTokens: { input: totalInput, output: totalOutput, total: totalInput + totalOutput },
-          },
-          endTime: toDate(Date.now()),
-        });
-        entry.obs.end();
+      entry.obs.update({
+        output: {
+          reason,
+          iterations,
+          ...(answer && { answer: truncate(answer, 2000) }),
+        },
+        metadata: {
+          totalTokens: { input: totalInput, output: totalOutput, total: totalInput + totalOutput },
+        },
+        endTime: toDate(Date.now()),
       });
-      agentMap.delete(agentId);
-      agentAnswerMap.delete(agentId);
+      entry.obs.end();
+    });
+    agentMap.delete(agentId);
+    agentAnswerMap.delete(agentId);
+  }
+
+  unsubs.push(
+    bus.on("session.completed", (e) => {
+      const agentId = e.agentId;
+      if (!agentId) return;
+      endAgentObs(agentId, e.data.reason, e.data.iterations, e.data.tokens);
+    }),
+  );
+
+  unsubs.push(
+    bus.on("session.failed", (e) => {
+      const agentId = e.agentId;
+      if (!agentId) return;
+      endAgentObs(agentId, "error", e.data.iterations, e.data.tokens, e.data.error);
     }),
   );
 

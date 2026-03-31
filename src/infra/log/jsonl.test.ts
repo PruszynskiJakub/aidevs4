@@ -28,7 +28,7 @@ describe("JsonlWriter", () => {
     const { bus, writer } = await setup();
 
     bus.emit("session.opened", { assistant: "default", model: "gpt-4.1" });
-    bus.emit("turn.began", {
+    bus.emit("turn.started", {
       iteration: 0,
       maxIterations: 40,
       model: "gpt-4.1",
@@ -51,7 +51,7 @@ describe("JsonlWriter", () => {
     expect(first.ts).toBeNumber();
 
     const second = JSON.parse(lines[1]);
-    expect(second.type).toBe("turn.began");
+    expect(second.type).toBe("turn.started");
     expect(second.data.iteration).toBe(0);
 
     writer.dispose();
@@ -61,7 +61,7 @@ describe("JsonlWriter", () => {
     const { bus, writer } = await setup();
 
     for (let i = 0; i < 10; i++) {
-      bus.emit("turn.began", {
+      bus.emit("turn.started", {
         iteration: i,
         maxIterations: 40,
         model: "m",
@@ -105,7 +105,7 @@ describe("JsonlWriter", () => {
   it("each line is valid JSON", async () => {
     const { bus, writer } = await setup();
 
-    bus.emit("tool.dispatched", { callId: "c1", name: "web_search", args: "{}", batchIndex: 0, batchSize: 1 });
+    bus.emit("tool.called", { callId: "c1", name: "web_search", args: "{}", batchIndex: 0, batchSize: 1 });
     bus.emit("tool.succeeded", {
       callId: "c1",
       name: "web_search",
@@ -113,6 +113,7 @@ describe("JsonlWriter", () => {
       result: "found it",
     });
     bus.emit("batch.completed", {
+      batchId: "b1",
       count: 1,
       durationMs: 500,
       succeeded: 1,

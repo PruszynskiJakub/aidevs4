@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
-import { getSessionId, getLogger, getAgentId, getTraceId, getDepth } from "../agent/context.ts";
+import { getSessionId, getLogger, getAgentId, getRootAgentId, getTraceId, getDepth } from "../agent/context.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 import { executeTurn } from "../agent/orchestrator.ts";
 import { agentsService } from "../agent/agents.ts";
@@ -26,6 +26,7 @@ async function delegate(args: Record<string, unknown>): Promise<ToolResult> {
       prompt,
       assistant: agent,
       parentAgentId: getAgentId(),
+      parentRootAgentId: getRootAgentId(),
       parentTraceId: getTraceId(),
       parentDepth: getDepth(),
     });

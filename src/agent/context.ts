@@ -63,6 +63,10 @@ export function getAgentId(): string | undefined {
   return asyncLocalStorage.getStore()?.state.agentId;
 }
 
+export function getRootAgentId(): string | undefined {
+  return asyncLocalStorage.getStore()?.state.rootAgentId;
+}
+
 export function getParentAgentId(): string | undefined {
   return asyncLocalStorage.getStore()?.state.parentAgentId;
 }

@@ -12,23 +12,29 @@ export type TokenPair = { promptTokens: number; completionTokens: number };
 export interface EventMap {
   // ── Session ──────────────────────────────────────────────
   "session.opened": { assistant: string; model: string; userInput?: string };
-  "session.closed": {
-    reason: "answer" | "max_iterations" | "error";
+  "session.completed": {
+    reason: "answer" | "max_iterations";
     iterations: number;
     tokens: { plan: TokenPair; act: TokenPair };
-    error?: string;
+  };
+  "session.failed": {
+    iterations: number;
+    tokens: { plan: TokenPair; act: TokenPair };
+    error: string;
   };
 
   // ── Turn ─────────────────────────────────────────────────
-  "turn.began": {
+  "turn.started": {
     iteration: number;
     maxIterations: number;
     model: string;
     messageCount: number;
   };
-  "turn.ended": {
+  "turn.completed": {
     iteration: number;
     outcome: "continue" | "answer" | "max_iterations";
+    durationMs: number;
+    tokens: { plan: TokenPair; act: TokenPair };
   };
 
   // ── LLM Generation ─────────────────────────────────────
@@ -51,10 +57,16 @@ export interface EventMap {
   };
 
   // ── Tool execution ───────────────────────────────────────
-  "tool.dispatched": { callId: string; name: string; args: string; batchIndex: number; batchSize: number; startTime: number };
+  "tool.called": { callId: string; name: string; args: string; batchIndex: number; batchSize: number; startTime: number };
   "tool.succeeded": { callId: string; name: string; durationMs: number; result: string; args?: string; startTime?: number };
   "tool.failed": { callId: string; name: string; durationMs: number; error: string; args?: string; startTime?: number };
+  "batch.started": {
+    batchId: string;
+    callIds: string[];
+    count: number;
+  };
   "batch.completed": {
+    batchId: string;
     count: number;
     durationMs: number;
     succeeded: number;
@@ -72,8 +84,28 @@ export interface EventMap {
     tokensAfter: number;
   };
 
-  // ── Agent answer ──────────────────────────────────────────
-  "agent.answer": { text: string | null };
+  // ── Agent lifecycle ────────────────────────────────────────
+  "agent.started": {
+    agentName: string;
+    model: string;
+    task: string;
+    parentAgentId?: string;
+    depth: number;
+  };
+  "agent.completed": {
+    agentName: string;
+    durationMs: number;
+    iterations: number;
+    tokens: { plan: TokenPair; act: TokenPair };
+    result: string | null;
+  };
+  "agent.failed": {
+    agentName: string;
+    durationMs: number;
+    iterations: number;
+    error: string;
+  };
+  "agent.answered": { text: string | null };
 
   // ── Moderation ───────────────────────────────────────────
   "input.flagged": { categories: string[] };
@@ -89,6 +121,7 @@ export interface BusEvent<T = unknown> {
   sessionId?: string;
   correlationId?: string;
   agentId?: string;
+  rootAgentId?: string;
   parentAgentId?: string;
   traceId?: string;
   depth?: number;

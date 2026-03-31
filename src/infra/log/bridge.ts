@@ -32,20 +32,31 @@ export function attachLoggerListener(
   );
 
   unsubs.push(
-    bus.on("session.closed", (e) => {
+    bus.on("session.completed", (e) => {
       if (!mine(e.sessionId)) return;
-      if (e.data.reason === "answer") {
-        // answer text is emitted separately via agent.answer event
-      } else if (e.data.reason === "max_iterations") {
+      if (e.data.reason === "max_iterations") {
         log.maxIter(e.data.iterations);
-      } else {
-        log.error(`Session closed: ${e.data.reason}`);
       }
+      // "answer" reason — answer text is emitted separately via agent.answered event
     }),
   );
 
   unsubs.push(
-    bus.on("turn.began", (e) => {
+    bus.on("session.failed", (e) => {
+      if (!mine(e.sessionId)) return;
+      log.error(`Session failed: ${e.data.error}`);
+    }),
+  );
+
+  unsubs.push(
+    bus.on("agent.started", (e) => {
+      if (!mine(e.sessionId)) return;
+      log.info(`Agent: ${e.data.agentName} (${e.data.model}, depth=${e.data.depth})`);
+    }),
+  );
+
+  unsubs.push(
+    bus.on("turn.started", (e) => {
       if (!mine(e.sessionId)) return;
       log.step(
         e.data.iteration,
@@ -78,7 +89,7 @@ export function attachLoggerListener(
   );
 
   unsubs.push(
-    bus.on("tool.dispatched", (e) => {
+    bus.on("tool.called", (e) => {
       if (!mine(e.sessionId)) return;
       if (e.data.batchIndex === 0) {
         log.toolHeader(e.data.batchSize);
@@ -109,7 +120,7 @@ export function attachLoggerListener(
   );
 
   unsubs.push(
-    bus.on("agent.answer", (e) => {
+    bus.on("agent.answered", (e) => {
       if (!mine(e.sessionId)) return;
       log.answer(e.data.text);
     }),

@@ -7,7 +7,7 @@ import type {
   WildcardListener,
   EventBus,
 } from "../types/events.ts";
-import { getSessionId, getAgentId, getParentAgentId, getTraceId, getDepth } from "../agent/context.ts";
+import { getSessionId, getAgentId, getRootAgentId, getParentAgentId, getTraceId, getDepth } from "../agent/context.ts";
 
 // ── Bus implementation ──────────────────────────────────────
 
@@ -22,6 +22,7 @@ function createEventBus(): EventBus {
       ts: Date.now(),
       sessionId: getSessionId(),
       agentId: getAgentId(),
+      rootAgentId: getRootAgentId(),
       parentAgentId: getParentAgentId(),
       traceId: getTraceId(),
       depth: getDepth(),
