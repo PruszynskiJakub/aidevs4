@@ -75,3 +75,8 @@ export function assertNumericBounds(value: number, name: string, min: number, ma
     throw new Error(`${name} must be between ${min} and ${max}`);
   }
 }
+
+/** Extract a human-readable message from an unknown caught value. */
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}

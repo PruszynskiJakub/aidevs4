@@ -5,8 +5,9 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { CreateMessageRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { LLMProvider, LLMMessage, ContentPart } from "../types/llm.ts";
-import type { ToolResult } from "../types/tool-result.ts";
+import { type ToolResult, error as toolError } from "../types/tool-result.ts";
 import { registerRaw } from "../tools/registry.ts";
+import { errorMessage } from "../utils/parse.ts";
 import { loadMcpConfig } from "../config/mcp.ts";
 import type { McpServerConfig } from "../config/mcp.ts";
 import { config } from "../config/index.ts";
@@ -78,16 +79,15 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
   const servers = new Map<string, ConnectedServer>();
   let connected = false;
 
-  // Track stdio child PIDs for zombie cleanup
-  const stdioTransports = new Set<StdioClientTransport>();
-
   process.on("exit", () => {
-    for (const transport of stdioTransports) {
-      try {
-        const pid = transport.pid;
-        if (pid != null) process.kill(pid);
-      } catch {
-        // Process may already be dead
+    for (const { transport } of servers.values()) {
+      if (transport instanceof StdioClientTransport) {
+        try {
+          const pid = transport.pid;
+          if (pid != null) process.kill(pid);
+        } catch {
+          /* already dead */
+        }
       }
     }
   });
@@ -115,16 +115,16 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
         messages.unshift({ role: "system", content: request.params.systemPrompt });
       }
 
-      const modelHint = request.params.modelPreferences?.hints?.[0]?.name;
+      const model = request.params.modelPreferences?.hints?.[0]?.name ?? config.models.agent;
 
       const response = await llmProvider.chatCompletion({
-        model: modelHint ?? config.models.agent,
+        model,
         messages,
         maxTokens: request.params.maxTokens,
       });
 
       return {
-        model: modelHint ?? config.models.agent,
+        model,
         role: "assistant" as const,
         content: {
           type: "text" as const,
@@ -142,107 +142,88 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
       const mcpConfig = await loadMcpConfig();
       if (mcpConfig.servers.length === 0) return;
 
-      for (const serverConfig of mcpConfig.servers) {
-        if (serverConfig.enabled === false) continue;
+      const enabled = mcpConfig.servers.filter((s) => s.enabled !== false);
 
-        try {
-          const client = new Client(
-            { name: "aidevs4-agent", version: "1.0.0" },
-            { capabilities: { sampling: {} } },
-          );
+      await Promise.allSettled(
+        enabled.map(async (serverConfig) => {
+          try {
+            const client = new Client(
+              { name: "aidevs4-agent", version: "1.0.0" },
+              { capabilities: { sampling: {} } },
+            );
 
-          setupSamplingHandler(client);
+            setupSamplingHandler(client);
 
-          const transport = createTransport(serverConfig);
-
-          if (transport instanceof StdioClientTransport) {
-            stdioTransports.add(transport);
+            const transport = createTransport(serverConfig);
+            await client.connect(transport);
+            servers.set(serverConfig.name, { client, transport, config: serverConfig });
+            console.log(`[mcp] Connected to "${serverConfig.name}"`);
+          } catch (err) {
+            console.warn(`[mcp] Failed to connect to "${serverConfig.name}": ${errorMessage(err)}`);
           }
-
-          await client.connect(transport);
-          servers.set(serverConfig.name, { client, transport, config: serverConfig });
-          console.log(`[mcp] Connected to "${serverConfig.name}"`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.warn(`[mcp] Failed to connect to "${serverConfig.name}": ${msg}`);
-        }
-      }
+        }),
+      );
     },
 
     async registerTools(): Promise<void> {
-      for (const [serverName, server] of servers) {
-        try {
-          const { tools } = await server.client.listTools();
+      await Promise.allSettled(
+        Array.from(servers, async ([serverName, server]) => {
+          try {
+            const { tools } = await server.client.listTools();
 
-          for (const tool of tools) {
-            const registeredName = `mcp_${normalizeName(serverName)}_${normalizeName(tool.name)}`;
-            const description = tool.description ?? `MCP tool ${tool.name} from ${serverName}`;
-            const parameters = (tool.inputSchema as Record<string, unknown>) ?? {
-              type: "object",
-              properties: {},
-            };
+            for (const tool of tools) {
+              const registeredName = `mcp_${normalizeName(serverName)}_${normalizeName(tool.name)}`;
+              const description = tool.description ?? `MCP tool ${tool.name} from ${serverName}`;
+              const parameters = (tool.inputSchema as Record<string, unknown>) ?? {
+                type: "object",
+                properties: {},
+              };
 
-            const handler = async (args: Record<string, unknown>): Promise<ToolResult> => {
-              // Check if server is still connected
-              const srv = servers.get(serverName);
-              if (!srv) {
-                return {
-                  content: [{ type: "text", text: `Error: MCP server "${serverName}" is disconnected` }],
-                  isError: true,
-                };
-              }
+              const handler = async (args: Record<string, unknown>): Promise<ToolResult> => {
+                const srv = servers.get(serverName);
+                if (!srv) {
+                  return toolError(`MCP server "${serverName}" is disconnected`);
+                }
+
+                try {
+                  const result = await srv.client.callTool(
+                    { name: tool.name, arguments: args },
+                    undefined,
+                    { signal: AbortSignal.timeout(config.limits.fetchTimeout) },
+                  );
+
+                  const content = Array.isArray(result.content)
+                    ? mapMcpContent(result.content)
+                    : [{ type: "text" as const, text: String(result.content ?? "") }];
+
+                  return {
+                    content,
+                    isError: result.isError === true,
+                  };
+                } catch (err) {
+                  return toolError(`Error calling MCP tool "${tool.name}" on "${serverName}": ${errorMessage(err)}`);
+                }
+              };
 
               try {
-                const result = await srv.client.callTool(
-                  { name: tool.name, arguments: args },
-                  undefined,
-                  { signal: AbortSignal.timeout(config.limits.fetchTimeout) },
-                );
-
-                const content = Array.isArray(result.content)
-                  ? mapMcpContent(result.content)
-                  : [{ type: "text" as const, text: String(result.content ?? "") }];
-
-                return {
-                  content,
-                  isError: result.isError === true,
-                };
+                registerRaw(registeredName, description, parameters, handler);
               } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err);
-                return {
-                  content: [{ type: "text", text: `Error calling MCP tool "${tool.name}" on "${serverName}": ${msg}` }],
-                  isError: true,
-                };
+                console.warn(`[mcp] Failed to register tool "${registeredName}": ${errorMessage(err)}`);
               }
-            };
-
-            try {
-              registerRaw(registeredName, description, parameters, handler);
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err);
-              console.warn(`[mcp] Failed to register tool "${registeredName}": ${msg}`);
             }
-          }
 
-          console.log(`[mcp] Registered ${tools.length} tool(s) from "${serverName}"`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.warn(`[mcp] Failed to list tools from "${serverName}": ${msg}`);
-        }
-      }
+            console.log(`[mcp] Registered ${tools.length} tool(s) from "${serverName}"`);
+          } catch (err) {
+            console.warn(`[mcp] Failed to list tools from "${serverName}": ${errorMessage(err)}`);
+          }
+        }),
+      );
     },
 
     async disconnect(): Promise<void> {
-      for (const [name, server] of servers) {
-        try {
-          await server.client.close();
-        } catch {
-          // Ignore close errors
-        }
-        if (server.transport instanceof StdioClientTransport) {
-          stdioTransports.delete(server.transport);
-        }
-      }
+      await Promise.allSettled(
+        Array.from(servers.values(), (server) => server.client.close().catch(() => {})),
+      );
       servers.clear();
       connected = false;
     },
