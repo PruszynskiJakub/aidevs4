@@ -33,7 +33,7 @@ function setupSession(
   md.init(typeof userPrompt === "string" ? userPrompt : "(structured)");
 
   const log = createCompositeLogger([new ConsoleLogger(), md]);
-  const detachLogger = attachLoggerListener(bus, log);
+  const detachLogger = attachLoggerListener(bus, log, sessionId);
 
   const jsonl = createJsonlWriter();
   const detachJsonl = bus.onAny(jsonl.listener);

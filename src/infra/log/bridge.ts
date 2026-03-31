@@ -12,17 +12,28 @@ import type { EventBus } from "../../types/events.ts";
  *
  * Returns an unsubscribe function to detach all listeners.
  */
-export function attachLoggerListener(bus: EventBus, log: Logger): () => void {
+export function attachLoggerListener(
+  bus: EventBus,
+  log: Logger,
+  sessionId?: string,
+): () => void {
   const unsubs: (() => void)[] = [];
+
+  /** Only process events belonging to this session (when sessionId is set). */
+  function mine(eventSessionId?: string): boolean {
+    return !sessionId || eventSessionId === sessionId;
+  }
 
   unsubs.push(
     bus.on("session.opened", (e) => {
+      if (!mine(e.sessionId)) return;
       log.info(`Assistant: ${e.data.assistant} (${e.data.model})`);
     }),
   );
 
   unsubs.push(
     bus.on("session.closed", (e) => {
+      if (!mine(e.sessionId)) return;
       if (e.data.reason === "answer") {
         // answer text is emitted separately via agent.answer event
       } else if (e.data.reason === "max_iterations") {
@@ -35,6 +46,7 @@ export function attachLoggerListener(bus: EventBus, log: Logger): () => void {
 
   unsubs.push(
     bus.on("turn.began", (e) => {
+      if (!mine(e.sessionId)) return;
       log.step(
         e.data.iteration,
         e.data.maxIterations,
@@ -46,6 +58,7 @@ export function attachLoggerListener(bus: EventBus, log: Logger): () => void {
 
   unsubs.push(
     bus.on("generation.completed", (e) => {
+      if (!mine(e.sessionId)) return;
       if (e.data.name === "plan") {
         log.plan(
           e.data.output.content ?? "",
@@ -66,6 +79,7 @@ export function attachLoggerListener(bus: EventBus, log: Logger): () => void {
 
   unsubs.push(
     bus.on("tool.dispatched", (e) => {
+      if (!mine(e.sessionId)) return;
       if (e.data.batchIndex === 0) {
         log.toolHeader(e.data.batchSize);
       }
@@ -75,36 +89,42 @@ export function attachLoggerListener(bus: EventBus, log: Logger): () => void {
 
   unsubs.push(
     bus.on("tool.succeeded", (e) => {
+      if (!mine(e.sessionId)) return;
       log.toolOk(e.data.name, formatMs(e.data.durationMs), e.data.result);
     }),
   );
 
   unsubs.push(
     bus.on("tool.failed", (e) => {
+      if (!mine(e.sessionId)) return;
       log.toolErr(e.data.name, e.data.error);
     }),
   );
 
   unsubs.push(
     bus.on("batch.completed", (e) => {
+      if (!mine(e.sessionId)) return;
       log.batchDone(e.data.count, formatMs(e.data.durationMs));
     }),
   );
 
   unsubs.push(
     bus.on("agent.answer", (e) => {
+      if (!mine(e.sessionId)) return;
       log.answer(e.data.text);
     }),
   );
 
   unsubs.push(
     bus.on("memory.observation", (e) => {
+      if (!mine(e.sessionId)) return;
       log.memoryObserve(e.data.tokensBefore, e.data.tokensAfter);
     }),
   );
 
   unsubs.push(
     bus.on("memory.reflection", (e) => {
+      if (!mine(e.sessionId)) return;
       log.memoryReflect(
         e.data.level,
         e.data.tokensBefore,

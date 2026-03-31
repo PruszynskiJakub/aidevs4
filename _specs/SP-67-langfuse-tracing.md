@@ -241,21 +241,43 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
     Uses `LangfuseSpanProcessor` + `NodeSDK`. No-op when keys absent.
 
 18. **Create `src/infra/langfuse-subscriber.ts`** — event-to-Langfuse mapping.
-    Global subscriber attached once at startup. Two internal maps:
-    - `agentObsMap: Map<agentId, observation>` — open agent spans
-    - `toolObsMap: Map<callId, observation>` — open tool spans
+    Global subscriber attached once at startup. Three internal maps:
+    - `agentMap: Map<agentId, { obs, ctx }>` — observation + saved OTel context
+    - `turnMap: Map<agentId, observation>` — current turn span per agent
+    - `toolMap: Map<callId, observation>` — open tool spans
+
+    **Critical**: `propagateAttributes` stores sessionId/traceName in OTel
+    context. Child observations created *outside* that callback scope lose
+    those attributes because `context.active()` returns a bare context.
+    Fix: capture `otelContext.active()` inside `propagateAttributes` and
+    wrap all child observation creation with `otelContext.with(savedCtx, fn)`.
+
+    Nesting structure:
+    ```
+    Agent (session.opened → session.closed)
+      ├── Turn 1 (turn.began → turn.ended)
+      │   ├── Generation: plan-llm
+      │   ├── Generation: act-llm
+      │   └── Tool: read_file
+      ├── Turn 2
+      │   ├── Generation: plan-llm
+      │   └── Generation: act-llm
+      └── ...
+    ```
 
     Event mapping:
 
     | Bus Event | Langfuse Action |
     |-----------|-----------------|
-    | `session.opened` | Root agents (depth=0): `propagateAttributes({ sessionId, traceName })` + `startObservation(name, { input }, { asType: "agent" })` + `setTraceIO({ input })`. Child agents: `parentObs.startObservation(name, { input }, { asType: "agent" })`. Store in `agentObsMap`. |
-    | `generation.completed` | `agentObs.startObservation(name+"-llm", { model, input }, { asType: "generation" })` → `.update({ output, usageDetails })` → `.end()` |
-    | `tool.dispatched` | `agentObs.startObservation(name, { input: args }, { asType: "tool" })`. Store in `toolObsMap`. |
-    | `tool.succeeded` | `toolObs.update({ output: result })` → `.end()`. Delete from map. |
-    | `tool.failed` | `toolObs.update({ output: error, level: "ERROR", statusMessage })` → `.end()`. Delete from map. |
-    | `agent.answer` | If depth=0: `agentObs.setTraceIO({ output: text })` |
-    | `session.closed` | If error: `.update({ level: "ERROR", statusMessage })`. Always: `.update({ output })` → `.end()`. Delete from map. |
+    | `session.opened` | Root (depth=0): `propagateAttributes(...)` → `startObservation(asType:"agent")` + capture `otelContext.active()`. Child: `otelContext.with(parentCtx, () => parentObs.startObservation(...))`. Store `{ obs, ctx }` in `agentMap`. |
+    | `turn.began` | `otelContext.with(ctx, () => agentObs.startObservation("turn-N"))`. Store in `turnMap`. |
+    | `turn.ended` | `turnObs.update({ output: outcome })` → `.end()`. Delete from `turnMap`. |
+    | `generation.completed` | `otelContext.with(ctx, () => turnObs.startObservation(name+"-llm", asType:"generation"))` → `.update({ output, usageDetails })` → `.end()` |
+    | `tool.dispatched` | `otelContext.with(ctx, () => turnObs.startObservation(name, asType:"tool"))`. Store in `toolMap`. |
+    | `tool.succeeded` | `toolObs.update({ output })` → `.end()`. Delete from `toolMap`. |
+    | `tool.failed` | `toolObs.update({ output, level:"ERROR" })` → `.end()`. Delete from `toolMap`. |
+    | `agent.answer` | `otelContext.with(ctx, () => agentObs.setTraceIO({ output }))` |
+    | `session.closed` | End dangling turn if any. `otelContext.with(ctx, () => agentObs.end())`. Delete from maps. |
 
     Returns cleanup function (detach listeners, clear maps).
     Guard: if `!isTracingEnabled()`, return no-op `() => {}`.
@@ -279,22 +301,24 @@ new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
 
 ```
 CLI: executeTurn({ prompt }) → agentId=A1, traceId=T1, depth=0
-  session.opened       → Langfuse: root agent obs [A1], propagateAttributes({ sessionId })
-  generation.started   → (no-op, informational)
-  generation.completed → Langfuse: generation child of A1 (name: "plan")
-  generation.started   → (no-op, informational)
-  generation.completed → Langfuse: generation child of A1 (name: "act")
-  tool.dispatched      → Langfuse: tool "delegate" child of A1
+  session.opened       → Langfuse: root agent obs [A1] + capture OTel context
+  turn.began(1)        → Langfuse: turn-1 span (child of A1)
+  generation.completed → Langfuse: plan-llm generation (child of turn-1)
+  generation.completed → Langfuse: act-llm generation (child of turn-1)
+  tool.dispatched      → Langfuse: tool "delegate" (child of turn-1)
     └─ executeTurn({ parentAgentId=A1, parentTraceId=T1, parentDepth=0 })
          → agentId=A2, traceId=T1 (inherited), depth=1
-         session.opened       → Langfuse: agent child of A1 (via agentObsMap[A1])
-         generation.completed → Langfuse: generation child of A2
-         tool.dispatched      → Langfuse: tool child of A2
+         session.opened       → Langfuse: agent A2 (child of A1, shares parent OTel ctx)
+         turn.began(1)        → Langfuse: turn-1 span (child of A2)
+         generation.completed → Langfuse: plan-llm (child of A2/turn-1)
+         tool.dispatched      → Langfuse: tool (child of A2/turn-1)
          tool.succeeded       → end tool obs
-         session.closed       → end A2 obs, delete from maps
+         turn.ended(1)        → end A2/turn-1
+         session.closed       → end A2 obs
   tool.succeeded       → end "delegate" tool obs
+  turn.ended(1)        → end A1/turn-1
   agent.answer         → setTraceIO({ output }) on A1
-  session.closed       → end A1 obs, delete from maps
+  session.closed       → end A1 obs
 ```
 
 All observations share `traceId=T1` → single Langfuse trace with full nesting.
