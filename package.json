@@ -19,6 +19,9 @@
   },
   "dependencies": {
     "@google/genai": "^1.45.0",
+    "@langfuse/otel": "^5.0.1",
+    "@langfuse/tracing": "^5.0.1",
+    "@opentelemetry/sdk-node": "^0.214.0",
     "csv-parse": "^6.1.0",
     "gray-matter": "^4.0.3",
     "hono": "^4.12.7",
