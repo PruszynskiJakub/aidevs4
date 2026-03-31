@@ -244,7 +244,7 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
   // ── agent.answered → set output on agent obs + trace ────────
 
   unsubs.push(
-    bus.on("agent.answereded", (e) => {
+    bus.on("agent.answered", (e) => {
       const agentId = e.agentId;
       if (!agentId) return;
       const entry = agentMap.get(agentId);
@@ -292,12 +292,10 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
       const totalOutput = tokens.plan.completionTokens + tokens.act.completionTokens;
 
       entry.obs.update({
-        output: {
+        output: answer ? truncate(answer, 5000) : null,
+        metadata: {
           reason,
           iterations,
-          ...(answer && { answer: truncate(answer, 2000) }),
-        },
-        metadata: {
           totalTokens: { input: totalInput, output: totalOutput, total: totalInput + totalOutput },
         },
         endTime: toDate(Date.now()),
