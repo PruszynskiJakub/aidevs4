@@ -109,6 +109,7 @@ export function createOpenAIProvider(client?: OpenAI): LLMProvider {
         messages: toOpenAIMessages(params.messages),
         ...(params.tools?.length && { tools: toOpenAITools(params.tools) }),
         ...(params.temperature !== undefined && { temperature: params.temperature }),
+        ...(params.maxTokens !== undefined && { max_tokens: params.maxTokens }),
       });
 
       return toResponse(response.choices[0], response.usage);

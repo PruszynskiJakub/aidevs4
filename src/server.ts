@@ -5,6 +5,7 @@ import { executeTurn } from "./agent/orchestrator.ts";
 import { log } from "./infra/log/logger.ts";
 import { config } from "./config/index.ts";
 import { bus } from "./infra/events.ts";
+import { initMcpTools, shutdownMcp } from "./tools/index.ts";
 
 interface ChatRequest {
   sessionId: string;
@@ -140,6 +141,12 @@ app.post("/chat", async (c) => {
     log.error(`/chat error [${sessionId}]: ${message}`);
     return c.json({ error: message }, 500);
   }
+});
+
+await initMcpTools();
+
+process.on("beforeExit", async () => {
+  await shutdownMcp();
 });
 
 const port = config.server.port;

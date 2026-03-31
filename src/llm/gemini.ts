@@ -126,6 +126,7 @@ export function createGeminiProvider(apiKey: string): LLMProvider {
         config: {
           ...(systemInstruction && { systemInstruction }),
           ...(params.temperature !== undefined && { temperature: params.temperature }),
+          ...(params.maxTokens !== undefined && { maxOutputTokens: params.maxTokens }),
           ...(params.tools?.length && { tools: toGeminiTools(params.tools) }),
           abortSignal: AbortSignal.timeout(config.limits.geminiTimeout),
         },

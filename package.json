@@ -21,6 +21,7 @@
     "@google/genai": "^1.45.0",
     "@langfuse/otel": "^5.0.1",
     "@langfuse/tracing": "^5.0.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/sdk-node": "^0.214.0",
     "csv-parse": "^6.1.0",
     "gray-matter": "^4.0.3",

@@ -1,5 +1,6 @@
 import { config } from "./config/index.ts";
 import { executeTurn } from "./agent/orchestrator.ts";
+import { initMcpTools, shutdownMcp } from "./tools/index.ts";
 
 function extractFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
@@ -32,6 +33,8 @@ if (args.length >= 2) {
   process.exit(1);
 }
 
+await initMcpTools();
+
 const { answer, sessionId: resolvedSessionId } = await executeTurn({
   sessionId,
   prompt,
@@ -41,3 +44,5 @@ const { answer, sessionId: resolvedSessionId } = await executeTurn({
 
 console.log(`\nSession: ${resolvedSessionId}`);
 if (answer) console.log(answer);
+
+await shutdownMcp();

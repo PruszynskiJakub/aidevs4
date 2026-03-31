@@ -1,4 +1,6 @@
-import { register, getTools, getToolsByName, dispatch, reset } from "./registry.ts";
+import { register, registerRaw, getTools, getToolsByName, dispatch, reset } from "./registry.ts";
+import { createMcpService } from "../infra/mcp.ts";
+import { llm } from "../llm/llm.ts";
 
 import think from "./think.ts";
 import bash from "./bash.ts";
@@ -32,4 +34,15 @@ register(grep);
 register(execute_code);
 register(delegate);
 
-export { register, getTools, getToolsByName, dispatch, reset };
+const mcpService = createMcpService(llm);
+
+export async function initMcpTools(): Promise<void> {
+  await mcpService.connect();
+  await mcpService.registerTools();
+}
+
+export async function shutdownMcp(): Promise<void> {
+  await mcpService.disconnect();
+}
+
+export { register, registerRaw, getTools, getToolsByName, dispatch, reset, mcpService };

@@ -79,6 +79,7 @@ export interface ChatCompletionParams {
   messages: LLMMessage[];
   tools?: LLMTool[];
   temperature?: number;
+  maxTokens?: number;
 }
 
 export interface CompletionParams {

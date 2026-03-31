@@ -53,6 +53,38 @@ export function register(tool: ToolDefinition): void {
   }
 }
 
+/**
+ * Register a tool with a pre-built JSON Schema, bypassing Zod conversion.
+ * Used for MCP tools whose schemas are already JSON Schema from the server.
+ * Registered with strict: false since MCP schemas may not satisfy OpenAI strict requirements.
+ */
+export function registerRaw(
+  name: string,
+  description: string,
+  parameters: Record<string, unknown>,
+  handler: (args: Record<string, unknown>) => Promise<ToolResult>,
+): void {
+  if (handlers.has(name)) {
+    throw new Error(`Duplicate tool registration: "${name}"`);
+  }
+
+  handlers.set(name, {
+    name,
+    schema: { name, description, schema: {} as z.ZodObject },
+    handler,
+  });
+
+  expandedTools.push({
+    type: "function",
+    function: {
+      name,
+      description,
+      parameters,
+      strict: false,
+    },
+  });
+}
+
 /** Extract base tool name (before `__` separator for multi-action tools). */
 function baseName(expandedName: string): string {
   const idx = expandedName.indexOf(SEPARATOR);
