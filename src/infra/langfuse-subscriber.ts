@@ -260,7 +260,7 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
       if (!toolObs) return;
       toolObs.update({
         output: e.data.result,
-        endTime: toDate((e.data.startTime ?? Date.now()) + e.data.durationMs),
+        endTime: toDate(Date.now()),
       });
       toolObs.end();
       toolMap.delete(e.data.callId);
@@ -277,7 +277,7 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
         output: e.data.error,
         level: "ERROR",
         statusMessage: e.data.error,
-        endTime: toDate((e.data.startTime ?? Date.now()) + e.data.durationMs),
+        endTime: toDate(Date.now()),
       });
       toolObs.end();
       toolMap.delete(e.data.callId);
