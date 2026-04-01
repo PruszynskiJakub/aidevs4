@@ -327,7 +327,7 @@ export async function runAgent(
 
         const originalMessages = state.messages;
         const contextLength = context.messages.length;
-        state.messages = context.messages;
+        state.messages = [...context.messages];
 
         const planText = await executePlanPhase(planPrompt, provider);
         const response = await executeActPhase(planText, context.systemPrompt, provider);
