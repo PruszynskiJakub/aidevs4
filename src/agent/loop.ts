@@ -326,12 +326,13 @@ export async function runAgent(
         state.memory = updatedMemory;
 
         const originalMessages = state.messages;
+        const contextLength = context.messages.length;
         state.messages = context.messages;
 
         const planText = await executePlanPhase(planPrompt, provider);
         const response = await executeActPhase(planText, context.systemPrompt, provider);
 
-        const newMessages = state.messages.slice(context.messages.length);
+        const newMessages = state.messages.slice(contextLength);
         state.messages = originalMessages.concat(newMessages);
 
         await saveIfChanged();
