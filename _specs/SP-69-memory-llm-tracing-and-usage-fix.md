@@ -636,7 +636,7 @@ interface EventMap {
 
 ## Acceptance criteria
 
-- [ ] `usageDetails` uses `promptTokens`/`completionTokens`/`totalTokens` — verified in Langfuse dashboard that token counts and costs appear
+- [ ] `usageDetails` uses `input`/`output`/`total` — verified in Langfuse dashboard that token counts and costs appear
 - [ ] `setTraceIO` output uses truncated text (consistent with agent observation)
 - [ ] Memory observer LLM call appears as a `generation` observation in Langfuse with model, input (system prompt + messages), output, and token usage
 - [ ] Memory reflector LLM calls appear as `generation` observations — one per compression level attempted
