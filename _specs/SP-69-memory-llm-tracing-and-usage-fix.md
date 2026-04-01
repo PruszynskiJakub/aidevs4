@@ -30,22 +30,28 @@ Currently, `memory.observation` and `memory.reflection` are mapped to generic
 spans in Langfuse. They should become proper lifecycle spans wrapping
 generation child observations.
 
-### Problem 2 — `usageDetails` field names are wrong
+### Problem 2 — `usageDetails` missing `total` field
 
-The Langfuse subscriber (`langfuse-subscriber.ts:179-182`) passes:
+The Langfuse subscriber passes `input` and `output` in `usageDetails` but
+omits `total`. Langfuse expects all three keys (`input`/`output`/`total`)
+for proper token aggregation in dashboards.
 
-```typescript
-usageDetails: {
-  input: e.data.usage.input,
-  output: e.data.usage.output,
-}
-```
+### Problem 2b — Generation output not in OpenAI ChatML format
 
-Langfuse expects `input`, `output`, and `total` as `usageDetails` keys.
-The original code was missing the `total` field — without it, Langfuse
-cannot compute aggregate token counts properly. The keys `input`/`output`
-are correct (Langfuse maps OpenAI's `prompt_tokens`→`input`,
-`completion_tokens`→`output` internally).
+The `generation.completed` event passes output as
+`{ content, toolCalls? }` — a custom shape. Langfuse expects the output
+in **OpenAI ChatML format** for playground compatibility:
+`{ role: "assistant", content, tool_calls: [{ id, type, function }] }`.
+Without this, tool calls from function calling are not properly displayed
+in Langfuse.
+
+### Problem 2c — Tool observation durations show as zero
+
+Tool `endTime` was computed as `toDate(startTime + durationMs)` where
+`startTime` is `Date.now()` epoch and `durationMs` is a `performance.now()`
+delta. The `Date` constructor truncates fractional milliseconds, so
+sub-millisecond tools show 0 duration. Fix: use `Date.now()` at event
+receipt time as `endTime`.
 
 ### Problem 3 — Moderation events defined but never emitted
 
@@ -231,33 +237,8 @@ const span = parent.startObservation("memory-observation", {
 memoryMap.set(`${agentId}:observation`, span);
 ```
 
-**`memory.observation.completed`** — nest single generation, close span:
-```typescript
-const span = memoryMap.get(`${agentId}:observation`);
-const gen = e.data.generation;
-const genObs = span.startObservation(gen.name, {
-  model: gen.model,
-  input: gen.input,
-  startTime: toDate(gen.startTime),
-}, { asType: "generation" });
-genObs.update({
-  output: gen.output,
-  usageDetails: {
-    input: gen.usage.input,
-    output: gen.usage.output,
-    total: gen.usage.total,
-  },
-  endTime: toDate(gen.startTime + gen.durationMs),
-});
-genObs.end();
-span.update({
-  output: { tokensAfter: e.data.tokensAfter,
-            compression: `${e.data.tokensBefore} → ${e.data.tokensAfter}` },
-  endTime: toDate(Date.now()),
-});
-span.end();
-memoryMap.delete(`${agentId}:observation`);
-```
+**`memory.observation.completed`** — nest single generation via
+`nestGeneration()`, close span with compression summary as output.
 
 **`memory.reflection.started`** — create span:
 ```typescript
@@ -268,34 +249,8 @@ const span = parent.startObservation(`memory-reflection-L${e.data.level}`, {
 memoryMap.set(`${agentId}:reflection`, span);
 ```
 
-**`memory.reflection.completed`** — nest N generations (one per level), close:
-```typescript
-const span = memoryMap.get(`${agentId}:reflection`);
-for (const gen of e.data.generations) {
-  const genObs = span.startObservation(gen.name, {
-    model: gen.model,
-    input: gen.input,
-    startTime: toDate(gen.startTime),
-  }, { asType: "generation" });
-  genObs.update({
-    output: gen.output,
-    usageDetails: {
-      promptTokens: gen.usage.input,
-      completionTokens: gen.usage.output,
-      totalTokens: gen.usage.total,
-    },
-    endTime: toDate(gen.startTime + gen.durationMs),
-  });
-  genObs.end();
-}
-span.update({
-  output: { tokensAfter: e.data.tokensAfter,
-            compression: `${e.data.tokensBefore} → ${e.data.tokensAfter}` },
-  endTime: toDate(Date.now()),
-});
-span.end();
-memoryMap.delete(`${agentId}:reflection`);
-```
+**`memory.reflection.completed`** — nest N generations via `nestGeneration()`,
+close span. The shared helper handles `usageDetails` and timing uniformly.
 
 **`*.failed`** (both) — close span with error:
 ```typescript
@@ -345,126 +300,85 @@ scores for evaluation:
 }
 ```
 
-**Trace structure:** Moderation is a trace-level concern — it runs before
-the agent starts and gates whether the agent runs at all. In Langfuse, the
-guardrail observation is a sibling of the agent span, not nested inside it:
+**Trace structure:** The guardrail observation is nested as the first
+child of the agent span (not a sibling at the trace root):
 
 ```
-Trace (created in orchestrator, before moderation)
-  ├── Guardrail: input-moderation    ← runs first
-  └── Agent (session.opened)         ← only if moderation passes
+Trace (assistantName, sessionId)
+  └── Agent (session.opened → session.completed)
+      ├── Guardrail: input-moderation    ← first child
       ├── Turn 1 ...
       └── Turn 2 ...
 ```
 
-**Implementation in `orchestrator.ts`:**
+**Implementation — buffered guardrail pattern:**
 
-The orchestrator already builds `traceId` and calls `propagateAttributes`.
-The new flow creates the trace context first, then emits moderation events
-within that context (so they carry `traceId`), then proceeds to `runAgent`:
+Moderation events fire in `orchestrator.ts` BEFORE `runAgent()` and
+BEFORE `session.opened` — so there is no agent context yet (no `agentId`,
+no `sessionId` in AsyncLocalStorage, no entry in `agentMap`). The
+Langfuse subscriber cannot create the guardrail observation immediately.
 
-```typescript
-// orchestrator.ts
-const traceId = opts.parentTraceId ?? randomUUID();
-
-// Create trace context early — moderation and agent share it
-propagateAttributes({ sessionId, traceName: assistantName }, () => {
-  // Moderation runs inside trace context
-  const moderationStart = Date.now();
-  const moderation = await moderateInput(opts.prompt);
-  const durationMs = Date.now() - moderationStart;
-
-  if (moderation.flagged) {
-    const flaggedCategories = Object.entries(moderation.categories)
-      .filter(([, v]) => v)
-      .map(([k]) => k);
-    bus.emit("input.flagged", {
-      categories: flaggedCategories,
-      categoryScores: moderation.categoryScores,
-    });
-    assertNotFlagged(moderation);  // throws — agent never starts
-  } else {
-    bus.emit("input.clean", { durationMs });
-  }
-
-  // Agent starts only after moderation passes
-  const result = await runAgent(state);
-});
-```
-
-The `input.flagged`/`input.clean` events carry `traceId` from the
-propagated context but no `agentId` (the agent hasn't started yet).
-The Langfuse subscriber attaches the guardrail to the trace root, not
-to an agent span.
-
-**Flagged input:** When input is flagged, `assertNotFlagged()` throws
-after the event is emitted. The trace in Langfuse shows just the
-guardrail observation (fail) with no agent span — exactly the right
-picture: moderation blocked this request.
-
-**Langfuse mapping:** Both events fire inside the `propagateAttributes`
-callback, so `otelContext.active()` already carries the trace context.
-The guardrail attaches to the trace root via `startObservation` (top-level,
-not nested under an agent):
+Solution: the subscriber **buffers** the moderation result when
+`input.clean`/`input.flagged` fires, then **replays** it as a guardrail
+observation when `session.opened` creates the root agent span:
 
 ```typescript
-// input.clean → guardrail observation (pass)
+// Buffer on moderation event (no agent context yet)
 bus.on("input.clean", (e) => {
-  // No agentId yet — use trace-level context directly
-  const guard = startObservation("input-moderation", {
-    input: { check: "openai-moderation" },
-  }, { asType: "guardrail" });
-  guard.update({
-    output: { passed: true },
-    metadata: { durationMs: e.data.durationMs },
-  });
-  guard.end();
+  pendingModeration = { passed: true, durationMs: e.data.durationMs };
 });
 
-// input.flagged → guardrail observation (fail)
 bus.on("input.flagged", (e) => {
-  const guard = startObservation("input-moderation", {
-    input: { check: "openai-moderation" },
-  }, { asType: "guardrail" });
-  guard.update({
-    output: { passed: false, categories: e.data.categories },
-    level: "WARNING",
-    statusMessage: `Flagged: ${e.data.categories.join(", ")}`,
-    metadata: { categoryScores: e.data.categoryScores },
-  });
-  guard.end();
+  pendingModeration = {
+    passed: false,
+    categories: e.data.categories,
+    categoryScores: e.data.categoryScores,
+  };
+});
+
+// Replay when agent span is created
+bus.on("session.opened", (e) => {
+  // ... create agent observation ...
+  flushModeration(obs); // creates guardrail child
 });
 ```
 
-This produces a `guardrail` observation at the trace root — sibling of
-the agent span, not nested inside it. For flagged input the trace shows
-only the failed guardrail (agent never started).
+`flushModeration()` creates a `guardrail` observation as the first child
+of the agent span, then clears the buffer.
 
-### 6. Fix `usageDetails` field names on all generation spans
+### 6. Fix `usageDetails` — add missing `total` field
 
-In `langfuse-subscriber.ts`, the `generation.completed` handler (line ~179):
+All generation spans now pass `{ input, output, total }` in `usageDetails`
+via the shared `nestGeneration()` helper. The `total` field was previously
+missing.
 
-**Before:**
+### 6b. Format generation output as OpenAI ChatML
+
+The `generation.completed` handler converts the output to OpenAI ChatML
+format before passing to Langfuse:
+
 ```typescript
-usageDetails: {
-  input: e.data.usage.input,
-  output: e.data.usage.output,
-},
+const chatMlOutput = {
+  role: "assistant",
+  content: output.content,
+  ...(output.toolCalls?.length && {
+    tool_calls: output.toolCalls.map((tc) => ({
+      id: tc.id,
+      type: "function",
+      function: { name: tc.name, arguments: tc.arguments },
+    })),
+  }),
+};
 ```
 
-**After:**
-```typescript
-usageDetails: {
-  input: e.data.usage.input,
-  output: e.data.usage.output,
-  total: e.data.usage.total,
-},
-```
+This enables Langfuse playground compatibility and proper tool call display.
 
-Langfuse expects `input`/`output`/`total` as usage keys (not
-`promptTokens`/`completionTokens`). The fix adds the missing `total` field.
-This applies to both existing plan/act generation spans AND the new memory
-generation spans (which use the same field names via `MemoryGeneration`).
+### 6c. Fix tool observation duration
+
+Tool `endTime` changed from `toDate(startTime + durationMs)` to
+`toDate(Date.now())`. This avoids `Date` constructor truncating fractional
+milliseconds from the `performance.now()` delta, which caused sub-ms tools
+to show 0 duration.
 
 ### 7. Fix inconsistent `setTraceIO` truncation
 
@@ -484,12 +398,12 @@ entry.obs.setTraceIO({ output: answerText }); // use already-truncated value
 
 ```
 Trace (assistantName, sessionId)
-  ├── Guardrail: input-moderation                 ← NEW (pass/fail, categories)
   └── Agent (session.opened → session.completed)
+      ├── Guardrail: input-moderation             ← NEW (first child, pass/fail)
       ├── Turn 1 (turn.started → turn.completed)
-      │   ├── Generation: plan-llm
-      │   ├── Generation: act-llm
-      │   ├── Tool: web_search
+      │   ├── Generation: plan-llm                   (output: ChatML format)
+      │   ├── Generation: act-llm                    (output: ChatML with tool_calls)
+      │   ├── Tool: web_search                       (endTime: Date.now())
       │   ├── Tool: read_file
       │   ├── Span: memory-observation            ← NEW
       │   │   └── Generation: memory-observer     ← NEW (model, input, output, tokens)
@@ -501,13 +415,6 @@ Trace (assistantName, sessionId)
       │   ├── Generation: act-llm
       │   └── Tool: agents_hub
       └── ...
-```
-
-Flagged input trace (agent never starts):
-```
-Trace (assistantName, sessionId)
-  └── Guardrail: input-moderation [WARNING]
-        output: { passed: false, categories: ["violence"] }
 ```
 
 ## Updated EventMap (changed sections)
@@ -553,14 +460,20 @@ interface EventMap {
 
 ## Implementation plan
 
-### Phase 1 — Fix usageDetails (standalone, immediate value)
+### Phase 1 — Fix usageDetails and output format (standalone, immediate value)
 
-1. **Fix `usageDetails` field names** (`src/infra/langfuse-subscriber.ts`).
-   Change `input`/`output` keys to `promptTokens`/`completionTokens`/`totalTokens`
-   in the `generation.completed` handler.
+1. **Add missing `total` to `usageDetails`** (`src/infra/langfuse-subscriber.ts`).
+   Extracted shared `nestGeneration()` helper with `{ input, output, total }`.
 
 2. **Fix `setTraceIO` truncation** (`src/infra/langfuse-subscriber.ts`).
    Use `answerText` (already truncated) instead of raw `e.data.text`.
+
+2b. **Format generation output as OpenAI ChatML** (`src/infra/langfuse-subscriber.ts`).
+    Convert `{ content, toolCalls }` to `{ role, content, tool_calls }` for
+    Langfuse playground compatibility.
+
+2c. **Fix tool observation duration** (`src/infra/langfuse-subscriber.ts`).
+    Use `Date.now()` for `endTime` instead of `startTime + durationMs`.
 
 ### Phase 2 — Observer/reflector return generation metadata
 
@@ -598,10 +511,12 @@ interface EventMap {
 ### Phase 4 — Subscriber updates
 
 10. **Update Langfuse subscriber** (`src/infra/langfuse-subscriber.ts`).
+    - Extract `nestGeneration()` helper for all generation spans.
     - Replace `memory.observation`/`memory.reflection` listeners with the six
       lifecycle event listeners. Add `memoryMap`.
-    - Add `input.flagged`/`input.clean` listeners — create `guardrail`
-      observation type on the agent span.
+    - Add `input.flagged`/`input.clean` listeners with buffered guardrail
+      pattern — store moderation result, replay as guardrail child when
+      `session.opened` creates the agent span.
 
 11. **Update bridge subscriber** (`src/infra/log/bridge.ts`).
     Replace `memory.observation`/`memory.reflection` listeners with
@@ -616,8 +531,10 @@ interface EventMap {
 
 14. **Manual verification** — run agent with Langfuse enabled, confirm:
     - Memory spans appear nested under turns with generation children
-    - Moderation guardrail appears at top of agent trace
-    - Token counts appear in Langfuse usage dashboard (promptTokens/completionTokens)
+    - Moderation guardrail appears as first child of agent span
+    - Token counts appear in Langfuse usage dashboard (input/output/total)
+    - Generation output in OpenAI ChatML format with tool_calls
+    - Tool observations show non-zero duration
     - Reflector multi-level loops produce multiple generation children
     - Flagged input produces WARNING-level guardrail with categories
 
@@ -625,29 +542,31 @@ interface EventMap {
 
 | File | Action |
 |------|--------|
-| `src/infra/langfuse-subscriber.ts` | Modify — fix usageDetails keys, fix setTraceIO, replace memory listeners, add memoryMap, add moderation guardrail listeners |
-| `src/types/events.ts`              | Modify — replace memory.observation/memory.reflection with 6 lifecycle events, enrich moderation payloads, add MemoryGeneration type |
-| `src/agent/memory/observer.ts`     | Modify — return ObserveResult with generation metadata |
-| `src/agent/memory/reflector.ts`    | Modify — return ReflectResult with generations array |
-| `src/agent/memory/processor.ts`    | Modify — emit memory lifecycle events, consume new return types |
-| `src/agent/orchestrator.ts`        | Modify — create trace context early, emit moderation events inside it before runAgent |
-| `src/infra/log/bridge.ts`          | Modify — update memory event listeners |
-| `src/infra/log/jsonl.ts`           | Modify — update if memory events referenced by name |
+| `src/infra/langfuse-subscriber.ts` | Modify — extract `nestGeneration()`, fix usageDetails (add `total`), ChatML output format, tool endTime, replace memory listeners with lifecycle events + `memoryMap`, buffered moderation guardrail |
+| `src/types/events.ts`              | Modify — add `MemoryGeneration` type, replace memory.observation/memory.reflection with 6 lifecycle events, enrich moderation payloads |
+| `src/agent/memory/observer.ts`     | Modify — return `ObserveResult` with generation metadata |
+| `src/agent/memory/reflector.ts`    | Modify — return `ReflectResult` with generations array |
+| `src/agent/memory/generation.ts`   | New — shared `buildMemoryGeneration()` helper |
+| `src/agent/memory/processor.ts`    | Modify — emit memory lifecycle events, consume new return types, try/catch for graceful degradation |
+| `src/agent/orchestrator.ts`        | Modify — emit `input.flagged`/`input.clean` moderation events |
+| `src/infra/log/bridge.ts`          | Modify — update memory event listeners to `.completed` variants |
+| `src/infra/log/jsonl.ts`           | No change — uses wildcard listener |
 
 ## Acceptance criteria
 
-- [ ] `usageDetails` uses `input`/`output`/`total` — verified in Langfuse dashboard that token counts and costs appear
-- [ ] `setTraceIO` output uses truncated text (consistent with agent observation)
-- [ ] Memory observer LLM call appears as a `generation` observation in Langfuse with model, input (system prompt + messages), output, and token usage
-- [ ] Memory reflector LLM calls appear as `generation` observations — one per compression level attempted
-- [ ] Observer generation is nested inside a `memory-observation` span
-- [ ] Reflector generations are nested inside a `memory-reflection-L{N}` span
-- [ ] `memory.observation.failed` / `memory.reflection.failed` produce ERROR-level spans in Langfuse
-- [ ] Observer/reflector errors don't crash the agent (graceful degradation)
-- [ ] `input.clean` produces a `guardrail` observation (pass) at the trace root, sibling of the agent span
-- [ ] `input.flagged` produces a `guardrail` observation (fail) with WARNING level, flagged categories, and category scores
-- [ ] Flagged input trace shows only the failed guardrail (no agent span)
-- [ ] Moderation events fire inside the trace context (carry `traceId`, no `agentId` needed)
-- [ ] Console and markdown log output unchanged (bridge still logs token compression)
-- [ ] All existing tests pass
-- [ ] No new runtime dependencies
+- [x] `usageDetails` uses `input`/`output`/`total` — verified in Langfuse dashboard that token counts and costs appear
+- [x] `setTraceIO` output uses truncated text (consistent with agent observation)
+- [x] Generation output in OpenAI ChatML format (`role`, `content`, `tool_calls` with `type`/`function`)
+- [x] Tool observations show non-zero duration (endTime uses `Date.now()`)
+- [x] Memory observer LLM call appears as a `generation` observation in Langfuse with model, input (system prompt + messages), output, and token usage
+- [x] Memory reflector LLM calls appear as `generation` observations — one per compression level attempted
+- [x] Observer generation is nested inside a `memory-observation` span
+- [x] Reflector generations are nested inside a `memory-reflection-L{N}` span
+- [x] `memory.observation.failed` / `memory.reflection.failed` produce ERROR-level spans in Langfuse
+- [x] Observer/reflector errors don't crash the agent (graceful degradation)
+- [x] `input.clean` produces a `guardrail` observation (pass) as first child of agent span (buffered pattern)
+- [x] `input.flagged` produces a `guardrail` observation (fail) with WARNING level, flagged categories, and category scores
+- [x] Moderation events buffered and replayed on `session.opened` (no agent context at emit time)
+- [x] Console and markdown log output unchanged (bridge still logs token compression)
+- [x] All existing tests pass
+- [x] No new runtime dependencies
