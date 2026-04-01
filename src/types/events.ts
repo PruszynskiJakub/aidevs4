@@ -2,6 +2,17 @@
 
 export type TokenPair = { promptTokens: number; completionTokens: number };
 
+/** LLM call metadata captured from memory observer/reflector calls. */
+export type MemoryGeneration = {
+  name: string;
+  model: string;
+  input: unknown[];
+  output: { content: string | null };
+  usage: { input: number; output: number; total: number };
+  durationMs: number;
+  startTime: number;
+};
+
 /**
  * Typed event registry. Each key is a domain state transition;
  * the value is the structured payload for that transition.
@@ -73,16 +84,24 @@ export interface EventMap {
     failed: number;
   };
 
-  // ── Memory ───────────────────────────────────────────────
-  "memory.observation": {
+  // ── Memory — observation lifecycle ──────────────────────
+  "memory.observation.started": { tokensBefore: number };
+  "memory.observation.completed": {
     tokensBefore: number;
     tokensAfter: number;
+    generation: MemoryGeneration;
   };
-  "memory.reflection": {
+  "memory.observation.failed": { error: string };
+
+  // ── Memory — reflection lifecycle ─────────────────────
+  "memory.reflection.started": { level: number; tokensBefore: number };
+  "memory.reflection.completed": {
     level: number;
     tokensBefore: number;
     tokensAfter: number;
+    generations: MemoryGeneration[];
   };
+  "memory.reflection.failed": { level: number; error: string };
 
   // ── Agent lifecycle ────────────────────────────────────────
   "agent.started": {
@@ -108,8 +127,8 @@ export interface EventMap {
   "agent.answered": { text: string | null };
 
   // ── Moderation ───────────────────────────────────────────
-  "input.flagged": { categories: string[] };
-  "input.clean": {};
+  "input.flagged": { categories: string[]; categoryScores: Record<string, number> };
+  "input.clean": { durationMs: number };
 }
 
 // ── Envelope ────────────────────────────────────────────────

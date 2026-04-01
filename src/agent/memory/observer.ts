@@ -1,4 +1,5 @@
 import type { LLMProvider, LLMMessage } from "../../types/llm.ts";
+import type { MemoryGeneration } from "../../types/events.ts";
 import { promptService } from "../../llm/prompt.ts";
 import { config } from "../../config/index.ts";
 import { estimateTokens } from "../../utils/tokens.ts";
@@ -42,11 +43,16 @@ export function serializeMessages(messages: LLMMessage[]): string {
   return lines.join("\n\n");
 }
 
+export interface ObserveResult {
+  text: string;
+  generation: MemoryGeneration;
+}
+
 export async function observe(
   messages: LLMMessage[],
   existingObservations: string,
   provider: LLMProvider,
-): Promise<string> {
+): Promise<ObserveResult> {
   const serialized = serializeMessages(messages);
 
   const prompt = await promptService.load("observer", {
@@ -54,16 +60,33 @@ export async function observe(
     messages: serialized,
   });
 
+  const model = prompt.model ?? config.models.memory;
+  const inputMessages = [{ role: "system" as const, content: prompt.content }];
+
+  const startTime = Date.now();
   const response = await provider.chatCompletion({
-    model: prompt.model ?? config.models.memory,
-    messages: [
-      { role: "system", content: prompt.content },
-    ],
+    model,
+    messages: inputMessages,
     ...(prompt.temperature !== undefined && { temperature: prompt.temperature }),
   });
+  const durationMs = Date.now() - startTime;
 
   const result = response.content?.trim() ?? "";
-  if (result === NO_NEW || !result) return "";
+  const text = (result === NO_NEW || !result) ? "" : result;
 
-  return result;
+  const generation: MemoryGeneration = {
+    name: "memory-observer",
+    model,
+    input: inputMessages,
+    output: { content: response.content },
+    usage: {
+      input: response.usage?.promptTokens ?? 0,
+      output: response.usage?.completionTokens ?? 0,
+      total: (response.usage?.promptTokens ?? 0) + (response.usage?.completionTokens ?? 0),
+    },
+    durationMs,
+    startTime,
+  };
+
+  return { text, generation };
 }

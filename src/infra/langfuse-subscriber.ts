@@ -176,8 +176,9 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
         gen.update({
           output: e.data.output,
           usageDetails: {
-            input: e.data.usage.input,
-            output: e.data.usage.output,
+            promptTokens: e.data.usage.input,
+            completionTokens: e.data.usage.output,
+            totalTokens: e.data.usage.total,
           },
           endTime: toDate(e.data.startTime + e.data.durationMs),
         });
@@ -258,7 +259,7 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
         entry.obs.update({ output: answerText });
         // For root agent, also set at trace level
         if ((e.depth ?? 0) === 0) {
-          entry.obs.setTraceIO({ output: e.data.text });
+          entry.obs.setTraceIO({ output: answerText });
         }
       });
     }),
@@ -322,45 +323,176 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     }),
   );
 
-  // ── memory.observation → memory compression span ──────────
+  // ── Memory maps ─────────────────────────────────────────────
+  const memoryMap = new Map<string, Observation>();
+
+  // ── memory.observation lifecycle ──────────────────────────
 
   unsubs.push(
-    bus.on("memory.observation", (e) => {
+    bus.on("memory.observation.started", (e) => {
       const agentId = e.agentId;
       if (!agentId) return;
       withAgentCtx(agentId, () => {
         const parent = parentFor(agentId);
         if (!parent) return;
-        const obs = parent.startObservation("memory-observation", {
+        const span = parent.startObservation("memory-observation", {
           input: { tokensBefore: e.data.tokensBefore },
+          startTime: toDate(Date.now()),
         });
-        obs.update({
-          output: { tokensAfter: e.data.tokensAfter, compression: `${e.data.tokensBefore} → ${e.data.tokensAfter}` },
-          level: "DEBUG",
-        });
-        obs.end();
+        memoryMap.set(`${agentId}:observation`, span);
       });
     }),
   );
 
-  // ── memory.reflection → memory reflection span ───────────
+  unsubs.push(
+    bus.on("memory.observation.completed", (e) => {
+      const agentId = e.agentId;
+      if (!agentId) return;
+      withAgentCtx(agentId, () => {
+        const span = memoryMap.get(`${agentId}:observation`);
+        if (!span) return;
+        const gen = e.data.generation;
+        const genObs = span.startObservation(gen.name, {
+          model: gen.model,
+          input: gen.input,
+          startTime: toDate(gen.startTime),
+        }, { asType: "generation" });
+        genObs.update({
+          output: gen.output,
+          usageDetails: {
+            promptTokens: gen.usage.input,
+            completionTokens: gen.usage.output,
+            totalTokens: gen.usage.total,
+          },
+          endTime: toDate(gen.startTime + gen.durationMs),
+        });
+        genObs.end();
+        span.update({
+          output: { tokensAfter: e.data.tokensAfter, compression: `${e.data.tokensBefore} → ${e.data.tokensAfter}` },
+          endTime: toDate(Date.now()),
+        });
+        span.end();
+        memoryMap.delete(`${agentId}:observation`);
+      });
+    }),
+  );
 
   unsubs.push(
-    bus.on("memory.reflection", (e) => {
+    bus.on("memory.observation.failed", (e) => {
+      const agentId = e.agentId;
+      if (!agentId) return;
+      const span = memoryMap.get(`${agentId}:observation`);
+      if (!span) return;
+      span.update({ level: "ERROR", statusMessage: e.data.error });
+      span.end();
+      memoryMap.delete(`${agentId}:observation`);
+    }),
+  );
+
+  // ── memory.reflection lifecycle ───────────────────────────
+
+  unsubs.push(
+    bus.on("memory.reflection.started", (e) => {
       const agentId = e.agentId;
       if (!agentId) return;
       withAgentCtx(agentId, () => {
         const parent = parentFor(agentId);
         if (!parent) return;
-        const obs = parent.startObservation(`memory-reflection-L${e.data.level}`, {
+        const span = parent.startObservation(`memory-reflection-L${e.data.level}`, {
           input: { level: e.data.level, tokensBefore: e.data.tokensBefore },
+          startTime: toDate(Date.now()),
         });
-        obs.update({
-          output: { tokensAfter: e.data.tokensAfter, compression: `${e.data.tokensBefore} → ${e.data.tokensAfter}` },
-          level: "DEBUG",
-        });
-        obs.end();
+        memoryMap.set(`${agentId}:reflection`, span);
       });
+    }),
+  );
+
+  unsubs.push(
+    bus.on("memory.reflection.completed", (e) => {
+      const agentId = e.agentId;
+      if (!agentId) return;
+      withAgentCtx(agentId, () => {
+        const span = memoryMap.get(`${agentId}:reflection`);
+        if (!span) return;
+        for (const gen of e.data.generations) {
+          const genObs = span.startObservation(gen.name, {
+            model: gen.model,
+            input: gen.input,
+            startTime: toDate(gen.startTime),
+          }, { asType: "generation" });
+          genObs.update({
+            output: gen.output,
+            usageDetails: {
+              promptTokens: gen.usage.input,
+              completionTokens: gen.usage.output,
+              totalTokens: gen.usage.total,
+            },
+            endTime: toDate(gen.startTime + gen.durationMs),
+          });
+          genObs.end();
+        }
+        span.update({
+          output: { tokensAfter: e.data.tokensAfter, compression: `${e.data.tokensBefore} → ${e.data.tokensAfter}` },
+          endTime: toDate(Date.now()),
+        });
+        span.end();
+        memoryMap.delete(`${agentId}:reflection`);
+      });
+    }),
+  );
+
+  unsubs.push(
+    bus.on("memory.reflection.failed", (e) => {
+      const agentId = e.agentId;
+      if (!agentId) return;
+      const span = memoryMap.get(`${agentId}:reflection`);
+      if (!span) return;
+      span.update({ level: "ERROR", statusMessage: e.data.error });
+      span.end();
+      memoryMap.delete(`${agentId}:reflection`);
+    }),
+  );
+
+  // ── input moderation → guardrail observation ─────────────
+
+  unsubs.push(
+    bus.on("input.clean", (e) => {
+      // Guardrail at trace root — use the root agent's context if available
+      const agentId = e.agentId ?? e.rootAgentId;
+      if (agentId) {
+        withAgentCtx(agentId, () => {
+          const agent = agentMap.get(agentId)!.obs;
+          const guard = agent.startObservation("input-moderation", {
+            input: { check: "openai-moderation" },
+          }, { asType: "guardrail" });
+          guard.update({
+            output: { passed: true },
+            metadata: { durationMs: e.data.durationMs },
+          });
+          guard.end();
+        });
+      }
+    }),
+  );
+
+  unsubs.push(
+    bus.on("input.flagged", (e) => {
+      const agentId = e.agentId ?? e.rootAgentId;
+      if (agentId) {
+        withAgentCtx(agentId, () => {
+          const agent = agentMap.get(agentId)!.obs;
+          const guard = agent.startObservation("input-moderation", {
+            input: { check: "openai-moderation" },
+          }, { asType: "guardrail" });
+          guard.update({
+            output: { passed: false, categories: e.data.categories },
+            level: "WARNING",
+            statusMessage: `Flagged: ${e.data.categories.join(", ")}`,
+            metadata: { categoryScores: e.data.categoryScores },
+          });
+          guard.end();
+        });
+      }
     }),
   );
 
@@ -371,5 +503,6 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     turnStartMap.clear();
     toolMap.clear();
     agentAnswerMap.clear();
+    memoryMap.clear();
   };
 }

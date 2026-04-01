@@ -88,16 +88,32 @@ export async function processMemory(
 
   // Run observer
   const tokensBefore = state.observationTokenCount;
-  const newObservations = await observe(
-    messagesToObserve,
-    state.activeObservations,
-    provider,
-  );
+  bus.emit("memory.observation.started", { tokensBefore });
+
+  let newObservations: string;
+  let observationGeneration;
+  try {
+    const result = await observe(
+      messagesToObserve,
+      state.activeObservations,
+      provider,
+    );
+    newObservations = result.text;
+    observationGeneration = result.generation;
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    bus.emit("memory.observation.failed", { error });
+    return passThrough(systemPrompt, messages, state);
+  }
 
   const updatedObservations = combineObservations(state.activeObservations, newObservations);
 
   const observationTokens = estimateTokens(updatedObservations);
-  bus.emit("memory.observation", { tokensBefore, tokensAfter: observationTokens });
+  bus.emit("memory.observation.completed", {
+    tokensBefore,
+    tokensAfter: observationTokens,
+    generation: observationGeneration,
+  });
 
   // Save observer debug artifact
   await saveDebugArtifact(sessionId, "observer", newObservations || "(no new observations)", {
@@ -119,30 +135,40 @@ export async function processMemory(
   // Check if reflection is needed
   if (observationTokens > memConfig.reflectionThreshold) {
     const reflectTokensBefore = observationTokens;
-    const compressed = await reflect(
-      updatedObservations,
-      memConfig.reflectionTarget,
-      provider,
-    );
+    const level = newState.generationCount + 1;
+    bus.emit("memory.reflection.started", { level, tokensBefore: reflectTokensBefore });
 
-    const compressedTokens = estimateTokens(compressed);
-    newState.activeObservations = compressed;
-    newState.observationTokenCount = compressedTokens;
-    newState.generationCount += 1;
+    try {
+      const reflectResult = await reflect(
+        updatedObservations,
+        memConfig.reflectionTarget,
+        provider,
+      );
 
-    bus.emit("memory.reflection", {
-      level: newState.generationCount,
-      tokensBefore: reflectTokensBefore,
-      tokensAfter: compressedTokens,
-    });
+      const compressedTokens = estimateTokens(reflectResult.text);
+      newState.activeObservations = reflectResult.text;
+      newState.observationTokenCount = compressedTokens;
+      newState.generationCount = level;
 
-    // Save reflector debug artifact
-    await saveDebugArtifact(sessionId, "reflector", compressed, {
-      generationCount: newState.generationCount,
-      tokensBefore: reflectTokensBefore,
-      tokensAfter: compressedTokens,
-      target: memConfig.reflectionTarget,
-    });
+      bus.emit("memory.reflection.completed", {
+        level,
+        tokensBefore: reflectTokensBefore,
+        tokensAfter: compressedTokens,
+        generations: reflectResult.generations,
+      });
+
+      // Save reflector debug artifact
+      await saveDebugArtifact(sessionId, "reflector", reflectResult.text, {
+        generationCount: newState.generationCount,
+        tokensBefore: reflectTokensBefore,
+        tokensAfter: compressedTokens,
+        target: memConfig.reflectionTarget,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      bus.emit("memory.reflection.failed", { level, error });
+      // Continue with unreflected observations — graceful degradation
+    }
   }
 
   // Return processed context: drop observed messages, keep tail
@@ -170,18 +196,34 @@ export async function flushMemory(
   if (unobservedTokens < 1_000) return state;
 
   const tokensBefore = state.observationTokenCount;
-  const newObservations = await observe(
-    unobservedMessages,
-    state.activeObservations,
-    provider,
-  );
+  bus.emit("memory.observation.started", { tokensBefore });
+
+  let newObservations: string;
+  let observationGeneration;
+  try {
+    const result = await observe(
+      unobservedMessages,
+      state.activeObservations,
+      provider,
+    );
+    newObservations = result.text;
+    observationGeneration = result.generation;
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    bus.emit("memory.observation.failed", { error });
+    return state;
+  }
 
   if (!newObservations) return state;
 
   const updatedObservations = combineObservations(state.activeObservations, newObservations);
 
   const observationTokens = estimateTokens(updatedObservations);
-  bus.emit("memory.observation", { tokensBefore, tokensAfter: observationTokens });
+  bus.emit("memory.observation.completed", {
+    tokensBefore,
+    tokensAfter: observationTokens,
+    generation: observationGeneration,
+  });
 
   await saveDebugArtifact(sessionId, "observer", newObservations, {
     flush: true,

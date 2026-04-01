@@ -165,10 +165,11 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args[1]).toBe("2.50s");
   });
 
-  it("memory.observation → log.memoryObserve()", () => {
-    bus.emit("memory.observation", {
+  it("memory.observation.completed → log.memoryObserve()", () => {
+    bus.emit("memory.observation.completed", {
       tokensBefore: 30000,
       tokensAfter: 15000,
+      generation: { name: "memory-observer", model: "m", input: [], output: { content: "" }, usage: { input: 0, output: 0, total: 0 }, durationMs: 0, startTime: 0 },
     });
 
     const call = calls.find((c) => c.method === "memoryObserve");
@@ -176,11 +177,12 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args).toEqual([30000, 15000]);
   });
 
-  it("memory.reflection → log.memoryReflect()", () => {
-    bus.emit("memory.reflection", {
+  it("memory.reflection.completed → log.memoryReflect()", () => {
+    bus.emit("memory.reflection.completed", {
       level: 2,
       tokensBefore: 40000,
       tokensAfter: 20000,
+      generations: [],
     });
 
     const call = calls.find((c) => c.method === "memoryReflect");

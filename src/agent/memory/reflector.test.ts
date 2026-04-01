@@ -28,7 +28,9 @@ describe("reflect", () => {
     const provider = createMockProvider([compressed]);
 
     const result = await reflect(observations, 20_000, provider);
-    expect(result).toBe(compressed);
+    expect(result.text).toBe(compressed);
+    expect(result.generations).toHaveLength(1);
+    expect(result.generations[0].name).toBe("memory-reflector-L0");
   });
 
   test("escalates compression levels when target not reached", async () => {
@@ -39,7 +41,8 @@ describe("reflect", () => {
     const provider = createMockProvider([level0, level1, level2]);
 
     const result = await reflect(observations, 20_000, provider);
-    expect(result).toBe(level2);
+    expect(result.text).toBe(level2);
+    expect(result.generations).toHaveLength(3);
   });
 
   test("returns best result when no level reaches target", async () => {
@@ -52,6 +55,7 @@ describe("reflect", () => {
 
     const result = await reflect(observations, 20_000, provider);
     // Should return the smallest result (level1)
-    expect(result.length).toBeLessThanOrEqual(120_000);
+    expect(result.text.length).toBeLessThanOrEqual(120_000);
+    expect(result.generations).toHaveLength(3);
   });
 });

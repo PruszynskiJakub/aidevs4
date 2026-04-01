@@ -127,14 +127,14 @@ export function attachLoggerListener(
   );
 
   unsubs.push(
-    bus.on("memory.observation", (e) => {
+    bus.on("memory.observation.completed", (e) => {
       if (!mine(e.sessionId)) return;
       log.memoryObserve(e.data.tokensBefore, e.data.tokensAfter);
     }),
   );
 
   unsubs.push(
-    bus.on("memory.reflection", (e) => {
+    bus.on("memory.reflection.completed", (e) => {
       if (!mine(e.sessionId)) return;
       log.memoryReflect(
         e.data.level,

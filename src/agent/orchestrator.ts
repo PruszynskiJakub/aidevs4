@@ -3,6 +3,7 @@ import { sessionService } from "./session.ts";
 import { agentsService } from "./agents.ts";
 import { log } from "../infra/log/logger.ts";
 import { moderateInput, assertNotFlagged } from "../infra/guard.ts";
+import { bus } from "../infra/events.ts";
 import { randomUUID } from "node:crypto";
 import { randomSessionId } from "../utils/id.ts";
 import type { LLMMessage } from "../types/llm.ts";
@@ -52,7 +53,22 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
   await agentsService.get(assistantName);
 
   // Moderation guardrail — check user input before it enters the session
+  const moderationStart = Date.now();
   const moderation = await moderateInput(opts.prompt);
+  const moderationDurationMs = Date.now() - moderationStart;
+
+  if (moderation.flagged) {
+    const flaggedCategories = Object.entries(moderation.categories)
+      .filter(([, v]) => v)
+      .map(([k]) => k);
+    bus.emit("input.flagged", {
+      categories: flaggedCategories,
+      categoryScores: moderation.categoryScores,
+    });
+  } else {
+    bus.emit("input.clean", { durationMs: moderationDurationMs });
+  }
+
   assertNotFlagged(moderation);
 
   if (!session.assistant) {
