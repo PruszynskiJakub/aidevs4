@@ -41,18 +41,11 @@ usageDetails: {
 }
 ```
 
-Langfuse expects `promptTokens` and `completionTokens` (or OpenAI's
-`prompt_tokens`/`completion_tokens`). Using `input`/`output` means Langfuse
-stores them as arbitrary metadata — **cost calculation and token usage
-dashboards don't work** for any generation span.
-
-Confirmed from `@langfuse/tracing` SDK:
-```typescript
-type LangfuseGenerationAttributes = {
-  usageDetails?: { [key: string]: number } | OpenAiUsage;
-  // SDK examples all use: { promptTokens, completionTokens, totalTokens }
-};
-```
+Langfuse expects `input`, `output`, and `total` as `usageDetails` keys.
+The original code was missing the `total` field — without it, Langfuse
+cannot compute aggregate token counts properly. The keys `input`/`output`
+are correct (Langfuse maps OpenAI's `prompt_tokens`→`input`,
+`completion_tokens`→`output` internally).
 
 ### Problem 3 — Moderation events defined but never emitted
 
@@ -250,9 +243,9 @@ const genObs = span.startObservation(gen.name, {
 genObs.update({
   output: gen.output,
   usageDetails: {
-    promptTokens: gen.usage.input,
-    completionTokens: gen.usage.output,
-    totalTokens: gen.usage.total,
+    input: gen.usage.input,
+    output: gen.usage.output,
+    total: gen.usage.total,
   },
   endTime: toDate(gen.startTime + gen.durationMs),
 });
@@ -462,12 +455,14 @@ usageDetails: {
 **After:**
 ```typescript
 usageDetails: {
-  promptTokens: e.data.usage.input,
-  completionTokens: e.data.usage.output,
-  totalTokens: e.data.usage.total,
+  input: e.data.usage.input,
+  output: e.data.usage.output,
+  total: e.data.usage.total,
 },
 ```
 
+Langfuse expects `input`/`output`/`total` as usage keys (not
+`promptTokens`/`completionTokens`). The fix adds the missing `total` field.
 This applies to both existing plan/act generation spans AND the new memory
 generation spans (which use the same field names via `MemoryGeneration`).
 

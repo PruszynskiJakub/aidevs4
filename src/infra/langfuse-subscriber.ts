@@ -27,6 +27,35 @@ function truncate(s: string, max = 2000): string {
   return s.slice(0, max) + `… [truncated, ${s.length} chars total]`;
 }
 
+type GenerationData = {
+  name: string;
+  model: string;
+  input: unknown[];
+  output: unknown;
+  usage: { input: number; output: number; total: number };
+  startTime: number;
+  durationMs: number;
+};
+
+/** Create a generation child observation under `parent`, with usage and timing. */
+function nestGeneration(parent: Observation, gen: GenerationData): void {
+  const genObs = parent.startObservation(gen.name, {
+    model: gen.model,
+    input: gen.input,
+    startTime: toDate(gen.startTime),
+  }, { asType: "generation" });
+  genObs.update({
+    output: gen.output,
+    usageDetails: {
+      input: gen.usage.input,
+      output: gen.usage.output,
+      total: gen.usage.total,
+    },
+    endTime: toDate(gen.startTime + gen.durationMs),
+  });
+  genObs.end();
+}
+
 /**
  * Attaches a Langfuse subscriber to the event bus.
  * Maps domain events → Langfuse observations.
@@ -64,6 +93,12 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
   const agentAnswerMap = new Map<string, string>();  // agentId → answer text
   const unsubs: (() => void)[] = [];
 
+  // Buffered moderation data — moderation fires before agent span exists
+  // (no agentId/sessionId in context yet), so we store the latest result
+  // and replay it when session.opened creates the root agent span.
+  type ModerationBuffer = { passed: true; durationMs: number } | { passed: false; categories: string[]; categoryScores: Record<string, number> };
+  let pendingModeration: ModerationBuffer | null = null;
+
   /** Run `fn` inside the saved OTel context for the given agent. */
   function withAgentCtx<T>(agentId: string, fn: () => T): T | undefined {
     const entry = agentMap.get(agentId);
@@ -74,6 +109,29 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
   /** Get the current parent for nesting: turn span if active, otherwise agent span. */
   function parentFor(agentId: string): Observation | undefined {
     return turnMap.get(agentId) ?? agentMap.get(agentId)?.obs;
+  }
+
+  /** Create a guardrail observation from buffered moderation data. */
+  function flushModeration(agentObs: Observation): void {
+    const buf = pendingModeration;
+    if (!buf) return;
+    pendingModeration = null;
+
+    const guard = agentObs.startObservation("input-moderation", {
+      input: { check: "openai-moderation" },
+    }, { asType: "guardrail" });
+
+    if (buf.passed) {
+      guard.update({ output: { passed: true }, metadata: { durationMs: buf.durationMs } });
+    } else {
+      guard.update({
+        output: { passed: false, categories: buf.categories },
+        level: "WARNING",
+        statusMessage: `Flagged: ${buf.categories.join(", ")}`,
+        metadata: { categoryScores: buf.categoryScores },
+      });
+    }
+    guard.end();
   }
 
   // ── session.opened → create agent observation ─────────────
@@ -94,6 +152,8 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
             const obs = startObservation(e.data.assistant, { input }, { asType: "agent" });
             obs.setTraceIO({ input });
             agentMap.set(agentId, { obs, ctx: otelContext.active() });
+            // Flush any buffered moderation result as the first child
+            flushModeration(obs);
           },
         );
       } else {
@@ -164,25 +224,7 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
         const parent = parentFor(agentId);
         if (!parent) return;
 
-        const gen = parent.startObservation(
-          `${e.data.name}-llm`,
-          {
-            model: e.data.model,
-            input: e.data.input,
-            startTime: toDate(e.data.startTime),
-          },
-          { asType: "generation" },
-        );
-        gen.update({
-          output: e.data.output,
-          usageDetails: {
-            promptTokens: e.data.usage.input,
-            completionTokens: e.data.usage.output,
-            totalTokens: e.data.usage.total,
-          },
-          endTime: toDate(e.data.startTime + e.data.durationMs),
-        });
-        gen.end();
+        nestGeneration(parent, { ...e.data, name: `${e.data.name}-llm` });
       });
     }),
   );
@@ -305,6 +347,8 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     });
     agentMap.delete(agentId);
     agentAnswerMap.delete(agentId);
+    memoryMap.delete(`${agentId}:observation`);
+    memoryMap.delete(`${agentId}:reflection`);
   }
 
   unsubs.push(
@@ -351,22 +395,7 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
       withAgentCtx(agentId, () => {
         const span = memoryMap.get(`${agentId}:observation`);
         if (!span) return;
-        const gen = e.data.generation;
-        const genObs = span.startObservation(gen.name, {
-          model: gen.model,
-          input: gen.input,
-          startTime: toDate(gen.startTime),
-        }, { asType: "generation" });
-        genObs.update({
-          output: gen.output,
-          usageDetails: {
-            promptTokens: gen.usage.input,
-            completionTokens: gen.usage.output,
-            totalTokens: gen.usage.total,
-          },
-          endTime: toDate(gen.startTime + gen.durationMs),
-        });
-        genObs.end();
+        nestGeneration(span, e.data.generation);
         span.update({
           output: { tokensAfter: e.data.tokensAfter, compression: `${e.data.tokensBefore} → ${e.data.tokensAfter}` },
           endTime: toDate(Date.now()),
@@ -415,21 +444,7 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
         const span = memoryMap.get(`${agentId}:reflection`);
         if (!span) return;
         for (const gen of e.data.generations) {
-          const genObs = span.startObservation(gen.name, {
-            model: gen.model,
-            input: gen.input,
-            startTime: toDate(gen.startTime),
-          }, { asType: "generation" });
-          genObs.update({
-            output: gen.output,
-            usageDetails: {
-              promptTokens: gen.usage.input,
-              completionTokens: gen.usage.output,
-              totalTokens: gen.usage.total,
-            },
-            endTime: toDate(gen.startTime + gen.durationMs),
-          });
-          genObs.end();
+          nestGeneration(span, gen);
         }
         span.update({
           output: { tokensAfter: e.data.tokensAfter, compression: `${e.data.tokensBefore} → ${e.data.tokensAfter}` },
@@ -453,46 +468,21 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     }),
   );
 
-  // ── input moderation → guardrail observation ─────────────
+  // ── input moderation → buffer for replay on session.opened ──
 
   unsubs.push(
     bus.on("input.clean", (e) => {
-      // Guardrail at trace root — use the root agent's context if available
-      const agentId = e.agentId ?? e.rootAgentId;
-      if (agentId) {
-        withAgentCtx(agentId, () => {
-          const agent = agentMap.get(agentId)!.obs;
-          const guard = agent.startObservation("input-moderation", {
-            input: { check: "openai-moderation" },
-          }, { asType: "guardrail" });
-          guard.update({
-            output: { passed: true },
-            metadata: { durationMs: e.data.durationMs },
-          });
-          guard.end();
-        });
-      }
+      pendingModeration = { passed: true, durationMs: e.data.durationMs };
     }),
   );
 
   unsubs.push(
     bus.on("input.flagged", (e) => {
-      const agentId = e.agentId ?? e.rootAgentId;
-      if (agentId) {
-        withAgentCtx(agentId, () => {
-          const agent = agentMap.get(agentId)!.obs;
-          const guard = agent.startObservation("input-moderation", {
-            input: { check: "openai-moderation" },
-          }, { asType: "guardrail" });
-          guard.update({
-            output: { passed: false, categories: e.data.categories },
-            level: "WARNING",
-            statusMessage: `Flagged: ${e.data.categories.join(", ")}`,
-            metadata: { categoryScores: e.data.categoryScores },
-          });
-          guard.end();
-        });
-      }
+      pendingModeration = {
+        passed: false,
+        categories: e.data.categories,
+        categoryScores: e.data.categoryScores,
+      };
     }),
   );
 
@@ -504,5 +494,6 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
     toolMap.clear();
     agentAnswerMap.clear();
     memoryMap.clear();
+    pendingModeration = null;
   };
 }

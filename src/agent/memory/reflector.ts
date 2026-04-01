@@ -3,6 +3,7 @@ import type { MemoryGeneration } from "../../types/events.ts";
 import { promptService } from "../../llm/prompt.ts";
 import { config } from "../../config/index.ts";
 import { estimateTokens } from "../../utils/tokens.ts";
+import { buildMemoryGeneration } from "./generation.ts";
 
 const COMPRESSION_GUIDANCE: Record<number, string> = {
   0: "Level 0 — Reorganize: Merge duplicate observations, group by topic, remove redundancies. Keep all priority levels intact.",
@@ -47,19 +48,9 @@ export async function reflect(
     });
     const durationMs = Date.now() - startTime;
 
-    generations.push({
-      name: `memory-reflector-L${level}`,
-      model,
-      input: inputMessages,
-      output: { content: response.content },
-      usage: {
-        input: response.usage?.promptTokens ?? 0,
-        output: response.usage?.completionTokens ?? 0,
-        total: (response.usage?.promptTokens ?? 0) + (response.usage?.completionTokens ?? 0),
-      },
-      durationMs,
-      startTime,
-    });
+    generations.push(buildMemoryGeneration(
+      `memory-reflector-L${level}`, model, inputMessages, response, startTime, durationMs,
+    ));
 
     const result = response.content?.trim() ?? observations;
     const resultTokens = estimateTokens(result);

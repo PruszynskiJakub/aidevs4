@@ -3,6 +3,7 @@ import type { MemoryGeneration } from "../../types/events.ts";
 import { promptService } from "../../llm/prompt.ts";
 import { config } from "../../config/index.ts";
 import { estimateTokens } from "../../utils/tokens.ts";
+import { buildMemoryGeneration } from "./generation.ts";
 
 const NO_NEW = "NO_NEW_OBSERVATIONS";
 
@@ -74,19 +75,9 @@ export async function observe(
   const result = response.content?.trim() ?? "";
   const text = (result === NO_NEW || !result) ? "" : result;
 
-  const generation: MemoryGeneration = {
-    name: "memory-observer",
-    model,
-    input: inputMessages,
-    output: { content: response.content },
-    usage: {
-      input: response.usage?.promptTokens ?? 0,
-      output: response.usage?.completionTokens ?? 0,
-      total: (response.usage?.promptTokens ?? 0) + (response.usage?.completionTokens ?? 0),
-    },
-    durationMs,
-    startTime,
-  };
+  const generation = buildMemoryGeneration(
+    "memory-observer", model, inputMessages, response, startTime, durationMs,
+  );
 
   return { text, generation };
 }
