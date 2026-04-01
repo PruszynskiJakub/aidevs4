@@ -3,21 +3,21 @@ import {
   deriveSessionId,
   toSlackMarkdown,
   splitMessage,
-  formatStatusLine,
+  StatusTracker,
 } from "./slack-utils.ts";
 import type { BusEvent } from "./types/events.ts";
 
 // ── deriveSessionId ────────────────────────────────────────
 
 describe("deriveSessionId", () => {
-  test("uses thread_ts when present", () => {
+  test("uses thread_ts when present and replaces dots with dashes", () => {
     const id = deriveSessionId("T1", "C1", "1715000000.000100", "1715000001.000200");
-    expect(id).toBe("slack-T1-C1-1715000000.000100");
+    expect(id).toBe("slack-T1-C1-1715000000-000100");
   });
 
   test("falls back to message ts when no thread_ts", () => {
     const id = deriveSessionId("T1", "C1", undefined, "1715000001.000200");
-    expect(id).toBe("slack-T1-C1-1715000001.000200");
+    expect(id).toBe("slack-T1-C1-1715000001-000200");
   });
 
   test("different channels produce different session IDs", () => {
@@ -115,9 +115,9 @@ describe("splitMessage", () => {
   });
 });
 
-// ── formatStatusLine ───────────────────────────────────────
+// ── StatusTracker ──────────────────────────────────────────
 
-describe("formatStatusLine", () => {
+describe("StatusTracker", () => {
   const makeEvent = (type: string, data: Record<string, unknown>): BusEvent => ({
     id: "test",
     type,
@@ -126,30 +126,66 @@ describe("formatStatusLine", () => {
     data,
   });
 
-  test("formats tool.called events", () => {
-    const result = formatStatusLine(makeEvent("tool.called", { name: "web", args: "{}" }));
-    expect(result).toBe("Using *web*…");
+  test("shows active tool on tool.called", () => {
+    const tracker = new StatusTracker();
+    const result = tracker.update(makeEvent("tool.called", { name: "web" }));
+    expect(result).toContain("`web`");
+    expect(result).toContain(":gear:");
   });
 
-  test("formats tool.succeeded events", () => {
-    const result = formatStatusLine(makeEvent("tool.succeeded", { name: "web", durationMs: 123 }));
-    expect(result).toBe("*web* done (123ms)");
+  test("shows completed tool after tool.succeeded", () => {
+    const tracker = new StatusTracker();
+    tracker.update(makeEvent("tool.called", { name: "web" }));
+    const result = tracker.update(makeEvent("tool.succeeded", { name: "web", durationMs: 100 }));
+    expect(result).toContain(":white_check_mark:");
+    expect(result).toContain("`web`");
+    expect(result).not.toContain(":gear:"); // no longer active
   });
 
-  test("formats tool.failed events", () => {
-    const result = formatStatusLine(makeEvent("tool.failed", { name: "web", error: "timeout" }));
-    expect(result).toBe("*web* failed: timeout");
+  test("shows failed tool with x emoji", () => {
+    const tracker = new StatusTracker();
+    tracker.update(makeEvent("tool.called", { name: "web" }));
+    const result = tracker.update(makeEvent("tool.failed", { name: "web", error: "timeout" }));
+    expect(result).toContain(":x:");
+    expect(result).toContain("`web`");
   });
 
-  test("truncates long error messages", () => {
-    const longError = "x".repeat(200);
-    const result = formatStatusLine(makeEvent("tool.failed", { name: "web", error: longError }));
-    expect(result!.length).toBeLessThanOrEqual(120);
+  test("tracks multiple concurrent tools", () => {
+    const tracker = new StatusTracker();
+    tracker.update(makeEvent("tool.called", { name: "glob" }));
+    const result = tracker.update(makeEvent("tool.called", { name: "grep" }));
+    expect(result).toContain("`glob`");
+    expect(result).toContain("`grep`");
+    expect(result).toContain(":gear:");
   });
 
-  test("returns null for unhandled events", () => {
-    expect(formatStatusLine(makeEvent("generation.started", {}))).toBeNull();
-    expect(formatStatusLine(makeEvent("session.opened", {}))).toBeNull();
-    expect(formatStatusLine(makeEvent("memory.observation.started", {}))).toBeNull();
+  test("returns null for unrelated events", () => {
+    const tracker = new StatusTracker();
+    expect(tracker.update(makeEvent("generation.started", {}))).toBeNull();
+    expect(tracker.update(makeEvent("session.opened", {}))).toBeNull();
+  });
+
+  test("lists all completed tools in history", () => {
+    const tracker = new StatusTracker();
+    tracker.update(makeEvent("tool.called", { name: "glob" }));
+    tracker.update(makeEvent("tool.succeeded", { name: "glob", durationMs: 10 }));
+    tracker.update(makeEvent("tool.called", { name: "grep" }));
+    const result = tracker.update(makeEvent("tool.succeeded", { name: "grep", durationMs: 20 }));
+    expect(result).toContain("`glob`");
+    expect(result).toContain("`grep`");
+    // Both should have checkmarks (multiline)
+    const lines = result!.split("\n");
+    expect(lines.filter(l => l.includes(":white_check_mark:")).length).toBe(2);
+  });
+
+  test("shows history + active tools together", () => {
+    const tracker = new StatusTracker();
+    tracker.update(makeEvent("tool.called", { name: "glob" }));
+    tracker.update(makeEvent("tool.succeeded", { name: "glob", durationMs: 10 }));
+    const result = tracker.update(makeEvent("tool.called", { name: "read_file" }));
+    expect(result).toContain(":white_check_mark:");
+    expect(result).toContain("`glob`");
+    expect(result).toContain(":gear:");
+    expect(result).toContain("`read_file`");
   });
 });

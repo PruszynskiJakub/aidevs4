@@ -10,7 +10,7 @@ import {
   deriveSessionId,
   toSlackMarkdown,
   splitMessage,
-  formatStatusLine,
+  StatusTracker,
 } from "./slack-utils.ts";
 
 // ── Config ─────────────────────────────────────────────────
@@ -28,7 +28,7 @@ const THROTTLE_MS = 1_000;
 // ── Throttled status updater ───────────────────────────────
 
 interface StatusUpdater {
-  append(line: string): void;
+  onEvent(event: BusEvent): void;
   destroy(): void;
 }
 
@@ -37,17 +37,15 @@ function createStatusUpdater(
   channel: string,
   threadTs: string,
 ): StatusUpdater {
-  const lines: string[] = [];
+  const tracker = new StatusTracker();
   let statusTs: string | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let pendingFlush = false;
+  let latestText: string | null = null;
   let destroyed = false;
 
   async function flush() {
-    if (destroyed) return;
-    pendingFlush = false;
-    const text = lines.join("\n");
-    if (!text) return;
+    if (destroyed || !latestText) return;
+    const text = latestText;
 
     try {
       if (!statusTs) {
@@ -76,23 +74,23 @@ function createStatusUpdater(
     }
   }
 
-  function scheduleFlush() {
-    if (timer || destroyed) return;
-    timer = setTimeout(() => {
-      timer = null;
-      if (pendingFlush) flush();
-    }, THROTTLE_MS);
-  }
-
   return {
-    append(line: string) {
+    onEvent(event: BusEvent) {
       if (destroyed) return;
-      lines.push(line);
-      pendingFlush = true;
+      const text = tracker.update(event);
+      if (!text) return;
+      latestText = text;
+
       if (!timer) {
         flush();
+        timer = setTimeout(() => { timer = null; }, THROTTLE_MS);
       } else {
-        scheduleFlush();
+        // Will be picked up after throttle window
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          timer = null;
+          flush();
+        }, THROTTLE_MS);
       }
     },
     destroy() {
@@ -145,8 +143,7 @@ async function handleMessage(
 
   const unsubscribe = bus.onAny((event: BusEvent) => {
     if (event.sessionId !== sessionId) return;
-    const line = formatStatusLine(event);
-    if (line) status.append(line);
+    status.onEvent(event);
   });
 
   try {
@@ -197,7 +194,7 @@ app.message(async ({ message }) => {
 
   await handleMessage(
     message.channel,
-    (message as Record<string, string>).team ?? "unknown",
+    ((message as unknown as Record<string, string>).team) ?? "unknown",
     message.text,
     message.thread_ts,
     message.ts,
@@ -207,7 +204,7 @@ app.message(async ({ message }) => {
 app.event("app_mention", async ({ event }) => {
   await handleMessage(
     event.channel,
-    (event as Record<string, string>).team ?? "unknown",
+    ((event as unknown as Record<string, string>).team) ?? "unknown",
     event.text,
     event.thread_ts,
     event.ts,

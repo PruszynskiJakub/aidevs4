@@ -9,7 +9,7 @@ export function deriveSessionId(
   threadTs: string | undefined,
   messageTs: string,
 ): string {
-  const ts = threadTs ?? messageTs;
+  const ts = (threadTs ?? messageTs).replace(/\./g, "-");
   return `slack-${teamId}-${channelId}-${ts}`;
 }
 
@@ -58,19 +58,58 @@ export function splitMessage(text: string, limit = SLACK_MESSAGE_LIMIT): string[
   return chunks;
 }
 
-/** Format a bus event into a short status line, or null to skip. */
-export function formatStatusLine(event: BusEvent): string | null {
-  const { type, data } = event;
-  const d = data as Record<string, unknown>;
+/**
+ * Tracks tool activity and renders a compact single-line status.
+ * Instead of appending lines per event, it maintains a running summary
+ * like: ":gear: Using web, grep… (2 done)"
+ */
+export class StatusTracker {
+  private active = new Set<string>();
+  private history: { name: string; ok: boolean }[] = [];
 
-  switch (type) {
-    case "tool.called":
-      return `Using *${d.name}*…`;
-    case "tool.succeeded":
-      return `*${d.name}* done (${d.durationMs}ms)`;
-    case "tool.failed":
-      return `*${d.name}* failed: ${String(d.error).slice(0, 100)}`;
-    default:
-      return null;
+  /** Process an event. Returns updated status string, or null if no change. */
+  update(event: BusEvent): string | null {
+    const { type, data } = event;
+    const d = data as Record<string, unknown>;
+    const name = d.name as string | undefined;
+
+    switch (type) {
+      case "tool.called":
+        if (name) this.active.add(name);
+        return this.render();
+      case "tool.succeeded":
+        if (name) {
+          this.active.delete(name);
+          this.history.push({ name, ok: true });
+        }
+        return this.render();
+      case "tool.failed":
+        if (name) {
+          this.active.delete(name);
+          this.history.push({ name, ok: false });
+        }
+        return this.render();
+      default:
+        return null;
+    }
+  }
+
+  private render(): string {
+    const lines: string[] = [];
+
+    // Show completed tools as a log
+    for (const h of this.history) {
+      const icon = h.ok ? ":white_check_mark:" : ":x:";
+      lines.push(`${icon}  \`${h.name}\``);
+    }
+
+    // Show currently active tools
+    if (this.active.size > 0) {
+      const names = [...this.active].map(n => `\`${n}\``).join(", ");
+      lines.push(`:gear:  ${names}…`);
+    }
+
+    if (lines.length === 0) return ":hourglass_flowing_sand:  _Working…_";
+    return lines.join("\n");
   }
 }
