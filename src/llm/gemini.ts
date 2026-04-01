@@ -114,7 +114,12 @@ function extractToolCalls(parts: Part[]): LLMToolCall[] {
 }
 
 export function createGeminiProvider(apiKey: string): LLMProvider {
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      retryOptions: { attempts: config.retry.geminiMaxAttempts },
+    },
+  });
 
   return {
     async chatCompletion(params: ChatCompletionParams): Promise<LLMChatResponse> {

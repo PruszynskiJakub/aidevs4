@@ -67,6 +67,14 @@ export interface EventMap {
     startTime: number;
   };
 
+  // ── LLM call errors ────────────────────────────────────
+  "llm.call.failed": {
+    model: string;
+    error: string;
+    fatal: boolean;
+    code?: string;
+  };
+
   // ── Tool execution ───────────────────────────────────────
   "tool.called": { callId: string; name: string; args: string; batchIndex: number; batchSize: number; startTime: number };
   "tool.succeeded": { callId: string; name: string; durationMs: number; result: string; args?: string; startTime?: number };

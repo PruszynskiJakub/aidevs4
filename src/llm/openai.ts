@@ -13,6 +13,7 @@ import type {
   CompletionParams,
   ContentPart,
 } from "../types/llm.ts";
+import { config } from "../config/index.ts";
 
 type OpenAIContentPart =
   | { type: "text"; text: string }
@@ -100,7 +101,7 @@ function toResponse(
 }
 
 export function createOpenAIProvider(client?: OpenAI): LLMProvider {
-  const openai = client ?? new OpenAI();
+  const openai = client ?? new OpenAI({ maxRetries: config.retry.openaiMaxRetries });
 
   return {
     async chatCompletion(params: ChatCompletionParams): Promise<LLMChatResponse> {

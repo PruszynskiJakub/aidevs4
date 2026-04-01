@@ -4,6 +4,8 @@ import type {
   ChatCompletionParams,
   CompletionParams,
 } from "../types/llm.ts";
+import { isFatalLLMError, extractErrorCode } from "./errors.ts";
+import { bus } from "../infra/events.ts";
 
 interface ProviderEntry {
   pattern: string | RegExp;
@@ -41,10 +43,31 @@ export class ProviderRegistry implements LLMProvider {
   }
 
   async chatCompletion(params: ChatCompletionParams): Promise<LLMChatResponse> {
-    return this.resolve(params.model).chatCompletion(params);
+    const provider = this.resolve(params.model);
+    try {
+      return await provider.chatCompletion(params);
+    } catch (err) {
+      this.emitCallFailed(params.model, err);
+      throw err;
+    }
   }
 
   async completion(params: CompletionParams): Promise<string> {
-    return this.resolve(params.model).completion(params);
+    const provider = this.resolve(params.model);
+    try {
+      return await provider.completion(params);
+    } catch (err) {
+      this.emitCallFailed(params.model, err);
+      throw err;
+    }
+  }
+
+  private emitCallFailed(model: string, err: unknown): void {
+    bus.emit("llm.call.failed", {
+      model,
+      error: err instanceof Error ? err.message : String(err),
+      fatal: isFatalLLMError(err),
+      code: extractErrorCode(err),
+    });
   }
 }

@@ -75,5 +75,9 @@ export const config = deepFreeze({
     secretKey: env.langfuseSecretKey,
     baseUrl: env.langfuseBaseUrl ?? "https://cloud.langfuse.com",
   },
+  retry: {
+    openaiMaxRetries: 2,
+    geminiMaxAttempts: 5,
+  },
   assistant: env.assistant,
 });
