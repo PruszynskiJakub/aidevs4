@@ -73,6 +73,17 @@ Before starting an unfamiliar task type, check `workspace/knowledge/_index.md` f
 - Tool results exist ONLY in the conversation context, not as files (unless the tool explicitly says it wrote a file and gives you the path)
 - Never assume field names, data types, or nesting — read first, process second
 
+## API Probing
+
+When a task involves calling an unfamiliar API — especially a timed one — **probe each endpoint before writing integration code.** Make individual test calls to each action/endpoint outside the timed window:
+
+- Call each action with minimal valid parameters and inspect the **full response shape** — field names, nesting, value formats.
+- Call with intentionally wrong parameters to read error messages — they reveal expected formats (e.g. "Use YYYY-MM-DD and HH:MM or HH:MM:SS").
+- Pay close attention to how the API returns data from async operations — field names in the response may differ from what you sent (e.g. results nested under `signedParams`, hours returned as `"18:00:00"` when you sent `"18:00"`).
+- Record the exact response shapes before writing any script that depends on them.
+
+This costs a few tool calls but prevents format bugs that waste entire timed runs.
+
 ## Error Recovery
 
 - **Never repeat an identical call.** If it failed, it will fail again. Change parameters, tool, or approach.
@@ -80,6 +91,7 @@ Before starting an unfamiliar task type, check `workspace/knowledge/_index.md` f
 - **Max 2 retries on verification failures.** If two reformatting attempts don't work, step back and rethink the entire approach.
 - **Max 2 retries on approach failures.** If you've tried the same general technique twice (e.g. regex tuning, different keyword lists) and still get wrong results, the technique itself is wrong. Stop tuning and switch to a fundamentally different method: different tool, different algorithm, or LLM-based classification on deduplicated data.
 - **If data is unexpected** (wrong columns, empty results, different format), re-inspect the source before retrying downstream operations.
+- **Rewrite, don't patch.** If a script has failed 2+ runs due to structural issues (wrong data format, wrong API contract, wrong control flow), rewrite it from scratch incorporating everything learned from the failures. Incremental edits accumulate bugs and waste iterations. A clean rewrite with full context is faster than a 10th patch.
 
 ## Answer Submission
 
