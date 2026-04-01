@@ -8,6 +8,9 @@ Support tool_search capability
 skills
 workflows
 
+fallback mechanism
+smart retry baed on api body
+
 ---
 ### Problems
 nie mam pojecia ile tokeów lata

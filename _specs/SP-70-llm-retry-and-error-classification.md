@@ -2,7 +2,7 @@
 
 ## Main objective
 
-Classify LLM errors as transient vs fatal, leverage built-in SDK retry for OpenAI, enable opt-in retry for Gemini, and add a fatal-error fast-fail layer so that quota exhaustion and auth errors fail immediately while transient errors are retried with backoff.
+Classify LLM errors as transient vs fatal, configure SDK retry for both providers, and add a post-retry error classifier so that quota and auth errors surface with clear messages after SDK retries are exhausted.
 
 ## Context
 
@@ -10,24 +10,30 @@ Classify LLM errors as transient vs fatal, leverage built-in SDK retry for OpenA
 
 Both LLM providers (`src/llm/openai.ts`, `src/llm/gemini.ts`) make bare API calls with no error handling. Errors propagate uncaught through the router (`src/llm/router.ts`) into the agent loop (`src/agent/loop.ts`), where the outer try/catch emits `agent.failed` and re-throws — ending the session.
 
-**OpenAI SDK already retries internally** — `new OpenAI()` defaults to 2 retries with exponential backoff (0.5s base, 8s max, 25% jitter), and respects `retry-after` / `x-should-retry` headers. However, it retries *all* 429s including `insufficient_quota`, which wastes time on billing errors.
+**OpenAI SDK already retries internally** — `new OpenAI()` defaults to 2 retries with exponential backoff (0.5s base, 8s max, 25% jitter), and respects `retry-after` / `x-should-retry` headers.
 
-**Gemini SDK has opt-in retry** via `httpOptions.retryOptions` (backed by `p-retry`), but the codebase does not enable it. Gemini calls currently have no retry.
+**Gemini SDK defaults to 5 retry attempts** via built-in `p-retry` integration when `retryOptions` is not explicitly set. The retry covers 429, 500, 502, 503, 504.
+
+### SDK retry limitation (known trade-off)
+
+Neither SDK exposes a hook to intercept retry decisions or emit events during internal retries. Both SDKs retry **all** 429s — including `insufficient_quota` (OpenAI) and `RESOURCE_EXHAUSTED` (Gemini) — before throwing. OpenAI may send `x-should-retry: false` for quota errors, which the SDK respects, but this is undocumented behavior.
+
+This means fatal 429 errors may incur ~3.5s of wasted retries (0.5s + 1s + 2s backoff) before the router-level classifier sees them. This is an acceptable trade-off vs. the complexity of disabling SDK retry and reimplementing it. The classifier's value is in **clear error messages and event emission**, not in saving retry time.
 
 ### Error classification (single source of truth)
 
 | Error | Source | Code | Classification |
 |---|---|---|---|
 | `RateLimitError` | OpenAI | 429 | Transient — SDK retries automatically |
-| `insufficient_quota` | OpenAI | 429 | **Fatal** — billing issue, must fast-fail |
+| `insufficient_quota` | OpenAI | 429 | **Fatal** — billing issue (SDK may retry before surfacing) |
 | `InternalServerError` | OpenAI | 500+ | Transient — SDK retries automatically |
 | `APIConnectionError` | OpenAI | — | Transient — SDK retries automatically |
 | `APIConnectionTimeoutError` | OpenAI | — | Transient — SDK retries automatically |
-| `AuthenticationError` | OpenAI | 401 | **Fatal** — bad key |
-| `BadRequestError` | OpenAI | 400 | **Fatal** — invalid input |
-| `PermissionDeniedError` | OpenAI | 403 | **Fatal** — access denied |
-| Server errors | Gemini | 429, 500-504 | Transient — SDK retries (when enabled) |
-| `RESOURCE_EXHAUSTED` | Gemini | 403/429 | **Fatal** — quota |
+| `AuthenticationError` | OpenAI | 401 | **Fatal** — bad key (no SDK retry) |
+| `BadRequestError` | OpenAI | 400 | **Fatal** — invalid input (no SDK retry) |
+| `PermissionDeniedError` | OpenAI | 403 | **Fatal** — access denied (no SDK retry) |
+| Server errors | Gemini | 429, 500-504 | Transient — SDK retries automatically |
+| `RESOURCE_EXHAUSTED` | Gemini | 429 | **Fatal** — quota (SDK may retry before surfacing) |
 | Timeout (`AbortSignal`) | Gemini | — | Transient |
 | Network errors (`ECONNRESET`, etc.) | Any | — | Transient |
 
@@ -47,67 +53,66 @@ Both LLM providers (`src/llm/openai.ts`, `src/llm/gemini.ts`) make bare API call
 - Retry logic for non-LLM HTTP calls (hub-fetch, serper, web tool)
 - Streaming response retry (not currently used)
 - Thundering herd mitigation for concurrent retries
+- Pre-retry interception of fatal errors (accepted trade-off — see above)
 
 ## Constraints
 
-- Do not add custom retry on top of OpenAI SDK's built-in retry — configure the SDK instead (avoid double-retry / up to 9 attempts)
-- LLM-specific error classifier lives in `src/llm/` (not `src/utils/`) to keep dependency direction correct (`llm/ → utils/`, never `utils/ → llm/`)
-- Retry events use the event bus for observability (Langfuse traces, session logs), not `console.warn`
+- Delegate retry to SDK built-in mechanisms — do not add a custom retry wrapper on top
+- LLM-specific error classifier lives in `src/llm/` (not `src/utils/`) to keep dependency direction correct
+- Error classification and events happen **after** SDK retries are exhausted (post-retry), not before
 - No new dependencies
 - LLM calls are assumed idempotent (no side effects) — safe to retry
-- `maxAttempts` means total attempts including the first call (3 = 1 original + 2 retries)
 
 ## Acceptance criteria
 
-- [ ] OpenAI client configured with `maxRetries: 3` (up from default 2)
-- [ ] Gemini client configured with `retryOptions` enabled (retry on 429, 500-504)
-- [ ] Fatal error classifier at router level: `insufficient_quota`, `AuthenticationError`, `BadRequestError`, `PermissionDeniedError`, and Gemini `RESOURCE_EXHAUSTED` throw immediately without SDK retry
-- [ ] `ProviderRegistry` wraps provider calls to catch and classify errors — fatal errors re-thrown immediately, transient errors left to SDK retry
-- [ ] New events `llm.retry_attempted` and `llm.retry_exhausted` emitted via event bus
-- [ ] `config.retry` gains `openaiMaxAttempts: 3` and `geminiMaxAttempts: 4`
+- [ ] OpenAI client configured with `maxRetries: 2` (explicit, matching current SDK default — can be tuned later via config)
+- [ ] Gemini client configured with explicit `retryOptions.attempts` from config (currently implicit SDK default of 5)
+- [ ] `src/llm/errors.ts` exports `isFatalLLMError(err): boolean` classifying errors per the table above
+- [ ] `ProviderRegistry` wraps provider calls in try/catch — on error, classifies it, emits `llm.call.failed` event with classification, then re-throws
+- [ ] `llm.call.failed` event includes: model, error message, whether the error is fatal or transient, and error code
 - [ ] Fatal errors propagate with their original error message (no wrapping)
+- [ ] `config.retry` section with `openaiMaxRetries` and `geminiMaxAttempts`
 - [ ] Existing tests continue to pass
-- [ ] New tests cover: fatal error fast-fail, quota exhaustion detection, error classification accuracy
+- [ ] New tests cover: error classification for each fatal/transient type in the table
 
 ## Implementation plan
 
 1. **Create `src/llm/errors.ts`** — LLM error classifier
-   - Export `isFatalLLMError(err: unknown): boolean` — returns true for errors that must not be retried
-   - Handles both OpenAI SDK error classes and Gemini error patterns
-   - Uses the classification table above as the source of truth
+   - Export `isFatalLLMError(err: unknown): boolean`
+   - Handles OpenAI SDK error classes and Gemini error patterns per the classification table
 
-2. **Add retry events to `src/types/events.ts`**
-   - `llm.retry_attempted` — emitted on each retry with model, attempt number, error summary, delay
-   - `llm.retry_exhausted` — emitted when all retries fail
+2. **Add `llm.call.failed` event to `src/types/events.ts`**
+   - Emitted once per failed LLM call (after SDK retries exhausted)
+   - Payload: `{ model, error, fatal, code? }`
 
 3. **Configure OpenAI SDK retry** in `src/llm/openai.ts`
    - Pass `maxRetries` from config to `new OpenAI({ maxRetries })`
+   - When `client` is injected (test path), respect the injected client's config
 
-4. **Enable Gemini SDK retry** in `src/llm/gemini.ts`
-   - Pass `retryOptions` to `GoogleGenAI` constructor with max attempts from config
+4. **Configure Gemini SDK retry** in `src/llm/gemini.ts`
+   - Pass explicit `httpOptions.retryOptions.attempts` from config to `GoogleGenAI` constructor
 
-5. **Wire fatal-error fast-fail into `ProviderRegistry`** in `src/llm/router.ts`
-   - Wrap provider calls: catch errors, check `isFatalLLMError()`, re-throw fatal errors immediately
-   - For transient errors that exhausted SDK retries, emit `llm.retry_exhausted` and re-throw
-   - Emit `llm.retry_attempted` via an SDK retry callback if available, or infer from error timing
+5. **Wire error classification into `ProviderRegistry`** in `src/llm/router.ts`
+   - Wrap `chatCompletion()` and `completion()` in try/catch
+   - On error: classify via `isFatalLLMError()`, emit `llm.call.failed`, re-throw
 
 6. **Add retry config** in `src/config/index.ts`
-   - New `retry` section (not flat in `limits`) with `openaiMaxAttempts` and `geminiMaxAttempts`
+   - New `retry` section: `{ openaiMaxRetries: 2, geminiMaxAttempts: 5 }`
 
 7. **Write tests** in `src/llm/errors.test.ts`
-   - Fatal error classification for each error type in the table
-   - Transient error classification
-   - Edge cases: `insufficient_quota` on 429, Gemini `RESOURCE_EXHAUSTED`
+   - Classification accuracy for each error type in the table
 
 ## Testing scenarios
 
 | Scenario | Verification |
 |---|---|
-| Quota exhaustion (`insufficient_quota`) | Throws immediately, no retry, `llm.retry_exhausted` not emitted |
-| Auth error (401) | Throws immediately, no retry |
-| Bad request (400) | Throws immediately, no retry |
-| Gemini `RESOURCE_EXHAUSTED` | Throws immediately, no retry |
-| OpenAI rate limit (non-quota) | SDK retries internally, succeeds or emits `llm.retry_exhausted` |
-| Gemini server error (503) | SDK retries internally with enabled `retryOptions` |
-| Success on first try | No events emitted, no overhead |
-| All retries exhausted | `llm.retry_exhausted` emitted, original error thrown |
+| `insufficient_quota` (429) | Classified as fatal, `llm.call.failed` emitted with `fatal: true` |
+| Auth error (401) | Classified as fatal, no SDK retry (401 is not retried by SDK) |
+| Bad request (400) | Classified as fatal |
+| `PermissionDeniedError` (403) | Classified as fatal |
+| Gemini `RESOURCE_EXHAUSTED` | Classified as fatal |
+| Rate limit (429, non-quota) | Classified as transient, `llm.call.failed` emitted with `fatal: false` |
+| Server error (500+) | Classified as transient |
+| Connection error | Classified as transient |
+| Success on first try | No event emitted, no overhead |
+| Router integration | `ProviderRegistry` emits `llm.call.failed` on provider error |
