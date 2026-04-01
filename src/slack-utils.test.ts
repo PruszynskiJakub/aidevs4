@@ -1,0 +1,155 @@
+import { describe, expect, test } from "bun:test";
+import {
+  deriveSessionId,
+  toSlackMarkdown,
+  splitMessage,
+  formatStatusLine,
+} from "./slack-utils.ts";
+import type { BusEvent } from "./types/events.ts";
+
+// ── deriveSessionId ────────────────────────────────────────
+
+describe("deriveSessionId", () => {
+  test("uses thread_ts when present", () => {
+    const id = deriveSessionId("T1", "C1", "1715000000.000100", "1715000001.000200");
+    expect(id).toBe("slack-T1-C1-1715000000.000100");
+  });
+
+  test("falls back to message ts when no thread_ts", () => {
+    const id = deriveSessionId("T1", "C1", undefined, "1715000001.000200");
+    expect(id).toBe("slack-T1-C1-1715000001.000200");
+  });
+
+  test("different channels produce different session IDs", () => {
+    const a = deriveSessionId("T1", "C1", undefined, "1715000000.000100");
+    const b = deriveSessionId("T1", "C2", undefined, "1715000000.000100");
+    expect(a).not.toBe(b);
+  });
+
+  test("different teams produce different session IDs", () => {
+    const a = deriveSessionId("T1", "C1", undefined, "1715000000.000100");
+    const b = deriveSessionId("T2", "C1", undefined, "1715000000.000100");
+    expect(a).not.toBe(b);
+  });
+});
+
+// ── toSlackMarkdown ────────────────────────────────────────
+
+describe("toSlackMarkdown", () => {
+  test("converts bold **text** to *text*", () => {
+    expect(toSlackMarkdown("**hello**")).toBe("*hello*");
+  });
+
+  test("converts bold __text__ to *text*", () => {
+    expect(toSlackMarkdown("__hello__")).toBe("*hello*");
+  });
+
+  test("converts strikethrough", () => {
+    expect(toSlackMarkdown("~~deleted~~")).toBe("~deleted~");
+  });
+
+  test("preserves inline code", () => {
+    expect(toSlackMarkdown("`code`")).toBe("`code`");
+  });
+
+  test("converts markdown links to Slack format", () => {
+    expect(toSlackMarkdown("[click](https://example.com)")).toBe("<https://example.com|click>");
+  });
+
+  test("strips language identifier from fenced code blocks", () => {
+    expect(toSlackMarkdown("```typescript\nconst x = 1;\n```")).toBe("```\nconst x = 1;\n```");
+  });
+
+  test("handles text with no markdown", () => {
+    expect(toSlackMarkdown("plain text")).toBe("plain text");
+  });
+});
+
+// ── splitMessage ───────────────────────────────────────────
+
+describe("splitMessage", () => {
+  test("returns single chunk for short messages", () => {
+    expect(splitMessage("hello", 100)).toEqual(["hello"]);
+  });
+
+  test("splits at paragraph boundaries", () => {
+    const text = "a".repeat(50) + "\n\n" + "b".repeat(50);
+    const chunks = splitMessage(text, 60);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0]).toBe("a".repeat(50));
+    expect(chunks[1]).toBe("b".repeat(50));
+  });
+
+  test("splits at line boundaries when no paragraph break", () => {
+    const text = "a".repeat(50) + "\n" + "b".repeat(50);
+    const chunks = splitMessage(text, 60);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0]).toBe("a".repeat(50));
+    expect(chunks[1]).toBe("b".repeat(50));
+  });
+
+  test("splits at word boundaries when no line break", () => {
+    const text = "word ".repeat(20).trim(); // 99 chars
+    const chunks = splitMessage(text, 50);
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(50);
+    }
+  });
+
+  test("hard splits when no boundaries found", () => {
+    const text = "a".repeat(100);
+    const chunks = splitMessage(text, 40);
+    expect(chunks.length).toBe(3);
+    expect(chunks[0]).toBe("a".repeat(40));
+    expect(chunks[1]).toBe("a".repeat(40));
+    expect(chunks[2]).toBe("a".repeat(20));
+  });
+
+  test("uses default 4000 char limit", () => {
+    const short = "a".repeat(3999);
+    expect(splitMessage(short)).toEqual([short]);
+
+    const long = "a".repeat(4001);
+    expect(splitMessage(long).length).toBe(2);
+  });
+});
+
+// ── formatStatusLine ───────────────────────────────────────
+
+describe("formatStatusLine", () => {
+  const makeEvent = (type: string, data: Record<string, unknown>): BusEvent => ({
+    id: "test",
+    type,
+    ts: Date.now(),
+    sessionId: "s1",
+    data,
+  });
+
+  test("formats tool.called events", () => {
+    const result = formatStatusLine(makeEvent("tool.called", { name: "web", args: "{}" }));
+    expect(result).toBe("Using *web*…");
+  });
+
+  test("formats tool.succeeded events", () => {
+    const result = formatStatusLine(makeEvent("tool.succeeded", { name: "web", durationMs: 123 }));
+    expect(result).toBe("*web* done (123ms)");
+  });
+
+  test("formats tool.failed events", () => {
+    const result = formatStatusLine(makeEvent("tool.failed", { name: "web", error: "timeout" }));
+    expect(result).toBe("*web* failed: timeout");
+  });
+
+  test("truncates long error messages", () => {
+    const longError = "x".repeat(200);
+    const result = formatStatusLine(makeEvent("tool.failed", { name: "web", error: longError }));
+    expect(result!.length).toBeLessThanOrEqual(120);
+  });
+
+  test("returns null for unhandled events", () => {
+    expect(formatStatusLine(makeEvent("generation.started", {}))).toBeNull();
+    expect(formatStatusLine(makeEvent("session.opened", {}))).toBeNull();
+    expect(formatStatusLine(makeEvent("memory.observation.started", {}))).toBeNull();
+  });
+});
