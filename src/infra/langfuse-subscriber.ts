@@ -224,7 +224,21 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
         const parent = parentFor(agentId);
         if (!parent) return;
 
-        nestGeneration(parent, { ...e.data, name: `${e.data.name}-llm` });
+        // Convert output to OpenAI ChatML format for Langfuse playground compatibility
+        const output = e.data.output;
+        const chatMlOutput: Record<string, unknown> = {
+          role: "assistant",
+          content: output.content,
+        };
+        if (output.toolCalls?.length) {
+          chatMlOutput.tool_calls = output.toolCalls.map((tc) => ({
+            id: tc.id,
+            type: "function",
+            function: { name: tc.name, arguments: tc.arguments },
+          }));
+        }
+
+        nestGeneration(parent, { ...e.data, name: `${e.data.name}-llm`, output: chatMlOutput });
       });
     }),
   );
