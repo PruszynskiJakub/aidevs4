@@ -13,21 +13,28 @@ export interface BrowserFeedbackTracker {
   stats(): { total: number; successes: number; failures: number };
 }
 
+const MAX_HISTORY = 20;
+
 export function createBrowserFeedbackTracker(): BrowserFeedbackTracker {
   const history: FeedbackEvent[] = [];
   let consecutive = 0;
   let lastHostname: string | null = null;
+  let totalCount = 0;
+  let successCount = 0;
 
   return {
     record(event: FeedbackEvent): void {
       history.push(event);
+      if (history.length > MAX_HISTORY) history.shift();
+
+      totalCount++;
       if (event.outcome === "fail") {
         consecutive++;
       } else {
         consecutive = 0;
+        successCount++;
       }
 
-      // Track hostname from navigate actions
       if (event.tool === "browser__navigate" && event.args.url) {
         try {
           lastHostname = new URL(event.args.url as string).hostname;
@@ -63,7 +70,6 @@ export function createBrowserFeedbackTracker(): BrowserFeedbackTracker {
         hints.push("A querySelector returned null — the expected element is missing");
       }
 
-      // Check for repeated failures on same tool
       const recentSameTool = history.slice(-4).filter(
         (e) => e.tool === tool && e.outcome === "fail",
       );
@@ -75,11 +81,10 @@ export function createBrowserFeedbackTracker(): BrowserFeedbackTracker {
     },
 
     stats() {
-      const successes = history.filter((e) => e.outcome === "success").length;
       return {
-        total: history.length,
-        successes,
-        failures: history.length - successes,
+        total: totalCount,
+        successes: successCount,
+        failures: totalCount - successCount,
       };
     },
   };

@@ -1,21 +1,20 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import { dirname } from "path";
 import { config } from "../config/index.ts";
 import { files } from "./file.ts";
+import { safeParse } from "../utils/parse.ts";
 
 export interface BrowserService {
   getPage(): Promise<Page>;
   saveSession(): Promise<void>;
   close(): Promise<void>;
   isRunning(): boolean;
-  getResponseStatus(): number | null;
-  setResponseStatus(status: number | null): void;
 }
 
 function createBrowserService(): BrowserService {
   let browserInstance: Browser | null = null;
   let contextInstance: BrowserContext | null = null;
   let pageInstance: Page | null = null;
-  let lastResponseStatus: number | null = null;
 
   async function launch(): Promise<Page> {
     const { headless, userAgent, sessionPath } = config.browser;
@@ -24,15 +23,11 @@ function createBrowserService(): BrowserService {
 
     const contextOptions: Record<string, unknown> = { userAgent };
 
-    // Restore session if exists
     try {
-      if (await files.exists(sessionPath)) {
-        const sessionData = await files.readText(sessionPath);
-        const storageState = JSON.parse(sessionData);
-        contextOptions.storageState = storageState;
-      }
+      const sessionData = await files.readText(sessionPath);
+      contextOptions.storageState = safeParse(sessionData, "browser session");
     } catch {
-      // Corrupted session file — start fresh
+      // Missing or corrupted session file — start fresh
     }
 
     contextInstance = await browserInstance.newContext(contextOptions);
@@ -50,8 +45,7 @@ function createBrowserService(): BrowserService {
       if (!contextInstance) return;
       try {
         const state = await contextInstance.storageState();
-        const dir = config.browser.sessionPath.replace(/\/[^/]+$/, "");
-        await files.mkdir(dir);
+        await files.mkdir(dirname(config.browser.sessionPath));
         await files.write(config.browser.sessionPath, JSON.stringify(state, null, 2));
       } catch {
         // Best-effort session save
@@ -69,19 +63,10 @@ function createBrowserService(): BrowserService {
       browserInstance = null;
       contextInstance = null;
       pageInstance = null;
-      lastResponseStatus = null;
     },
 
     isRunning(): boolean {
       return browserInstance !== null && pageInstance !== null && !pageInstance.isClosed();
-    },
-
-    getResponseStatus(): number | null {
-      return lastResponseStatus;
-    },
-
-    setResponseStatus(status: number | null): void {
-      lastResponseStatus = status;
     },
   };
 
@@ -97,9 +82,8 @@ export function _setBrowserForTest(custom: BrowserService): () => void {
   return () => { browser = prev; };
 }
 
-// Cleanup on process exit
-process.on("beforeExit", async () => {
-  if (browser.isRunning()) {
-    await browser.close();
-  }
-});
+async function cleanup() {
+  if (browser.isRunning()) await browser.close();
+}
+process.on("SIGINT", cleanup);
+process.on("SIGTERM", cleanup);

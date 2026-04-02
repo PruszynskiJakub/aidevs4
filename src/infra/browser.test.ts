@@ -1,40 +1,23 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, afterEach } from "bun:test";
 import { _setBrowserForTest, type BrowserService } from "./browser.ts";
 
-function createMockBrowserService(opts: {
-  sessionExists?: boolean;
-  pageTitle?: string;
-  pageUrl?: string;
-} = {}): BrowserService {
+function createMockBrowserService(): BrowserService {
   let running = false;
-  let sessionSaved = false;
-  let responseStatus: number | null = null;
 
   return {
     async getPage() {
       running = true;
-      return {} as never; // Mock page
+      return {} as never;
     },
-    async saveSession() {
-      sessionSaved = true;
-    },
+    async saveSession() {},
     async close() {
-      if (!running) return; // idempotent
+      if (!running) return;
       running = false;
-      sessionSaved = true;
     },
     isRunning() {
       return running;
     },
-    getResponseStatus() {
-      return responseStatus;
-    },
-    setResponseStatus(status: number | null) {
-      responseStatus = status;
-    },
-    // test helpers
-    get _sessionSaved() { return sessionSaved; },
-  } as BrowserService & { _sessionSaved: boolean };
+  };
 }
 
 describe("BrowserService mock", () => {
@@ -58,19 +41,8 @@ describe("BrowserService mock", () => {
     await mock.getPage();
     await mock.close();
     expect(mock.isRunning()).toBe(false);
-    // Second close should not throw
     await mock.close();
     expect(mock.isRunning()).toBe(false);
-  });
-
-  it("tracks response status", () => {
-    const mock = createMockBrowserService();
-    restore = _setBrowserForTest(mock);
-    expect(mock.getResponseStatus()).toBeNull();
-    mock.setResponseStatus(200);
-    expect(mock.getResponseStatus()).toBe(200);
-    mock.setResponseStatus(null);
-    expect(mock.getResponseStatus()).toBeNull();
   });
 
   it("_setBrowserForTest restores original on cleanup", () => {
@@ -81,7 +53,6 @@ describe("BrowserService mock", () => {
     const restore2 = _setBrowserForTest(mock2);
 
     restore2();
-    // After restore2, we're back to mock1
-    restore = restore1; // cleanup for afterEach
+    restore = restore1;
   });
 });

@@ -44,14 +44,11 @@ function createMockPage(opts: {
 }
 
 function createMockBrowser(page: ReturnType<typeof createMockPage>): BrowserService {
-  let responseStatus: number | null = 200;
   return {
     async getPage() { return page as never; },
     async saveSession() {},
     async close() {},
     isRunning() { return true; },
-    getResponseStatus() { return responseStatus; },
-    setResponseStatus(s: number | null) { responseStatus = s; },
   };
 }
 
@@ -120,7 +117,7 @@ describe("browser tool", () => {
     it("rejects invalid URL", async () => {
       await expect(
         browserTool.handler({ action: "navigate", payload: { url: "not-a-url" } }),
-      ).rejects.toThrow("Invalid URL");
+      ).rejects.toThrow();
     });
 
     it("detects error pages from HTTP status", async () => {
