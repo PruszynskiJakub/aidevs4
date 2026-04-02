@@ -285,6 +285,7 @@ export async function runAgent(
           contextLength = context.messages.length;
           state.messages = [...context.messages];
         } else {
+          originalMessages = [...state.messages];
           contextLength = state.messages.length;
         }
 
