@@ -6,17 +6,16 @@ import type { ToolResult } from "../types/tool-result.ts";
 import type { ContentPart } from "../types/llm.ts";
 import { text, resource } from "../types/tool-result.ts";
 import { files } from "../infra/file.ts";
-import { browser } from "../infra/browser.ts";
+import { browserPool, type BrowserSession } from "../infra/browser.ts";
 import { sessionService } from "../agent/session.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength, errorMessage } from "../utils/parse.ts";
-import { createBrowserFeedbackTracker } from "../infra/browser-feedback.ts";
-import { createBrowserInterventions } from "../infra/browser-interventions.ts";
-
-const feedbackTracker = createBrowserFeedbackTracker();
-const interventions = createBrowserInterventions(feedbackTracker);
 
 // ── Helpers ─────────────────────────────────────────────────────
+
+function getSession(): BrowserSession {
+  return browserPool.get();
+}
 
 function urlSlug(urlStr: string): string {
   const parsed = new URL(urlStr);
@@ -92,30 +91,23 @@ async function savePageArtifacts(
   bodyText: string,
 ): Promise<{ textPath: string; structPath: string; lineCount: number }> {
   const slug = urlSlug(urlStr);
-
   const numbered = extractNumberedText(bodyText, config.browser.textMaxLines);
-  const lineCount = numbered.split("\n").length;
-
-  const struct = await extractDomStructure(page);
 
   const pagesDir = config.browser.pagesDir;
-  const pagesTextPath = join(pagesDir, `${slug}.txt`);
-  const pagesStructPath = join(pagesDir, `${slug}.struct.txt`);
-
-  const [sessionTextPath, sessionStructPath] = await Promise.all([
-    sessionService.outputPath(`${slug}.txt`),
-    sessionService.outputPath(`${slug}.struct.txt`),
+  const [struct] = await Promise.all([
+    extractDomStructure(page),
     files.mkdir(pagesDir),
   ]);
 
+  const textPath = join(pagesDir, `${slug}.txt`);
+  const structPath = join(pagesDir, `${slug}.struct.txt`);
+
   await Promise.all([
-    files.write(sessionTextPath, numbered),
-    files.write(sessionStructPath, struct),
-    files.write(pagesTextPath, numbered),
-    files.write(pagesStructPath, struct),
+    files.write(textPath, numbered),
+    files.write(structPath, struct),
   ]);
 
-  return { textPath: pagesTextPath, structPath: pagesStructPath, lineCount };
+  return { textPath, structPath, lineCount: numbered.split("\n").length };
 }
 
 const ERROR_PATTERNS = [
@@ -134,23 +126,30 @@ function detectErrorPage(httpStatus: number | null, bodyText: string): boolean {
   return ERROR_PATTERNS.some((p) => p.test(sample));
 }
 
-function appendFeedback(parts: string[], tool: string, outcome: "success" | "fail", error?: string): void {
-  feedbackTracker.record({ tool, outcome, args: {}, error });
+function appendFeedback(
+  parts: string[],
+  session: BrowserSession,
+  tool: string,
+  outcome: "success" | "fail",
+  error?: string,
+): void {
+  session.feedbackTracker.record({ tool, outcome, args: {}, error });
 
-  const hints = feedbackTracker.generateHints(tool, outcome, error);
+  const hints = session.feedbackTracker.generateHints(tool, outcome, error);
   for (const hint of hints) {
     parts.push(`Note: ${hint}`);
   }
 
-  const screenshotHint = interventions.checkScreenshotHint();
+  const screenshotHint = session.interventions.checkScreenshotHint();
   if (screenshotHint) parts.push(`Note: ${screenshotHint}`);
 
-  const discoveryHint = interventions.checkDiscoveryHint(outcome);
+  const discoveryHint = session.interventions.checkDiscoveryHint(outcome);
   if (discoveryHint) parts.push(`Note: ${discoveryHint}`);
 }
 
 /** Shared post-action logic for click/typeText: detect navigation, save artifacts, build response. */
 async function handlePostAction(
+  session: BrowserSession,
   page: import("playwright").Page,
   urlBefore: string,
   toolName: string,
@@ -158,7 +157,7 @@ async function handlePostAction(
   const urlAfter = page.url();
   if (urlAfter !== urlBefore) {
     const bodyText = await page.innerText("body").catch(() => "");
-    await browser.saveSession();
+    await session.saveSession();
     await savePageArtifacts(page, urlAfter, bodyText);
   }
 
@@ -167,7 +166,7 @@ async function handlePostAction(
   if (urlAfter !== urlBefore) {
     parts.push("Page navigated to a new URL — new artifacts saved.");
   }
-  appendFeedback(parts, toolName, "success");
+  appendFeedback(parts, session, toolName, "success");
   return text(parts.join("\n"));
 }
 
@@ -177,8 +176,8 @@ async function navigate(payload: { url: string }): Promise<ToolResult> {
   assertMaxLength(payload.url, "url", 2048);
 
   const parsed = new URL(payload.url);
-
-  const page = await browser.getPage();
+  const session = getSession();
+  const page = await session.getPage();
 
   const response = await page.goto(payload.url, {
     waitUntil: "domcontentloaded",
@@ -188,7 +187,7 @@ async function navigate(payload: { url: string }): Promise<ToolResult> {
   const httpStatus = response?.status() ?? null;
 
   await page.waitForTimeout(config.browser.timeouts.settleAfterNavigation);
-  await browser.saveSession();
+  await session.saveSession();
 
   const bodyText = await page.innerText("body").catch(() => "");
   const { textPath, structPath, lineCount } = await savePageArtifacts(page, payload.url, bodyText);
@@ -221,7 +220,7 @@ async function navigate(payload: { url: string }): Promise<ToolResult> {
   }
 
   const feedbackParts: string[] = [];
-  appendFeedback(feedbackParts, "browser__navigate", isError ? "fail" : "success", isError ? `Error page: HTTP ${httpStatus}` : undefined);
+  appendFeedback(feedbackParts, session, "browser__navigate", isError ? "fail" : "success", isError ? `Error page: HTTP ${httpStatus}` : undefined);
   if (feedbackParts.length > 0) {
     content.push({ type: "text", text: feedbackParts.join("\n") });
   }
@@ -236,7 +235,8 @@ async function navigate(payload: { url: string }): Promise<ToolResult> {
 async function evaluate(payload: { expression: string }): Promise<ToolResult> {
   assertMaxLength(payload.expression, "expression", 10_000);
 
-  const page = await browser.getPage();
+  const session = getSession();
+  const page = await session.getPage();
   let result: unknown;
   try {
     const evaluateTimeout = config.browser.timeouts.evaluate;
@@ -252,7 +252,7 @@ async function evaluate(payload: { expression: string }): Promise<ToolResult> {
   } catch (err) {
     const msg = errorMessage(err);
     const parts = [`Evaluate error: ${msg}`];
-    appendFeedback(parts, "browser__evaluate", "fail", msg);
+    appendFeedback(parts, session, "browser__evaluate", "fail", msg);
     throw new Error(parts.join("\n"));
   }
 
@@ -272,7 +272,7 @@ async function evaluate(payload: { expression: string }): Promise<ToolResult> {
   }
 
   const parts = [output];
-  appendFeedback(parts, "browser__evaluate", "success");
+  appendFeedback(parts, session, "browser__evaluate", "success");
   return text(parts.join("\n"));
 }
 
@@ -290,7 +290,8 @@ async function click(payload: { css_selector?: string; text?: string }): Promise
   if (hasCss) assertMaxLength(payload.css_selector!, "css_selector", 500);
   if (hasText) assertMaxLength(payload.text!, "text", 500);
 
-  const page = await browser.getPage();
+  const session = getSession();
+  const page = await session.getPage();
   const urlBefore = page.url();
 
   try {
@@ -302,12 +303,12 @@ async function click(payload: { css_selector?: string; text?: string }): Promise
   } catch (err) {
     const msg = errorMessage(err);
     const parts = [`Click failed: ${msg}`];
-    appendFeedback(parts, "browser__click", "fail", msg);
+    appendFeedback(parts, session, "browser__click", "fail", msg);
     throw new Error(parts.join("\n"));
   }
 
   await page.waitForTimeout(config.browser.timeouts.settleAfterClick);
-  return handlePostAction(page, urlBefore, "browser__click");
+  return handlePostAction(session, page, urlBefore, "browser__click");
 }
 
 function resolveValuePlaceholders(value: string): string {
@@ -320,7 +321,8 @@ async function typeText(payload: { selector: string; value: string; press_enter:
 
   const resolvedValue = resolveValuePlaceholders(payload.value);
 
-  const page = await browser.getPage();
+  const session = getSession();
+  const page = await session.getPage();
   const urlBefore = page.url();
 
   try {
@@ -331,16 +333,17 @@ async function typeText(payload: { selector: string; value: string; press_enter:
   } catch (err) {
     const msg = errorMessage(err);
     const parts = [`Type failed: ${msg}`];
-    appendFeedback(parts, "browser__type_text", "fail", msg);
+    appendFeedback(parts, session, "browser__type_text", "fail", msg);
     throw new Error(parts.join("\n"));
   }
 
   await page.waitForTimeout(config.browser.timeouts.settleAfterType);
-  return handlePostAction(page, urlBefore, "browser__type_text");
+  return handlePostAction(session, page, urlBefore, "browser__type_text");
 }
 
 async function takeScreenshot(payload: { full_page: boolean }): Promise<ToolResult> {
-  const page = await browser.getPage();
+  const session = getSession();
+  const page = await session.getPage();
 
   let buffer = await page.screenshot({
     fullPage: payload.full_page,
@@ -370,7 +373,7 @@ async function takeScreenshot(payload: { full_page: boolean }): Promise<ToolResu
   ];
 
   const parts: string[] = [];
-  appendFeedback(parts, "browser__take_screenshot", "success");
+  appendFeedback(parts, session, "browser__take_screenshot", "success");
   if (parts.length > 0) {
     content.push({ type: "text", text: parts.join("\n") });
   }

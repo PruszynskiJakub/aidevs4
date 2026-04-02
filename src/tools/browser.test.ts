@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { _setBrowserForTest, type BrowserService } from "../infra/browser.ts";
+import { _setBrowserPoolForTest, type BrowserPool, type BrowserSession } from "../infra/browser.ts";
+import { createBrowserFeedbackTracker } from "../infra/browser-feedback.ts";
+import { createBrowserInterventions } from "../infra/browser-interventions.ts";
 import { _setFilesForTest, type FileProvider } from "../infra/file.ts";
 import browserTool from "./browser.ts";
 
@@ -43,12 +45,25 @@ function createMockPage(opts: {
   };
 }
 
-function createMockBrowser(page: ReturnType<typeof createMockPage>): BrowserService {
+function createMockSession(page: ReturnType<typeof createMockPage>): BrowserSession {
+  const tracker = createBrowserFeedbackTracker();
+  const interventions = createBrowserInterventions(tracker);
   return {
     async getPage() { return page as never; },
     async saveSession() {},
     async close() {},
     isRunning() { return true; },
+    feedbackTracker: tracker,
+    interventions,
+  };
+}
+
+function createMockPool(session: BrowserSession): BrowserPool {
+  return {
+    get() { return session; },
+    async close() {},
+    async closeAll() {},
+    size() { return 1; },
   };
 }
 
@@ -79,18 +94,18 @@ function createMockFiles(): FileProvider {
 // ── Tests ───────────────────────────────────────────────────────
 
 describe("browser tool", () => {
-  let restoreBrowser: () => void;
+  let restorePool: () => void;
   let restoreFiles: () => void;
 
   beforeEach(() => {
     const page = createMockPage();
-    const mockBrowser = createMockBrowser(page);
-    restoreBrowser = _setBrowserForTest(mockBrowser);
+    const session = createMockSession(page);
+    restorePool = _setBrowserPoolForTest(createMockPool(session));
     restoreFiles = _setFilesForTest(createMockFiles());
   });
 
   afterEach(() => {
-    restoreBrowser();
+    restorePool();
     restoreFiles();
   });
 
@@ -122,11 +137,10 @@ describe("browser tool", () => {
 
     it("detects error pages from HTTP status", async () => {
       const page = createMockPage({ bodyText: "Not Found" });
-      const mockBrowser = createMockBrowser(page);
-      // Override goto to return 404
       (page as any).goto = async (url: string) => ({ status: () => 404 });
-      restoreBrowser();
-      restoreBrowser = _setBrowserForTest(mockBrowser);
+      const session = createMockSession(page);
+      restorePool();
+      restorePool = _setBrowserPoolForTest(createMockPool(session));
 
       const result = await browserTool.handler({
         action: "navigate",
@@ -138,9 +152,9 @@ describe("browser tool", () => {
 
     it("detects error pages from body text patterns", async () => {
       const page = createMockPage({ bodyText: "Access Denied — you do not have permission" });
-      const mockBrowser = createMockBrowser(page);
-      restoreBrowser();
-      restoreBrowser = _setBrowserForTest(mockBrowser);
+      const session = createMockSession(page);
+      restorePool();
+      restorePool = _setBrowserPoolForTest(createMockPool(session));
 
       const result = await browserTool.handler({
         action: "navigate",
@@ -150,7 +164,7 @@ describe("browser tool", () => {
       expect((textContent as { text: string }).text).toContain("Status: error");
     });
 
-    it("saves text and struct artifacts", async () => {
+    it("saves artifacts only to pagesDir (not session output)", async () => {
       const mockFiles = createMockFiles();
       restoreFiles();
       restoreFiles = _setFilesForTest(mockFiles);
@@ -160,20 +174,22 @@ describe("browser tool", () => {
         payload: { url: "https://example.com/page" },
       });
 
-      // Check that at least one .txt and .struct.txt were written
       const keys = Array.from((mockFiles as any)._storage.keys());
-      expect(keys.some((k: string) => k.endsWith(".txt") && !k.endsWith(".struct.txt"))).toBe(true);
-      expect(keys.some((k: string) => k.endsWith(".struct.txt"))).toBe(true);
+      // Should have files in pagesDir
+      expect(keys.some((k: string) => k.includes("browser/pages/") && k.endsWith(".txt"))).toBe(true);
+      expect(keys.some((k: string) => k.includes("browser/pages/") && k.endsWith(".struct.txt"))).toBe(true);
+      // Should NOT have session output copies
+      expect(keys.some((k: string) => k.includes("sessions/"))).toBe(false);
     });
 
     it("caps text at configured max lines", async () => {
       const longBody = Array.from({ length: 1000 }, (_, i) => `Line ${i + 1}`).join("\n");
       const page = createMockPage({ bodyText: longBody });
-      const mockBrowser = createMockBrowser(page);
+      const session = createMockSession(page);
       const mockFiles = createMockFiles();
-      restoreBrowser();
+      restorePool();
       restoreFiles();
-      restoreBrowser = _setBrowserForTest(mockBrowser);
+      restorePool = _setBrowserPoolForTest(createMockPool(session));
       restoreFiles = _setFilesForTest(mockFiles);
 
       await browserTool.handler({
@@ -193,7 +209,6 @@ describe("browser tool", () => {
       const mockFiles = createMockFiles();
       restoreFiles();
       restoreFiles = _setFilesForTest(mockFiles);
-      // Pre-create the instruction file
       const knowledgePath = `${process.cwd()}/workspace/knowledge/browser/example.com.md`;
       (mockFiles as any)._storage.set(knowledgePath, "# Instructions for example.com");
 
@@ -222,9 +237,9 @@ describe("browser tool", () => {
   describe("evaluate", () => {
     it("returns evaluated result", async () => {
       const page = createMockPage({ evaluateResult: "hello world" });
-      const mockBrowser = createMockBrowser(page);
-      restoreBrowser();
-      restoreBrowser = _setBrowserForTest(mockBrowser);
+      const session = createMockSession(page);
+      restorePool();
+      restorePool = _setBrowserPoolForTest(createMockPool(session));
 
       const result = await browserTool.handler({
         action: "evaluate",
@@ -236,9 +251,9 @@ describe("browser tool", () => {
 
     it("serializes object results as JSON", async () => {
       const page = createMockPage({ evaluateResult: { key: "value" } });
-      const mockBrowser = createMockBrowser(page);
-      restoreBrowser();
-      restoreBrowser = _setBrowserForTest(mockBrowser);
+      const session = createMockSession(page);
+      restorePool();
+      restorePool = _setBrowserPoolForTest(createMockPool(session));
 
       const result = await browserTool.handler({
         action: "evaluate",
@@ -250,9 +265,9 @@ describe("browser tool", () => {
 
     it("handles undefined result", async () => {
       const page = createMockPage({ evaluateResult: undefined });
-      const mockBrowser = createMockBrowser(page);
-      restoreBrowser();
-      restoreBrowser = _setBrowserForTest(mockBrowser);
+      const session = createMockSession(page);
+      restorePool();
+      restorePool = _setBrowserPoolForTest(createMockPool(session));
 
       const result = await browserTool.handler({
         action: "evaluate",
@@ -271,9 +286,9 @@ describe("browser tool", () => {
 
     it("truncates long results", async () => {
       const page = createMockPage({ evaluateResult: "x".repeat(6000) });
-      const mockBrowser = createMockBrowser(page);
-      restoreBrowser();
-      restoreBrowser = _setBrowserForTest(mockBrowser);
+      const session = createMockSession(page);
+      restorePool();
+      restorePool = _setBrowserPoolForTest(createMockPool(session));
 
       const result = await browserTool.handler({
         action: "evaluate",
@@ -371,20 +386,18 @@ describe("browser tool", () => {
     });
 
     it("falls back to viewport when full_page exceeds size limit", async () => {
-      // Create a buffer > 1MB for first call, then small for retry
       let callCount = 0;
       const page = createMockPage();
       (page as any).screenshot = async (opts?: { fullPage?: boolean }) => {
         callCount++;
         if (callCount === 1 && opts?.fullPage) {
-          // Return oversized buffer
           return Buffer.alloc(1_048_577);
         }
         return Buffer.from("small-png");
       };
-      const mockBrowser = createMockBrowser(page);
-      restoreBrowser();
-      restoreBrowser = _setBrowserForTest(mockBrowser);
+      const session = createMockSession(page);
+      restorePool();
+      restorePool = _setBrowserPoolForTest(createMockPool(session));
 
       const result = await browserTool.handler({
         action: "take_screenshot",
@@ -411,6 +424,26 @@ describe("browser tool", () => {
 
       const keys = Array.from((mockFiles as any)._storage.keys());
       expect(keys.some((k: string) => k.endsWith(".png"))).toBe(true);
+    });
+  });
+
+  describe("feedback integration", () => {
+    it("feedback tracker is per-session via BrowserSession", async () => {
+      const page = createMockPage();
+      const session = createMockSession(page);
+      restorePool();
+      restorePool = _setBrowserPoolForTest(createMockPool(session));
+
+      // Initial state
+      expect(session.feedbackTracker.stats().total).toBe(0);
+
+      await browserTool.handler({
+        action: "navigate",
+        payload: { url: "https://example.com" },
+      });
+
+      // After navigate, tracker should have recorded the event
+      expect(session.feedbackTracker.stats().total).toBe(1);
     });
   });
 

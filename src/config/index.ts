@@ -97,6 +97,8 @@ export const config = deepFreeze({
     structMaxDepth: 8,
     textMaxLines: 500,
     screenshotMaxBytes: 1_048_576,
+    maxPoolSize: 3,
+    idleTimeout: 5 * 60_000,
   },
   assistant: env.assistant,
 });

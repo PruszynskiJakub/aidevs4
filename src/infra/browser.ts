@@ -1,20 +1,42 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { dirname } from "path";
+import { dirname, join } from "path";
+import { rename } from "fs/promises";
 import { config } from "../config/index.ts";
 import { files } from "./file.ts";
 import { safeParse } from "../utils/parse.ts";
+import { requireSessionId } from "../agent/context.ts";
+import { createBrowserFeedbackTracker, type BrowserFeedbackTracker } from "./browser-feedback.ts";
+import { createBrowserInterventions, type BrowserInterventions } from "./browser-interventions.ts";
 
-export interface BrowserService {
+// ── Interfaces ─────────────────────────────────────────────────
+
+export interface BrowserSession {
   getPage(): Promise<Page>;
   saveSession(): Promise<void>;
   close(): Promise<void>;
   isRunning(): boolean;
+  readonly feedbackTracker: BrowserFeedbackTracker;
+  readonly interventions: BrowserInterventions;
 }
 
-function createBrowserService(): BrowserService {
+export interface BrowserPool {
+  get(): BrowserSession;
+  close(sessionId: string): Promise<void>;
+  closeAll(): Promise<void>;
+  /** @internal — number of active sessions in the pool */
+  size(): number;
+}
+
+// ── BrowserSession factory ─────────────────────────────────────
+
+function createBrowserSession(): BrowserSession {
   let browserInstance: Browser | null = null;
   let contextInstance: BrowserContext | null = null;
   let pageInstance: Page | null = null;
+  let lastActivity = Date.now();
+
+  const tracker = createBrowserFeedbackTracker();
+  const interventionsSvc = createBrowserInterventions(tracker);
 
   async function launch(): Promise<Page> {
     const { headless, userAgent, sessionPath } = config.browser;
@@ -35,8 +57,9 @@ function createBrowserService(): BrowserService {
     return pageInstance;
   }
 
-  const svc: BrowserService = {
+  const svc: BrowserSession = {
     async getPage(): Promise<Page> {
+      lastActivity = Date.now();
       if (pageInstance && !pageInstance.isClosed()) return pageInstance;
       return launch();
     },
@@ -45,8 +68,11 @@ function createBrowserService(): BrowserService {
       if (!contextInstance) return;
       try {
         const state = await contextInstance.storageState();
-        await files.mkdir(dirname(config.browser.sessionPath));
-        await files.write(config.browser.sessionPath, JSON.stringify(state, null, 2));
+        const dir = dirname(config.browser.sessionPath);
+        await files.mkdir(dir);
+        const tmpPath = join(dir, `.session-${Date.now()}.tmp`);
+        await files.write(tmpPath, JSON.stringify(state, null, 2));
+        await rename(tmpPath, config.browser.sessionPath);
       } catch {
         // Best-effort session save
       }
@@ -68,22 +94,110 @@ function createBrowserService(): BrowserService {
     isRunning(): boolean {
       return browserInstance !== null && pageInstance !== null && !pageInstance.isClosed();
     },
+
+    get feedbackTracker() {
+      return tracker;
+    },
+
+    get interventions() {
+      return interventionsSvc;
+    },
   };
+
+  // Expose lastActivity for idle checks
+  Object.defineProperty(svc, "_lastActivity", {
+    get: () => lastActivity,
+    enumerable: false,
+  });
 
   return svc;
 }
 
-export let browser: BrowserService = createBrowserService();
+// ── BrowserPool ────────────────────────────────────────────────
 
-/** @internal Replace the browser singleton for testing. Returns a restore function. */
-export function _setBrowserForTest(custom: BrowserService): () => void {
-  const prev = browser;
-  browser = custom;
-  return () => { browser = prev; };
+function createBrowserPool(): BrowserPool {
+  const sessions = new Map<string, BrowserSession>();
+  let idleTimer: ReturnType<typeof setInterval> | null = null;
+
+  function startIdleCheck(): void {
+    if (idleTimer) return;
+    idleTimer = setInterval(async () => {
+      const now = Date.now();
+      for (const [id, session] of sessions) {
+        const lastActivity = (session as any)._lastActivity as number;
+        if (now - lastActivity > config.browser.idleTimeout) {
+          await pool.close(id);
+        }
+      }
+      if (sessions.size === 0 && idleTimer) {
+        clearInterval(idleTimer);
+        idleTimer = null;
+      }
+    }, 30_000);
+    // Don't prevent process exit
+    if (idleTimer && typeof idleTimer === "object" && "unref" in idleTimer) {
+      (idleTimer as NodeJS.Timeout).unref();
+    }
+  }
+
+  const pool: BrowserPool = {
+    get(): BrowserSession {
+      const sessionId = requireSessionId();
+      const existing = sessions.get(sessionId);
+      if (existing) return existing;
+
+      if (sessions.size >= config.browser.maxPoolSize) {
+        throw new Error(
+          `Browser pool full (max ${config.browser.maxPoolSize}). Close an existing session first.`,
+        );
+      }
+
+      const session = createBrowserSession();
+      sessions.set(sessionId, session);
+      startIdleCheck();
+      return session;
+    },
+
+    async close(sessionId: string): Promise<void> {
+      const session = sessions.get(sessionId);
+      if (!session) return;
+      sessions.delete(sessionId);
+      await session.close();
+    },
+
+    async closeAll(): Promise<void> {
+      if (idleTimer) {
+        clearInterval(idleTimer);
+        idleTimer = null;
+      }
+      const entries = [...sessions.entries()];
+      sessions.clear();
+      await Promise.allSettled(entries.map(([, s]) => s.close()));
+    },
+
+    size(): number {
+      return sessions.size;
+    },
+  };
+
+  return pool;
 }
+
+// ── Singleton + test override ──────────────────────────────────
+
+export let browserPool: BrowserPool = createBrowserPool();
+
+/** @internal Replace the browser pool singleton for testing. Returns a restore function. */
+export function _setBrowserPoolForTest(custom: BrowserPool): () => void {
+  const prev = browserPool;
+  browserPool = custom;
+  return () => { browserPool = prev; };
+}
+
+// ── Process cleanup ────────────────────────────────────────────
 
 async function cleanup() {
-  if (browser.isRunning()) await browser.close();
+  await browserPool.closeAll();
 }
-process.on("SIGINT", cleanup);
-process.on("SIGTERM", cleanup);
+process.once("SIGINT", cleanup);
+process.once("SIGTERM", cleanup);
