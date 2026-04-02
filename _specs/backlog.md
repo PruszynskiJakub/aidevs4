@@ -44,3 +44,5 @@ human approval tool with slack UI
 mode like headless (for cli), different for server as a part of AgentContext 
 
 support communication client slack/postman/cli etc
+
+porządek ze ścieżkami zapisu

@@ -310,15 +310,21 @@ async function click(payload: { css_selector?: string; text?: string }): Promise
   return handlePostAction(page, urlBefore, "browser__click");
 }
 
+function resolveValuePlaceholders(value: string): string {
+  return value.replace(/\{\{hub_api_key\}\}/g, config.hub.apiKey);
+}
+
 async function typeText(payload: { selector: string; value: string; press_enter: boolean }): Promise<ToolResult> {
   assertMaxLength(payload.selector, "selector", 500);
   assertMaxLength(payload.value, "value", 5000);
+
+  const resolvedValue = resolveValuePlaceholders(payload.value);
 
   const page = await browser.getPage();
   const urlBefore = page.url();
 
   try {
-    await page.fill(payload.selector, payload.value, { timeout: config.browser.timeouts.action });
+    await page.fill(payload.selector, resolvedValue, { timeout: config.browser.timeouts.action });
     if (payload.press_enter) {
       await page.press(payload.selector, "Enter");
     }
@@ -413,10 +419,10 @@ export default {
         }),
       },
       click: {
-        description: "Click an element on the page. Provide exactly one of css_selector or text. If the click causes navigation, new page artifacts are saved automatically.",
+        description: "Click an element on the page. Provide exactly one of css_selector or text (set the other to empty string). If the click causes navigation, new page artifacts are saved automatically.",
         schema: z.object({
-          css_selector: z.string().describe("CSS selector of the element to click").optional(),
-          text: z.string().describe("Visible text of the element to click (uses getByText matching)").optional(),
+          css_selector: z.string().describe("CSS selector of the element to click. Set to empty string if using text instead."),
+          text: z.string().describe("Visible text of the element to click (uses getByText matching). Set to empty string if using css_selector instead."),
         }),
       },
       type_text: {
