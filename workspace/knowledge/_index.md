@@ -10,3 +10,4 @@ This is the agent's curated knowledge base.
 ## Reference
 - [Hub API](reference/hub-api.md) — AG3NTS hub endpoints and authentication
 - [Tool Inventory](reference/tool-inventory.md) — available tools and when to use them
+- [Cities](reference/cities) — available tools and when to use them
