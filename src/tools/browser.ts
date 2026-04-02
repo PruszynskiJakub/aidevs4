@@ -10,8 +10,8 @@ import { browser } from "../infra/browser.ts";
 import { sessionService } from "../agent/session.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { createBrowserFeedbackTracker } from "./browser-feedback.ts";
-import { createBrowserInterventions } from "./browser-interventions.ts";
+import { createBrowserFeedbackTracker } from "../infra/browser-feedback.ts";
+import { createBrowserInterventions } from "../infra/browser-interventions.ts";
 
 // ── Per-session feedback & interventions ────────────────────────
 const feedbackTracker = createBrowserFeedbackTracker();
