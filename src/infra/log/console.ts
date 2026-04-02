@@ -102,21 +102,6 @@ export class ConsoleLogger implements Logger {
     console.log(`  ${CYAN}⚡${RESET} LLM responded in ${BOLD}${elapsed}${RESET}${tokenSuffix(tokensIn, tokensOut)}`);
   }
 
-  plan(planText: string, model: string, elapsed: string, tokensIn?: number, tokensOut?: number): void {
-    console.log(`  ${CYAN}📋${RESET} Plan updated ${DIM}(${model}, ${elapsed})${RESET}${tokenSuffix(tokensIn, tokensOut)}`);
-    for (const line of planText.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      if (trimmed.includes("[x]")) {
-        console.log(`     ${DIM}${trimmed}${RESET}`);
-      } else if (trimmed.includes("[>]")) {
-        console.log(`     ${BOLD}${YELLOW}${trimmed}${RESET}`);
-      } else if (trimmed.includes("[ ]")) {
-        console.log(`     ${WHITE}${trimmed}${RESET}`);
-      }
-    }
-  }
-
   toolHeader(count: number): void {
     const parallel = count > 1 ? ` in parallel` : "";
     console.log(`  ${YELLOW}🔧 Calling ${count} tool${count > 1 ? "s" : ""}${parallel}:${RESET}`);

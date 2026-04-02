@@ -1,11 +1,9 @@
 import type { LLMProvider, LLMMessage, LLMChatResponse, LLMToolCall } from "../types/llm.ts";
 import type { Logger } from "../types/logger.ts";
-import type { PromptResult } from "../llm/prompt.ts";
 import type { AgentState } from "../types/agent-state.ts";
 import { llm as defaultLLM } from "../llm/llm.ts";
 import { config } from "../config/index.ts";
 import { dispatch } from "../tools/registry.ts";
-import { promptService } from "../llm/prompt.ts";
 import { agentsService } from "./agents.ts";
 import { MarkdownLogger } from "../infra/log/markdown.ts";
 import { ConsoleLogger } from "../infra/log/console.ts";
@@ -51,50 +49,7 @@ function setupSession(
   };
 }
 
-async function executePlanPhase(
-  planPrompt: PromptResult,
-  provider: LLMProvider,
-): Promise<string> {
-  const state = requireState();
-  const planMessages: LLMMessage[] = [
-    { role: "system", content: planPrompt.content },
-    ...state.messages,
-  ];
-
-  const startTime = Date.now();
-  bus.emit("generation.started", { name: "plan", model: planPrompt.model!, startTime });
-
-  const planStart = performance.now();
-  const planResponse = await provider.chatCompletion({
-    model: planPrompt.model!,
-    messages: planMessages,
-    ...(planPrompt.temperature !== undefined && {
-      temperature: planPrompt.temperature,
-    }),
-  });
-  const durationMs = performance.now() - planStart;
-  const planText = planResponse.content ?? "";
-
-  const tokensIn = planResponse.usage?.promptTokens ?? 0;
-  const tokensOut = planResponse.usage?.completionTokens ?? 0;
-  state.tokens.plan.promptTokens += tokensIn;
-  state.tokens.plan.completionTokens += tokensOut;
-
-  bus.emit("generation.completed", {
-    name: "plan",
-    model: planPrompt.model!,
-    input: planMessages,
-    output: { content: planText },
-    usage: { input: tokensIn, output: tokensOut, total: tokensIn + tokensOut },
-    durationMs,
-    startTime,
-  });
-
-  return planText;
-}
-
 async function executeActPhase(
-  planText: string,
   actSystemPrompt: string,
   provider: LLMProvider,
 ): Promise<LLMChatResponse> {
@@ -102,7 +57,6 @@ async function executeActPhase(
   const actMessages: LLMMessage[] = [
     { role: "system", content: actSystemPrompt },
     ...state.messages,
-    { role: "assistant", content: `## Current Plan\n\n${planText}` },
   ];
 
   const startTime = Date.now();
@@ -118,8 +72,8 @@ async function executeActPhase(
 
   const tokensIn = response.usage?.promptTokens ?? 0;
   const tokensOut = response.usage?.completionTokens ?? 0;
-  state.tokens.act.promptTokens += tokensIn;
-  state.tokens.act.completionTokens += tokensOut;
+  state.tokens.promptTokens += tokensIn;
+  state.tokens.completionTokens += tokensOut;
 
   bus.emit("generation.completed", {
     name: "act",
@@ -277,10 +231,7 @@ export async function runAgent(
     }
 
     try {
-      const [resolved, planPrompt] = await Promise.all([
-        agentsService.resolve(state.assistant),
-        promptService.load("plan"),
-      ]);
+      const resolved = await agentsService.resolve(state.assistant);
 
       if (!state.model) {
         state.model = resolved.model;
@@ -329,8 +280,7 @@ export async function runAgent(
         const contextLength = context.messages.length;
         state.messages = [...context.messages];
 
-        const planText = await executePlanPhase(planPrompt, provider);
-        const response = await executeActPhase(planText, context.systemPrompt, provider);
+        const response = await executeActPhase(context.systemPrompt, provider);
 
         const newMessages = state.messages.slice(contextLength);
         state.messages = originalMessages.concat(newMessages);

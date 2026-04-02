@@ -10,7 +10,6 @@ export interface GeneralLogger {
 export interface AgentLogger {
   step(iter: number, max: number, model: string, msgCount: number): void;
   llm(elapsed: string, tokensIn?: number, tokensOut?: number): void;
-  plan(planText: string, model: string, elapsed: string, tokensIn?: number, tokensOut?: number): void;
   toolHeader(count: number): void;
   toolCall(name: string, rawArgs: string): void;
   toolOk(name: string, elapsed: string, rawResult: string): void;

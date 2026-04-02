@@ -94,10 +94,7 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
     traceId,
     depth,
     messages,
-    tokens: {
-      plan: { promptTokens: 0, completionTokens: 0 },
-      act: { promptTokens: 0, completionTokens: 0 },
-    },
+    tokens: { promptTokens: 0, completionTokens: 0 },
     iteration: 0,
     assistant: assistantName,
     model: opts.model ?? "",

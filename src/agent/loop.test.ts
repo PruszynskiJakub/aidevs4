@@ -22,15 +22,9 @@ mock.module("../tools/index.ts", () => ({
 // Must import after mocks are installed
 const { runAgent } = await import("./loop.ts");
 
-/** Plan response — no tool calls, just text */
-function planResponse(planText: string): LLMChatResponse {
-  return { content: planText, finishReason: "stop", toolCalls: [] };
-}
-
 /**
- * Create a provider that returns plan + act responses in sequence.
- * Each iteration needs 2 responses: [plan, act].
- * For multi-iteration tests, interleave: [plan1, act1, plan2, act2, ...].
+ * Create a provider that returns responses in sequence.
+ * Each iteration needs 1 response (act only).
  */
 function makeLLMProvider(responses: LLMChatResponse[]): LLMProvider {
   let callIndex = 0;
@@ -44,10 +38,7 @@ function makeState(prompt: string, overrides?: Partial<AgentState>): AgentState 
   return {
     sessionId: "test",
     messages: [{ role: "user", content: prompt }],
-    tokens: {
-      plan: { promptTokens: 0, completionTokens: 0 },
-      act: { promptTokens: 0, completionTokens: 0 },
-    },
+    tokens: { promptTokens: 0, completionTokens: 0 },
     iteration: 0,
     assistant: "default",
     model: "gpt-4.1",
@@ -61,62 +52,28 @@ beforeEach(() => {
   dispatchResults = {};
 });
 
-describe("agent plan-act loop", () => {
-  it("calls plan LLM before act LLM on each iteration", async () => {
+describe("agent loop", () => {
+  it("calls LLM once per iteration", async () => {
     const callLog: string[] = [];
 
     const provider: LLMProvider = {
-      chatCompletion: async ({ model, tools }) => {
-        // Plan call has no tools, act call has tools (even if empty array)
-        const phase = tools === undefined ? "plan" : "act";
-        callLog.push(`${phase}:${model}`);
-
-        if (phase === "plan") {
-          return planResponse("1. [>] Answer the question");
-        }
+      chatCompletion: async ({ model }) => {
+        callLog.push(`act:${model}`);
         return { content: "42", finishReason: "stop", toolCalls: [] };
       },
       completion: async () => "",
     };
 
     await runAgent(makeState("What is 2+2?"), provider);
-    // Plan uses plan.md model, act uses state.model
-    expect(callLog[0]).toMatch(/^plan:/);
-    expect(callLog[1]).toMatch(/^act:/);
-    expect(callLog).toHaveLength(2);
-  });
-
-  it("plan is NOT persisted in main message history", async () => {
-    let actMessages: LLMMessage[] = [];
-
-    const provider: LLMProvider = {
-      chatCompletion: async ({ tools, messages }) => {
-        if (tools === undefined) {
-          return planResponse("1. [>] Do the thing");
-        }
-        actMessages = messages;
-        return { content: "Done", finishReason: "stop", toolCalls: [] };
-      },
-      completion: async () => "",
-    };
-
-    await runAgent(makeState("test"), provider);
-
-    // Act messages should contain the plan as last assistant message
-    const lastMsg = actMessages[actMessages.length - 1];
-    expect(lastMsg.role).toBe("assistant");
-    expect((lastMsg as any).content).toContain("Current Plan");
-    expect((lastMsg as any).content).toContain("[>] Do the thing");
+    expect(callLog).toHaveLength(1);
+    expect(callLog[0]).toMatch(/^act:/);
   });
 
   it("act phase receives system prompt from resolved assistant", async () => {
     let actMessages: LLMMessage[] = [];
 
     const provider: LLMProvider = {
-      chatCompletion: async ({ tools, messages }) => {
-        if (tools === undefined) {
-          return planResponse("1. [>] Answer");
-        }
+      chatCompletion: async ({ messages }) => {
         actMessages = messages;
         return { content: "Done", finishReason: "stop", toolCalls: [] };
       },
@@ -132,36 +89,9 @@ describe("agent plan-act loop", () => {
     expect(actMessages[1].role).toBe("user");
   });
 
-  it("plan receives conversation history with plan system prompt", async () => {
-    let planMessages: LLMMessage[] = [];
-
-    const provider: LLMProvider = {
-      chatCompletion: async ({ tools, messages }) => {
-        if (tools === undefined) {
-          planMessages = messages;
-          return planResponse("1. [>] Answer");
-        }
-        return { content: "Done", finishReason: "stop", toolCalls: [] };
-      },
-      completion: async () => "",
-    };
-
-    await runAgent(makeState("test"), provider);
-
-    // Plan messages should have plan system prompt (from plan.md) + user message
-    expect(planMessages[0].role).toBe("system");
-    expect(planMessages[1].role).toBe("user");
-    expect(planMessages).toHaveLength(2);
-    const planContent = (planMessages[0] as any).content;
-    expect(planContent).toBeTruthy();
-  });
-
   it("state.messages never contains system messages", async () => {
     const provider: LLMProvider = {
-      chatCompletion: async ({ tools }) => {
-        if (tools === undefined) {
-          return planResponse("1. [>] Answer");
-        }
+      chatCompletion: async () => {
         return { content: "Done", finishReason: "stop", toolCalls: [] };
       },
       completion: async () => "",
@@ -174,28 +104,18 @@ describe("agent plan-act loop", () => {
     expect(systemMessages).toHaveLength(0);
   });
 
-  it("plan updates across iterations with tool results", async () => {
-    const planCalls: LLMMessage[][] = [];
-
+  it("tool results appear in subsequent iterations", async () => {
     dispatchResults = {
       tool_a: async () => "result A",
     };
 
     let callIndex = 0;
-    const provider: LLMProvider = {
-      chatCompletion: async ({ tools, messages }) => {
-        if (tools === undefined) {
-          planCalls.push([...messages]);
-          return planResponse(
-            callIndex === 0
-              ? "1. [>] Call tool_a"
-              : "1. [x] Call tool_a\n2. [>] Return result"
-          );
-        }
+    let secondCallMessages: LLMMessage[] = [];
 
+    const provider: LLMProvider = {
+      chatCompletion: async ({ messages }) => {
         callIndex++;
         if (callIndex === 1) {
-          // First act: call a tool
           return {
             content: null,
             finishReason: "tool_calls",
@@ -204,7 +124,7 @@ describe("agent plan-act loop", () => {
             ],
           };
         }
-        // Second act: finish
+        secondCallMessages = messages;
         return { content: "Done", finishReason: "stop", toolCalls: [] };
       },
       completion: async () => "",
@@ -212,10 +132,8 @@ describe("agent plan-act loop", () => {
 
     await runAgent(makeState("test"), provider);
 
-    // Second plan call should see tool call + result in history
-    expect(planCalls).toHaveLength(2);
-    expect(planCalls[1].length).toBeGreaterThan(planCalls[0].length);
-    const hasToolResult = planCalls[1].some((m) => m.role === "tool");
+    // Second call should see tool result in history
+    const hasToolResult = secondCallMessages.some((m) => m.role === "tool");
     expect(hasToolResult).toBe(true);
   });
 });
@@ -240,8 +158,7 @@ describe("agent parallel tool calling", () => {
     };
 
     const provider = makeLLMProvider([
-      // Iteration 1: plan, then act with tools
-      planResponse("1. [>] Call tools"),
+      // Iteration 1: act with tools
       {
         content: null,
         finishReason: "tool_calls",
@@ -250,8 +167,7 @@ describe("agent parallel tool calling", () => {
           { id: "c2", type: "function", function: { name: "tool_b", arguments: "{}" } },
         ],
       },
-      // Iteration 2: plan, then act with finish
-      planResponse("1. [x] Call tools\n2. [>] Done"),
+      // Iteration 2: act with finish
       { content: "Done", finishReason: "stop", toolCalls: [] },
     ]);
 
@@ -276,10 +192,7 @@ describe("agent parallel tool calling", () => {
     let callIndex = 0;
 
     const provider: LLMProvider = {
-      chatCompletion: async ({ tools, messages }) => {
-        if (tools === undefined) {
-          return planResponse("1. [>] Call tools");
-        }
+      chatCompletion: async ({ messages }) => {
         capturedMessages = messages;
         if (callIndex++ === 0) {
           return {
@@ -298,7 +211,6 @@ describe("agent parallel tool calling", () => {
 
     await runAgent(makeState("test"), provider);
 
-    // Filter tool messages from second act call's messages (excluding system and injected plan)
     const toolMessages = capturedMessages.filter(m => m.role === "tool");
     expect(toolMessages).toHaveLength(2);
     expect((toolMessages[0] as any).toolCallId).toBe("c1");
@@ -315,10 +227,7 @@ describe("agent parallel tool calling", () => {
     let callIndex = 0;
 
     const provider: LLMProvider = {
-      chatCompletion: async ({ tools, messages }) => {
-        if (tools === undefined) {
-          return planResponse("1. [>] Call tools");
-        }
+      chatCompletion: async ({ messages }) => {
         capturedMessages = messages;
         if (callIndex++ === 0) {
           return {
@@ -356,10 +265,7 @@ describe("agent parallel tool calling", () => {
     let callIndex = 0;
 
     const provider: LLMProvider = {
-      chatCompletion: async ({ tools, messages }) => {
-        if (tools === undefined) {
-          return planResponse("1. [>] Call solo");
-        }
+      chatCompletion: async ({ messages }) => {
         capturedMessages = messages;
         if (callIndex++ === 0) {
           return {
@@ -384,7 +290,6 @@ describe("agent parallel tool calling", () => {
 
   it("handles no tool calls — prints response and exits", async () => {
     const provider = makeLLMProvider([
-      planResponse("1. [>] Answer directly"),
       { content: "Hello!", finishReason: "stop", toolCalls: [] },
     ]);
 
@@ -394,32 +299,24 @@ describe("agent parallel tool calling", () => {
 });
 
 describe("agent model override", () => {
-  it("uses model from state for act phase, plan uses plan.md model", async () => {
-    const models: string[] = [];
+  it("uses model from state for act phase", async () => {
+    let capturedModel = "";
     const provider: LLMProvider = {
-      chatCompletion: async ({ model, tools }) => {
-        models.push(`${tools === undefined ? "plan" : "act"}:${model}`);
-        if (tools === undefined) {
-          return planResponse("1. [>] Answer");
-        }
+      chatCompletion: async ({ model }) => {
+        capturedModel = model;
         return { content: "ok", finishReason: "stop", toolCalls: [] };
       },
       completion: async () => "",
     };
 
     await runAgent(makeState("test", { model: "gpt-4.1-mini" }), provider);
-    // Plan uses plan.md model, act uses the state model
-    expect(models[0]).toMatch(/^plan:gpt-4\.1$/);
-    expect(models[1]).toBe("act:gpt-4.1-mini");
+    expect(capturedModel).toBe("gpt-4.1-mini");
   });
 
   it("falls back to resolved assistant model when state.model is empty", async () => {
     let capturedActModel = "";
     const provider: LLMProvider = {
-      chatCompletion: async ({ model, tools }) => {
-        if (tools === undefined) {
-          return planResponse("1. [>] Answer");
-        }
+      chatCompletion: async ({ model }) => {
         capturedActModel = model;
         return { content: "ok", finishReason: "stop", toolCalls: [] };
       },

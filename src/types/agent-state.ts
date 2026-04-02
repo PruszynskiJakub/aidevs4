@@ -15,7 +15,7 @@ export interface AgentState {
   traceId?: string;
   depth?: number;
   messages: LLMMessage[];
-  tokens: { plan: TokenUsage; act: TokenUsage };
+  tokens: TokenUsage;
   iteration: number;
   assistant: string;
   model: string;

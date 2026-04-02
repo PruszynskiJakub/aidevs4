@@ -96,14 +96,6 @@ export class MarkdownLogger implements Logger {
     this.append(`**LLM responded** in ${elapsed}${tokenSuffix(tokensIn, tokensOut)}\n\n`);
   }
 
-  plan(planText: string, model: string, elapsed: string, tokensIn?: number, tokensOut?: number): void {
-    this.append(
-      `### Plan\n\n` +
-      `*Model: ${model} · ${elapsed}${tokenSuffix(tokensIn, tokensOut)}*\n\n` +
-      `${planText}\n\n`,
-    );
-  }
-
   toolHeader(count: number): void {
     const parallel = count > 1 ? ", parallel" : "";
     this.append(`### Tool Calls (${count}${parallel})\n\n`);

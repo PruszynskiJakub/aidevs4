@@ -26,11 +26,11 @@ export interface EventMap {
   "session.completed": {
     reason: "answer" | "max_iterations";
     iterations: number;
-    tokens: { plan: TokenPair; act: TokenPair };
+    tokens: TokenPair;
   };
   "session.failed": {
     iterations: number;
-    tokens: { plan: TokenPair; act: TokenPair };
+    tokens: TokenPair;
     error: string;
   };
 
@@ -45,7 +45,7 @@ export interface EventMap {
     iteration: number;
     outcome: "continue" | "answer" | "max_iterations";
     durationMs: number;
-    tokens: { plan: TokenPair; act: TokenPair };
+    tokens: TokenPair;
   };
 
   // ── LLM Generation ─────────────────────────────────────
@@ -123,7 +123,7 @@ export interface EventMap {
     agentName: string;
     durationMs: number;
     iterations: number;
-    tokens: { plan: TokenPair; act: TokenPair };
+    tokens: TokenPair;
     result: string | null;
   };
   "agent.failed": {

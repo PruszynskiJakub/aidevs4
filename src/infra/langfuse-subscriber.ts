@@ -323,7 +323,7 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
 
   // ── session.completed → end agent observation ──────────────
 
-  function endAgentObs(agentId: string, reason: string, iterations: number, tokens: { plan: { promptTokens: number; completionTokens: number }; act: { promptTokens: number; completionTokens: number } }, errorMsg?: string): void {
+  function endAgentObs(agentId: string, reason: string, iterations: number, tokens: { promptTokens: number; completionTokens: number }, errorMsg?: string): void {
     const entry = agentMap.get(agentId);
     if (!entry) return;
 
@@ -345,15 +345,12 @@ export function attachLangfuseSubscriber(bus: EventBus): () => void {
         });
       }
 
-      const totalInput = tokens.plan.promptTokens + tokens.act.promptTokens;
-      const totalOutput = tokens.plan.completionTokens + tokens.act.completionTokens;
-
       entry.obs.update({
         output: answer || null,
         metadata: {
           reason,
           iterations,
-          totalTokens: { input: totalInput, output: totalOutput, total: totalInput + totalOutput },
+          totalTokens: { input: tokens.promptTokens, output: tokens.completionTokens, total: tokens.promptTokens + tokens.completionTokens },
         },
         endTime: toDate(Date.now()),
       });

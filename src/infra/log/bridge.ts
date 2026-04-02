@@ -70,15 +70,7 @@ export function attachLoggerListener(
   unsubs.push(
     bus.on("generation.completed", (e) => {
       if (!mine(e.sessionId)) return;
-      if (e.data.name === "plan") {
-        log.plan(
-          e.data.output.content ?? "",
-          e.data.model,
-          formatMs(e.data.durationMs),
-          e.data.usage.input,
-          e.data.usage.output,
-        );
-      } else if (e.data.name === "act") {
+      if (e.data.name === "act") {
         log.llm(
           formatMs(e.data.durationMs),
           e.data.usage.input,

@@ -57,25 +57,6 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args).toEqual([3, 40, "gpt-4.1", 5]);
   });
 
-  it("generation.completed (plan) → log.plan() with content", () => {
-    bus.emit("generation.completed", {
-      name: "plan",
-      model: "gpt-4.1",
-      input: [],
-      output: { content: "1. Search for docs\n2. Extract endpoints" },
-      usage: { input: 1000, output: 200, total: 1200 },
-      durationMs: 1500,
-      startTime: Date.now(),
-    });
-
-    const call = calls.find((c) => c.method === "plan");
-    expect(call).toBeDefined();
-    expect(call!.args[0]).toBe("1. Search for docs\n2. Extract endpoints");
-    expect(call!.args[1]).toBe("gpt-4.1");
-    expect(call!.args[3]).toBe(1000);
-    expect(call!.args[4]).toBe(200);
-  });
-
   it("generation.completed (act) → log.llm()", () => {
     bus.emit("generation.completed", {
       name: "act",
@@ -194,10 +175,7 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     bus.emit("session.completed", {
       reason: "max_iterations",
       iterations: 40,
-      tokens: {
-        plan: { promptTokens: 0, completionTokens: 0 },
-        act: { promptTokens: 0, completionTokens: 0 },
-      },
+      tokens: { promptTokens: 0, completionTokens: 0 },
     });
 
     const call = calls.find((c) => c.method === "maxIter");
@@ -208,10 +186,7 @@ describe("attachLoggerListener (Bus→Logger)", () => {
   it("session.failed → log.error()", () => {
     bus.emit("session.failed", {
       iterations: 3,
-      tokens: {
-        plan: { promptTokens: 0, completionTokens: 0 },
-        act: { promptTokens: 0, completionTokens: 0 },
-      },
+      tokens: { promptTokens: 0, completionTokens: 0 },
       error: "something went wrong",
     });
 

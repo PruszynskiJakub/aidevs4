@@ -17,7 +17,7 @@ function makeState(sessionId: string): AgentState {
   return {
     sessionId,
     messages: [],
-    tokens: { plan: { promptTokens: 0, completionTokens: 0 }, act: { promptTokens: 0, completionTokens: 0 } },
+    tokens: { promptTokens: 0, completionTokens: 0 },
     iteration: 0,
     assistant: "default",
     model: "",
