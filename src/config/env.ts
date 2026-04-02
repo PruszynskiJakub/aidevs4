@@ -23,4 +23,5 @@ export const env = {
   langfusePublicKey: process.env.LANGFUSE_PUBLIC_KEY,
   langfuseSecretKey: process.env.LANGFUSE_SECRET_KEY,
   langfuseBaseUrl: process.env.LANGFUSE_BASE_URL,
+  browserHeadless: process.env.BROWSER_HEADLESS !== "false",
 } as const;

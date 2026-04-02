@@ -22,7 +22,7 @@ export const config = deepFreeze({
   },
   sandbox: {
     allowedReadPaths: [PROJECT_ROOT] as readonly string[],
-    allowedWritePaths: [SESSIONS_DIR, join(WORKSPACE_DIR, "shared")] as readonly string[],
+    allowedWritePaths: [SESSIONS_DIR, join(WORKSPACE_DIR, "shared"), join(WORKSPACE_DIR, "browser")] as readonly string[],
     webAllowedHosts: [".ag3nts.org"] as readonly string[],
   },
   models: {
@@ -78,6 +78,25 @@ export const config = deepFreeze({
   retry: {
     openaiMaxRetries: 2,
     geminiMaxAttempts: 5,
+  },
+  browser: {
+    headless: env.browserHeadless,
+    sessionPath: join(WORKSPACE_DIR, "browser", "session.json"),
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    pagesDir: join(WORKSPACE_DIR, "browser", "pages"),
+    timeouts: {
+      navigation: 30_000,
+      action: 5_000,
+      evaluate: 30_000,
+      screenshot: 10_000,
+      settleAfterClick: 1_500,
+      settleAfterType: 2_000,
+      settleAfterNavigation: 2_000,
+    },
+    structMaxNodes: 1_000,
+    structMaxDepth: 8,
+    textMaxLines: 500,
+    screenshotMaxBytes: 1_048_576,
   },
   assistant: env.assistant,
 });

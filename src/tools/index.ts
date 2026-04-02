@@ -17,6 +17,7 @@ import glob from "./glob.ts";
 import grep from "./grep.ts";
 import execute_code from "./execute_code.ts";
 import delegate from "./delegate.ts";
+import browser from "./browser.ts";
 
 register(think);
 register(bash);
@@ -33,6 +34,7 @@ register(glob);
 register(grep);
 register(execute_code);
 register(delegate);
+register(browser);
 
 const mcpService = createMcpService(llm);
 
