@@ -48,3 +48,5 @@ support communication client slack/postman/cli etc
 porządek ze ścieżkami zapisu
 
 browser z feedbackiem i zbieraniem good tips
+
+browser obsługa screenshotów
