@@ -46,3 +46,5 @@ mode like headless (for cli), different for server as a part of AgentContext
 support communication client slack/postman/cli etc
 
 porządek ze ścieżkami zapisu
+
+browser z feedbackiem i zbieraniem good tips
