@@ -11,6 +11,7 @@ export interface ResolvedAgent {
   prompt: string;
   model: string;
   tools: LLMTool[];
+  memory?: boolean;
 }
 
 function stringArray(data: Record<string, unknown>, field: string, filename: string): string[] | undefined {
@@ -40,12 +41,15 @@ function validate(data: Record<string, unknown>, body: string, filename: string)
   const tools = stringArray(data, "tools", filename);
   const capabilities = stringArray(data, "capabilities", filename);
 
+  const memory = data.memory === false ? false : undefined;
+
   return {
     name: (data.name as string).trim(),
     model: (data.model as string).trim(),
     prompt: body.trim(),
     ...(tools && { tools }),
     ...(capabilities && { capabilities }),
+    ...(memory === false && { memory }),
   };
 }
 
@@ -117,6 +121,7 @@ export function createAgentsService() {
         prompt: agent.prompt,
         model: agent.model,
         tools,
+        ...(agent.memory === false && { memory: false }),
       };
     },
   };

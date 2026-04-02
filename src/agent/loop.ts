@@ -255,6 +255,7 @@ export async function runAgent(
 
       const actSystemPrompt = resolved.prompt;
 
+      const memoryEnabled = resolved.memory !== false;
       let turnStartTime = 0;
       for (let i = 0; i < config.limits.maxIterations; i++) {
         state.iteration = i;
@@ -266,21 +267,28 @@ export async function runAgent(
           model: state.model,
           messageCount: state.messages.length,
         });
+        let contextSystemPrompt = actSystemPrompt;
+        let originalMessages = state.messages;
+        let contextLength: number;
 
-        const { context, state: updatedMemory } = await processMemory(
-          actSystemPrompt,
-          state.messages,
-          state.memory,
-          provider,
-          state.sessionId,
-        );
-        state.memory = updatedMemory;
+        if (memoryEnabled) {
+          const { context, state: updatedMemory } = await processMemory(
+            actSystemPrompt,
+            state.messages,
+            state.memory,
+            provider,
+            state.sessionId,
+          );
+          state.memory = updatedMemory;
+          contextSystemPrompt = context.systemPrompt;
+          originalMessages = state.messages;
+          contextLength = context.messages.length;
+          state.messages = [...context.messages];
+        } else {
+          contextLength = state.messages.length;
+        }
 
-        const originalMessages = state.messages;
-        const contextLength = context.messages.length;
-        state.messages = [...context.messages];
-
-        const response = await executeActPhase(context.systemPrompt, provider);
+        const response = await executeActPhase(contextSystemPrompt, provider);
 
         const newMessages = state.messages.slice(contextLength);
         state.messages = originalMessages.concat(newMessages);
@@ -288,8 +296,10 @@ export async function runAgent(
         await saveIfChanged();
 
         if (response.finishReason === "stop" || !response.toolCalls.length) {
-          state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
-          await saveIfChanged();
+          if (memoryEnabled) {
+            state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
+            await saveIfChanged();
+          }
 
           bus.emit("turn.completed", {
             iteration: i + 1,
@@ -325,8 +335,10 @@ export async function runAgent(
         });
       }
 
-      state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
-      await saveIfChanged();
+      if (memoryEnabled) {
+        state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
+        await saveIfChanged();
+      }
 
       bus.emit("turn.completed", {
         iteration: config.limits.maxIterations,

@@ -4,4 +4,5 @@ export interface AgentConfig {
   prompt: string;
   tools?: string[];
   capabilities?: string[];
+  memory?: boolean;
 }

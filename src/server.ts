@@ -60,6 +60,29 @@ app.use("*", async (c, next) => {
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
+app.post("/api/negotiations/search", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const params = (body as Record<string, unknown> | null)?.params;
+  if (!params || typeof params !== "string") {
+    return c.json({ output: "Error: params field required" }, 400);
+  }
+
+  try {
+    const { answer } = await executeTurn({
+      prompt: params,
+      assistant: "negotiations",
+    });
+
+    const encoded = new TextEncoder().encode(answer);
+    const output = new TextDecoder().decode(encoded.slice(0, 500));
+    return c.json({ output });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(`/api/negotiations/search error: ${message}`);
+    return c.json({ output: "Error: search failed" }, 500);
+  }
+});
+
 app.post("/chat", async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = parseChatBody(body);
