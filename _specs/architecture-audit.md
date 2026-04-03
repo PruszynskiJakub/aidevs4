@@ -1,6 +1,6 @@
-# Architecture Audit — March 2026 (Revision 4)
+# Architecture Audit — April 2026 (Revision 5)
 
-Reaudit of the agent system against AI Devs 4 course materials (S01–S03) and the previous audit (Revision 3). Reflects codebase state as of 2026-03-30.
+Reaudit of the agent system against AI Devs 4 course materials (S01–S03) and the previous audit (Revision 4). Reflects codebase state as of 2026-04-03.
 
 ---
 
@@ -25,6 +25,7 @@ Reaudit of the agent system against AI Devs 4 course materials (S01–S03) and t
 - **Zod schema migration** (SP-60). All tool schemas migrated from hand-written JSON to Zod objects. Registry converts via `z.toJSONSchema()` with OpenAI `strict: true` enforcement. Eliminates schema drift, provides runtime validation at the type level, and makes schemas co-located with handler code.
 - **Event-driven telemetry matured.** JSONL writer compacts large fields (strips `fullText` from plans, `result` from tool completions) before persisting. Bridge pattern (`src/infra/log/bridge.ts`) converts bus events to logger calls. This is the foundation for the observability hierarchy S03E01 describes (Session → Trace → Span → Generation → Tool → Event) — the events exist, the analysis layer doesn't.
 - **ToolResult refactor** (SP-61). Replaced `Document` type with `ToolResult { content: ContentPart[]; isError?: boolean }`. Tool results are now plain text by default, with `ResourceRef` content parts only for large files. Registry serializes content parts to plain text (no XML). `document_processor` takes file paths instead of UUIDs. `resolveUri()` helper for `file://` URI conversion. All 15 tool handlers migrated in one pass.
+- **Knowledge workspace seeded** — `workspace/knowledge/` exists with `_index.md`, `procedures/`, and `reference/` directories. Default agent prompt references it. However, no agent writes to it (see gap #2).
 
 ---
 
