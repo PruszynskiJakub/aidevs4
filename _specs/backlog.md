@@ -52,3 +52,8 @@ browser z feedbackiem i zbieraniem good tips
 browser obsługa screenshotów
 
 wpiecie ollamy
+
+web__download returns a ref: URI like file:///Users/.../output/uuid.json but the agent tried reading relative paths              
+(foodwarehouse/output/uuid.json). It looped through 10 glob attempts to locate the file. The download tool's response format     
+doesn't clearly hand off the absolute path.                                                                                      
+                                              
