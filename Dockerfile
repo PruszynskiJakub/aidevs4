@@ -15,4 +15,4 @@ COPY . .
 RUN bunx playwright install --with-deps chromium
 
 EXPOSE 3000
-CMD ["bun", "run", "server"]
+CMD ["sh", "-c", "bun run server & bun run slack & wait"]
