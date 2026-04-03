@@ -48,13 +48,10 @@ async function download(payload: { url: string; filename: string }): Promise<Too
   const contentTypeHeader = response.headers.get("content-type");
   const mimeType = contentTypeHeader || inferMimeType(payload.filename);
 
-  // Use session-relative path to save tokens in LLM context.
-  const relativePath = sessionService.toSessionPath(path);
-
   return {
     content: [
       resource(`file://${path}`, `Downloaded: ${payload.filename}`, mimeType),
-      { type: "text", text: `File saved to ${relativePath}.\nNote: Verify contents or process the file further.` },
+      { type: "text", text: `File saved to ${path}\nNote: Verify contents or process the file further.` },
     ],
   };
 }
