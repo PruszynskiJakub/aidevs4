@@ -2,7 +2,7 @@ import { chromium } from "playwright";
 
 const BASE_URL = "https://oko.ag3nts.org";
 const API_URL = "https://hub.ag3nts.org/verify";
-const API_KEY = "***REMOVED***";
+const API_KEY = process.env.OKO_API_KEY!;
 
 async function apiCall(answer: Record<string, unknown>) {
   const res = await fetch(API_URL, {

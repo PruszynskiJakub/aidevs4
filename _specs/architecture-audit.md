@@ -31,7 +31,40 @@ Reaudit of the agent system against AI Devs 4 course materials (S01–S03) and t
 
 ## What's Still Behind the Curve
 
-### 1. No Evaluation Pipeline (Critical — unchanged, risk increasing)
+### 1. No Prompt Caching — System Prompt Mutates Every Turn (Critical — elevated from Low)
+
+The course (S01E02) calls prompt caching **"priority #1"** and warns: "changes to system instruction = cache miss = severe performance penalty." The system violates this structurally:
+
+- **`openai.ts` never enables prompt caching.** No `cache_control` markers on system messages. Every LLM call pays full input token price for the system prompt + tool schemas.
+- **The system prompt is different on every turn.** `loop.ts:270` injects memory observations directly into `contextSystemPrompt`. This makes the system prompt unique per iteration, which makes prompt caching **structurally impossible** even if enabled at the provider level.
+- **16 tools registered globally** (see gap #1b). Tool schemas are part of the prompt payload. With no `tools` filter on `default.agent.md`, all 16 schemas are sent every call — ~3-5k tokens of schema text that could be cached but isn't.
+
+**Cost impact:** A 20-turn session with a ~6k-token system prompt + ~4k tool schemas = ~200k tokens of repeated system content that should be cached. At GPT-5 pricing, this is the single largest cost inefficiency in the system.
+
+**The fix requires an architectural change:** Memory observations must move from the system prompt to a user-role message (e.g., `{"role": "user", "content": "[MEMORY CONTEXT]\n...observations..."}`) so the system prompt remains stable across turns. Only then can provider-level caching take effect.
+
+**Course requirements not met:**
+- Stable system instruction for cache hits (S01E02)
+- Two-tier approach: stable system prompt + dynamic context via tools/files (S01E02)
+- External context via tools > internal context via instruction (S02E01)
+
+**Severity: Critical. Highest-ROI fix available — affects cost of every single LLM call.**
+
+---
+
+### 1b. Tool Schema Bloat on Default Agent (Medium — new gap)
+
+`src/tools/index.ts` registers **16 tools** globally. The `default.agent.md` has no `tools` array in its frontmatter, meaning it receives all 16 tool schemas in every LLM call. The course (S01E02) recommends **max 10-15 tools per agent** and progressive disclosure (expose only necessary tools at each stage).
+
+Specialist agents like `negotiations.agent.md` correctly limit to `[think, grep, read_file]`. The default agent does not. This wastes prompt tokens and dilutes the model's tool selection accuracy.
+
+**Fix:** Add an explicit `tools` array to `default.agent.md` listing the tools it actually needs. Create additional specialist agents for task types that need different tool subsets.
+
+**Severity: Medium (quick win, compounds with caching gap).**
+
+---
+
+### 2. No Evaluation Pipeline (Critical — unchanged, risk increasing)
 
 S03E01 describes a monitoring hierarchy and three verification levels (programmatic, LLM-based, human). The system has excellent telemetry infrastructure (typed events, JSONL logs, token tracking) but **zero automated evaluation on top of it**:
 
@@ -58,7 +91,7 @@ The irony: the event bus and JSONL logs are *exactly* the data source an eval pi
 
 ---
 
-### 2. No Knowledge Accumulation or Exploratory Retrieval (High — reframed)
+### 3. No Knowledge Accumulation or Exploratory Retrieval (High — reframed)
 
 The previous audit framed this gap as "no vector store or embeddings." That misses the point. The course (S02E02, S02E03) presents a **spectrum** of retrieval approaches and explicitly says vector stores are not always necessary:
 
@@ -112,7 +145,7 @@ The Observational Memory implementation is excellent for *within-session* contex
 
 ---
 
-### 3. Agent Composition is Vertical Only (Medium — improved from Medium-High)
+### 4. Agent Composition is Vertical Only (Medium — improved from Medium-High)
 
 The `delegate` tool enables an agent to spawn sub-agents in isolated sessions — a significant step. However, the multi-agent architecture supports only **vertical delegation** (parent → child), not the full compositional patterns the course describes:
 
@@ -131,7 +164,7 @@ The course (S02E04) describes six multi-agent patterns: Pipeline, Blackboard, Or
 
 ---
 
-### 4. Limited Streaming and Real-Time Feedback (Medium — partially resolved)
+### 5. Limited Streaming and Real-Time Feedback (Medium — partially resolved)
 
 SSE event streaming is now implemented (SP-62). `POST /chat` with `stream: true` returns a Server-Sent Events stream of all agent lifecycle events in real-time (tool dispatch, plan updates, answers, session lifecycle). Includes server-side event filtering (`?events=type1,type2`), 15-second heartbeat keepalive, and graceful disconnect cleanup. Non-streaming path unchanged for backward compatibility.
 
@@ -146,7 +179,7 @@ SSE event streaming is now implemented (SP-62). `POST /chat` with `stream: true`
 
 ---
 
-### 5. No Workflow Composition (Medium — unchanged)
+### 6. No Workflow Composition (Low — downgraded from Medium)
 
 The course distinguishes workflows (deterministic step sequences) from agents (dynamic tool selection) and says both should coexist — workflows as callable tools within agents. The system only has the agent pattern:
 
@@ -155,11 +188,13 @@ The course distinguishes workflows (deterministic step sequences) from agents (d
 - Plan is ephemeral (regenerated each iteration, not a persistent workflow definition)
 - No way to define "always do X then Y then Z for this task type" and expose it as a tool
 
-**Severity: Medium.**
+The course mentions workflows but the system's task domain (AG3NTS hub challenges) is inherently dynamic — each task is different. A workflow engine would be premature abstraction until there's a concrete recurring task pattern that justifies it.
+
+**Severity: Low (downgraded — no concrete use case yet).**
 
 ---
 
-### 6. No Human-in-the-Loop for Destructive Actions (Medium — unchanged)
+### 7. No Human-in-the-Loop for Destructive Actions (Medium — unchanged)
 
 Input moderation exists (`src/infra/guard.ts` via OpenAI Moderation API), but there are no confirmation gates for destructive or irreversible actions:
 
@@ -175,24 +210,24 @@ S03E02 reinforces this: "Block dangerous actions at code level, not prompt level
 
 ---
 
-### 7. Weak Circuit Breakers and Cost Guards (Low-Medium — unchanged)
+### 8. Weak Circuit Breakers and Cost Guards (Medium — elevated from Low-Medium)
 
 Error recovery improved significantly (defensive validation, try-catch dispatch, max iterations), but structural safeguards are still missing:
 
+- **Dead retry classification.** `src/llm/errors.ts` classifies errors as fatal vs retryable (429 rate limit, 503 server error) and emits a `llm.call.failed` event — but **nothing acts on the classification**. The error propagates up and kills the session. A 429 response crashes the entire agent run despite being explicitly classified as retryable. This is the most acute sub-issue: the code to distinguish retryable errors exists but is never used.
 - No circuit breakers for repeatedly failing tools
 - No cost/budget guards to prevent runaway LLM spending
 - No automatic tool fallback chains
-- No retry logic with exponential backoff for transient failures
 - No rate limit handling (S01E05 recommends monitoring HTTP headers for rate limit resets)
 - No per-user or per-session token budgets (S01E05, S03E01)
 
 The 40-iteration cap is the only hard guard. A failing tool can waste all 40 iterations. The delegate tool adds another dimension: a child agent also gets up to 40 iterations, so a single user request could trigger 80+ LLM calls with no budget check.
 
-**Severity: Low-Medium.**
+**Severity: Medium (elevated — the dead retry classification makes retryable errors fatal in practice).**
 
 ---
 
-### 8. No Proactive Agent Capabilities (Low-Medium — new gap)
+### 9. No Proactive Agent Capabilities (Low-Medium — unchanged)
 
 S03E03 describes autonomous triggers beyond user-initiated messages: hooks (internal events), webhooks (external notifications), cron (scheduled), and heartbeat (periodic health checks). The system is entirely request-response:
 
@@ -208,7 +243,7 @@ S03E03's calendar/meeting agent example shows an agent that proactively checks s
 
 ---
 
-### 9. Prompt Engineering Gaps (Low — new gap)
+### 10. Prompt Engineering Gaps (Low — unchanged)
 
 S02E05 provides a detailed system prompt anatomy: Identity → Protocol → Voice → Tools/Agents → Workspace → CTA. Comparing against the agent prompts:
 
@@ -219,13 +254,59 @@ S02E05 provides a detailed system prompt anatomy: Identity → Protocol → Voic
 - ⚠️ CTA ("Now do X") is implicit, not explicit
 - ⚠️ No workspace section injected with current memory/observation state (observations are appended to system prompt, but not in the structured format S02E05 describes)
 
-S01E02 also emphasizes prompt caching as the "highest priority optimization." The system doesn't appear to leverage provider-level prompt caching (stable system instructions that hit cache). With the plan prompt regenerated each iteration, cache hit rates will be low.
+Prompt caching concerns are now covered in gap #1 (elevated to Critical).
 
 **Severity: Low (functional but not optimized per course recommendations).**
 
 ---
 
-## Resolved Since Revision 3
+### 11. Session State is In-Memory Only (Medium — new gap)
+
+`src/agent/session.ts` stores sessions in a `Map<string, Session>()`. Server restart = all sessions lost. The memory system persists observations to disk (`memory-state.json`), but the **conversation messages** they reference are not persisted. This means:
+
+- `--session ID` resumption fails after a restart (the session map is empty)
+- Memory observations reference messages that no longer exist in context
+- The course (S01E05) requires background processing with state persistence across disconnects
+
+**Severity: Medium (blocks reliable session resumption and multi-turn workflows).**
+
+---
+
+### 12. API Key Leakage in Web Tool (Low — new gap)
+
+`src/tools/web.ts:29` replaces `{{hub_api_key}}` in the URL string: `payload.url.replace("{{hub_api_key}}", config.hub.apiKey)`. The resolved URL (containing the API key) then flows into event emission — `tool.called` event includes raw `args` with the original URL template, and the tool's HTTP request logs the full resolved URL.
+
+This contradicts the tool standard's rule: "Never expose auth tokens, user IDs, or internal record IDs as parameters — inject these programmatically in the handler." The key should be injected as a request header or appended to the URL after logging, not substituted into user-visible arguments.
+
+**Severity: Low (the key only appears in internal logs/JSONL, not exposed to model or user).**
+
+---
+
+### 13. No Anthropic/Claude Provider (Low — new gap)
+
+The LLM router (`src/llm/llm.ts`) registers only OpenAI (`gpt-*`, `o1-*`) and Gemini (`gemini-*`) providers. The course lists Claude Opus 4.5 as a top-tier model alongside GPT-5.2 and Gemini 3 (S01E04). The router architecture is designed for multi-provider — adding a third provider is straightforward — but half the model market is currently unreachable.
+
+**Severity: Low (the router pattern makes this easy to add when needed).**
+
+---
+
+### 14. Max Iterations Returns Empty Answer (Low — new gap)
+
+When the agent exhausts 40 iterations, `loop.ts:363` returns `{ answer: "" }`. No partial result, no summary of what was accomplished, no explanation. The user gets nothing. The agent should at minimum summarize progress before yielding.
+
+**Severity: Low (edge case, but frustrating when hit).**
+
+---
+
+## Resolved Since Revision 4
+
+| Previous Gap | Status | How Addressed |
+|---|---|---|
+| Prompt caching buried at Low severity (#9) | **Reframed** | Elevated to gap #1 (Critical). Root cause identified: memory observations injected into system prompt make caching structurally impossible. Requires architectural change (move observations to user-role message). |
+
+---
+
+## Resolved Since Revision 3 (carried forward)
 
 | Previous Gap | Status | How Addressed |
 |---|---|---|
@@ -256,17 +337,23 @@ S01E02 also emphasizes prompt caching as the "highest priority optimization." Th
 
 ## Severity Summary
 
-| # | Gap | Rev 2 | Rev 3 | Trend |
+| # | Gap | Rev 4 | Rev 5 | Trend |
 |---|-----|-------|-------|-------|
-| 1 | No evaluation pipeline | Critical | **Critical** | ⬆ worse (delegate + Zod add untested axes) |
-| 2 | No knowledge accumulation / exploratory retrieval | High | **High** | 🔄 reframed (pattern, not technology) |
-| 3 | Agent composition vertical only | Medium-High | **Medium** | ⬇ delegate tool landed |
-| 4 | Limited streaming | Medium | **Medium** | ⬇ SSE event streaming landed (SP-62) |
-| 5 | No workflow composition | Medium | **Medium** | ➡ unchanged |
-| 6 | No human-in-the-loop | Medium | **Medium** | ➡ delegate widens blast radius |
-| 7 | No circuit breakers/cost guards | Low-Medium | **Low-Medium** | ➡ delegate amplifies risk |
-| 8 | No proactive capabilities | — | **Low-Medium** | 🆕 new gap identified |
-| 9 | Prompt engineering gaps | — | **Low** | 🆕 new gap identified |
+| 1 | No prompt caching / unstable system prompt | Low | **Critical** | ⬆ elevated (root cause identified: observations in system prompt) |
+| 1b | Tool schema bloat on default agent | — | **Medium** | 🆕 new gap |
+| 2 | No evaluation pipeline | Critical | **Critical** | ➡ unchanged (risk still increasing) |
+| 3 | No knowledge accumulation / reverse RAG | High | **High** | ➡ unchanged |
+| 4 | Agent composition vertical only | Medium | **Medium** | ➡ unchanged |
+| 5 | Limited streaming (no token-level) | Medium | **Medium** | ➡ unchanged |
+| 6 | No workflow composition | Medium | **Low** | ⬇ downgraded (no concrete use case) |
+| 7 | No human-in-the-loop | Medium | **Medium** | ➡ unchanged |
+| 8 | Circuit breakers / cost guards | Low-Medium | **Medium** | ⬆ elevated (dead retry classification) |
+| 9 | No proactive capabilities | Low-Medium | **Low-Medium** | ➡ unchanged |
+| 10 | Prompt engineering gaps | Low | **Low** | ➡ unchanged |
+| 11 | Session state in-memory only | — | **Medium** | 🆕 new gap |
+| 12 | API key leakage in web tool | — | **Low** | 🆕 new gap |
+| 13 | No Anthropic/Claude provider | — | **Low** | 🆕 new gap |
+| 14 | Max iterations returns empty answer | — | **Low** | 🆕 new gap |
 
 ---
 
@@ -277,10 +364,10 @@ How the system maps to each course module:
 | Module | Topic | Alignment | Notes |
 |--------|-------|-----------|-------|
 | S01E01 | Structured outputs, few-shot, parallel processing | ✅ Strong | JSON schemas, batch tool dispatch, file-based progress |
-| S01E02 | Prompt caching, tool design, security | ⚠️ Partial | Tool design excellent; prompt caching not leveraged; progressive disclosure not implemented |
-| S01E03 | MCP, API design for AI, tool consolidation | ⚠️ Partial | Multi-action tools align well; ToolResult content parts are MCP-aligned (TextContent, ImageContent, ResourceRef); no MCP server/client; no dynamic tool discovery |
+| S01E02 | Prompt caching, tool design, security | ❌ Weak | Tool design excellent; **prompt caching structurally impossible** (observations in system prompt); progressive disclosure not implemented; 16 tools on default agent |
+| S01E03 | MCP, API design for AI, tool consolidation | ⚠️ Partial | Multi-action tools align well; ToolResult content parts are MCP-aligned; MCP client exists (`src/infra/mcp.ts`); no dynamic tool discovery |
 | S01E04 | Multimodal support | ✅ Strong | Gemini for multimodal, image handling in providers |
-| S01E05 | Limits, cost, heartbeat, event-driven | ⚠️ Partial | Token estimation and limits exist; heartbeat via SSE (SP-62); no cost guards, no per-user budgets |
+| S01E05 | Limits, cost, heartbeat, event-driven | ⚠️ Partial | Token estimation and limits exist; heartbeat via SSE (SP-62); no cost guards, no per-user budgets, retryable LLM errors crash sessions |
 | S02E01 | Context management, workspace structure | ✅ Strong | Memory pipeline, context pruning, session workspace; workspace structure simpler than course recommends |
 | S02E02 | External context, RAG, hybrid search | ⚠️ Partial | File exploration tools (grep, glob, read) cover lexical search. Missing: iterative query deepening, document-building agents, structured knowledge output |
 | S02E03 | Long-term memory, knowledge bases, graphs | ⚠️ Partial | Observation memory excellent for in-session compression. Missing: cross-session knowledge accumulation, reverse RAG pattern (agents writing persistent structured notes), reference-following navigation |
@@ -295,16 +382,22 @@ How the system maps to each course module:
 
 ## Bottom Line
 
-The system continues to mature. The ToolResult refactor (SP-61) replaces the heavyweight Document/XML system with lightweight MCP-aligned content parts — tool results are now plain text by default, saving ~30 tokens per call and aligning with MCP's type system for future interoperability. The result store provides structured tracking of tool call lifecycle by `toolCallId`.
+The system is architecturally sound and well-tested. Tool safety, event-driven telemetry, memory compression, and multi-agent delegation are all production-grade. The codebase reflects strong engineering discipline.
 
-**The evaluation gap remains the single most important issue** and is now more urgent. Every new capability (delegate, Zod, ToolResult, memory compression) adds an axis of potential regression that goes unmeasured. The telemetry infrastructure is in place — what's missing is the analysis layer on top: eval datasets, LLM-as-judge scoring, regression detection, and cost monitoring.
+**Two critical gaps now dominate the roadmap:**
 
-Two gaps identified in Revision 3 remain: proactive agent capabilities (S03E03) and prompt engineering refinements (S02E05). Neither is critical, but proactive triggers represent a pattern the course dedicates an entire lesson to.
+1. **Prompt caching is structurally blocked.** This is the single highest-ROI fix. Memory observations are injected into the system prompt (`loop.ts:270`), making it unique every turn — which makes prompt caching impossible even if enabled at the provider level. Combined with 16 unfiltered tool schemas, every LLM call pays full price for ~10k tokens of repeated content. The course calls this "priority #1" and the system violates it by design, not by omission.
+
+2. **The evaluation gap continues to widen.** Every new capability adds an axis of potential regression that goes unmeasured. The telemetry infrastructure is in place — what's missing is the analysis layer.
+
+Five new gaps were identified in this revision: session persistence (#11), API key leakage (#12), missing Claude provider (#13), empty max-iterations answer (#14), and dead retry logic in the error classification system (#8, elevated). The retry issue is particularly acute — the code to classify retryable errors exists but is never acted upon, making 429 responses fatal.
 
 **Priority order:**
-1. **Evaluation pipeline** — the event bus and JSONL logs are the data source. Build eval datasets, wire up PromptFoo or Langfuse, add CI-gated regression checks. Start with tool selection accuracy and end-to-end task success rate.
-2. **Knowledge accumulation (reverse RAG)** — agents write structured notes to a persistent `knowledge/` directory, with cross-references between documents. Start with filesystem + existing grep/glob tools — no vector store needed yet. Let the memory system feed a navigable knowledge base, not just a compressed log.
-3. **Horizontal agent communication** — the delegate tool handles vertical delegation. Add shared workspace directories (inbox/outbox per agent) and a `message` tool for bidirectional async communication. Enable parallel sub-agent spawning.
-4. **Human-in-the-loop gates** — the tool standard already describes the classification (read/create/mutate/destroy/irreversible). Wire the classification into dispatch with confirmation gates for destroy/irreversible actions.
-5. **Proactive capabilities** — cron-triggered agent runs, webhook listeners. Start with a simple heartbeat/polling mechanism.
-6. Everything else (token-level streaming, workflows, prompt refinement) builds on these five.
+1. **Stable system prompt + prompt caching** — Move observations from system prompt to user-role message. Enable provider-level caching. Add `tools` filter to `default.agent.md`. Biggest cost/performance win, architectural change required.
+2. **Evaluation pipeline** — Build eval datasets, wire up PromptFoo or Langfuse, add CI-gated regression checks. The event bus and JSONL logs are the data source. Start with tool selection accuracy and end-to-end task success rate.
+3. **Retry logic for retryable LLM errors** — The error classification in `errors.ts` already distinguishes fatal vs retryable. Wire it into the agent loop: retry on 429/503, fail fast on 401/403. Small change, high resilience gain.
+4. **Token budget ceiling** — Per-session and per-request token limits. A delegate chain can cascade to 80+ unbounded LLM calls.
+5. **Knowledge accumulation (reverse RAG)** — Agents write structured notes to `workspace/knowledge/`, with cross-references. Start with filesystem + existing grep/glob tools. Let the memory system feed a navigable knowledge base, not just a compressed log.
+6. **Session persistence** — Persist conversation messages to disk alongside memory state. Required for reliable `--session` resumption.
+7. **Human-in-the-loop gates** — Wire the tool classification (read/create/mutate/destroy/irreversible) into dispatch with confirmation gates.
+8. Everything else (horizontal agents, token-level streaming, proactive capabilities, workflows) builds on these seven.
