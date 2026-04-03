@@ -28,14 +28,17 @@ The agent's toolbox grows with each completed task.
 ```
   ├── workspace/                      # Unified workspace directory
   │   ├── agents/                     # Agent definitions (.agent.md files)
-  │   ├── shared/                     # Human-AI communication layer (empty initially)
-  │   └── sessions/                   # All session data (output, logs, shared)
-  │       └── {YYYY-MM-DD}/
-  │           └── {sessionId}/
-  │               ├── log/            # Markdown logs + JSONL events
-  │               ├── shared/         # Inter-agent file dump
-  │               └── {agentName}/
-  │                   └── output/     # Agent artifacts by file type
+n  │   ├── knowledge/                  # API templates & procedures documentation
+  │   ├── sessions/                   # All session data (output, logs, shared)
+  │   │   └── {YYYY-MM-DD}/
+  │   │       └── {sessionId}/
+  │   │           ├── log/            # Markdown logs + JSONL events
+  │   │           ├── shared/         # Inter-agent file dump
+  │   │           └── {agentName}/
+  │   │               └── output/     # Agent artifacts by file type
+  │   ├── skills/                     # Custom skills workspace
+  │   ├── tasks_prompts/              # Task and prompt management
+  │   └── workflows/                  # Workflow definitions
   ├── playground/<task_name>/         # Prototyping area — one dir per task
   │   ├── <task_name>.ts              # Standalone script
   │   └── output/                     # Generated artifacts (gitignored)
@@ -46,29 +49,43 @@ The agent's toolbox grows with each completed task.
   │   │   ├── session.ts              # Session store + output paths
   │   │   ├── agents.ts               # Agent config loader (.agent.md)
   │   │   ├── context.ts              # AsyncLocalStorage session context
-  │   │   └── memory/                 # Observation, reflection, persistence
+  │   │   └── memory/                 # observer, processor, reflector, persistence, generation
   │   ├── llm/                        # Everything LLM: routing, providers, prompts
   │   │   ├── llm.ts                  # Provider registry singleton + factory
   │   │   ├── router.ts               # Model→provider routing logic
   │   │   ├── openai.ts               # OpenAI adapter
   │   │   ├── gemini.ts               # Gemini adapter
+  │   │   ├── errors.ts               # LLM error types
   │   │   └── prompt.ts               # Prompt loader (.md + YAML frontmatter)
   │   ├── infra/                      # I/O, side effects, external world
   │   │   ├── file.ts                 # Sandboxed file service
   │   │   ├── result-store.ts         # Tool call result store (by toolCallId)
   │   │   ├── guard.ts                # Input moderation (OpenAI Moderation API)
-  │   │   └── log/                    # Logging (console, markdown, composite)
+  │   │   ├── events.ts               # Event bus
+  │   │   ├── browser.ts              # Browser automation (Playwright)
+  │   │   ├── browser-feedback.ts     # Browser visual feedback
+  │   │   ├── browser-interventions.ts # Browser intervention handling
+  │   │   ├── condense.ts             # Context condensation
+  │   │   ├── mcp.ts                  # MCP integration
+  │   │   ├── serper.ts               # Serper search API client
+  │   │   ├── tracing.ts              # Tracing (Langfuse)
+  │   │   ├── langfuse-subscriber.ts  # Langfuse event subscriber
+  │   │   └── log/                    # Logging (console, markdown, composite, jsonl)
   │   ├── tools/                      # Tool implementations (auto-registered)
   │   │   ├── registry.ts             # Tool registry and dispatch logic
   │   │   ├── index.ts                # Explicit tool + schema registration
-  │   │   └── <tool_name>.ts          # Each exports default ToolDefinition
-  │   ├── config/                     # Environment + path configuration
+  │   │   ├── <tool_name>.ts          # Each exports default ToolDefinition
+  │   │   └── sandbox/                # Code execution sandbox (bridge, prelude)
+  │   ├── config/                     # Environment, paths, MCP configuration
   │   ├── types/                      # Shared TypeScript interfaces
   │   ├── prompts/                    # Markdown prompt files (.md + YAML frontmatter)
-  │   ├── utils/                      # Pure helpers (parse, tokens, xml, id, timing)
+  │   ├── utils/                      # Pure helpers (parse, tokens, xml, id, timing, uri)
   │   ├── cli.ts                      # CLI entry point
-  │   └── server.ts                   # HTTP server (Hono)
+  │   ├── server.ts                   # HTTP server (Hono)
+  │   └── slack.ts                    # Slack bot entry point
   ├── _specs/                         # Task specifications & backlog
+  ├── _aidocs/                        # Internal docs (tool standard, course materials)
+  ├── _cases/                         # Use case scratchpads
   ├── .env                            # API keys (gitignored)
   └── index.ts                        # Entry point (placeholder)
 ```
@@ -87,6 +104,8 @@ The agent's toolbox grows with each completed task.
   bun run <path/to/script.ts>          # Run any script directly
   bun run agent "your prompt"          # Run the agent (new session)
   bun run agent "prompt" --session ID  # Continue an existing session
+  bun run server                       # Start HTTP server (Hono)
+  bun run slack                        # Start Slack bot
 ```
 
 ## Agent Testing
@@ -173,6 +192,12 @@ The agent's toolbox grows with each completed task.
   capability or goal instead. Format hints on a new line starting with
   `Note: …`. This keeps tools decoupled and reusable across different agent
   configurations.
+
+## Cases
+
+- **Directory**: `_cases/` — one file per use case or process to be addressed
+  by the agent. Each file is a standalone scratchpad for exploring, researching,
+  and documenting requirements before implementation.
 
 ## Playground
 

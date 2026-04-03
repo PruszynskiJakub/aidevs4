@@ -1,59 +1,48 @@
-### Waiting to implement
+# Backlog
 
+## Observability
 
-----
-### Brain dump
-Support tool_search capability
+- [ ] Langfuse integration — tracing, eval, token tracking. SP-65/SP-67
+- [ ] Token usage visibility — no insight into per-session token consumption
+- [ ] Evaluation pipeline — eval datasets, LLM-as-judge, regression detection (architecture-audit gap #3)
+- [ ] Heartbeat — liveness/health checks for long-running agents
 
-skills
-workflows
+## Agent Core
 
-fallback mechanism
-smart retry baed on api body
+- [ ] Remove plan phase — halve per-turn latency, enable exploration-first. SP-72 + feeling.md
+- [ ] Prompt caching — system prompt mutates every turn, ~200k wasted tokens/session. Move observations to user-role messages, add `cache_control` (architecture-audit gap #1/#5)
+- [ ] Agent skillset separation — split agents into focused skill sets
+- [ ] Agent mode flag — headless (CLI) vs server as part of AgentContext
+- [ ] Smart retry — retry based on API response body, not just status code. SP-70
+- [ ] Model routing — route queries to dedicated model based on task type
 
----
-### Problems
-nie mam pojecia ile tokeów lata
+## Prompt Engineering
 
+- [ ] Prompt rewrite — invert "fewest steps" framing, enable exploration before execution. feeling.md
+- [ ] Tool hierarchy in prompts — guide tool selection order (feeling.md Difference 2)
+- [ ] Tool schema filtering — default agent gets all 16 schemas, limit to ~10-12 (architecture-audit gap #2)
 
-wykorzystanie promptfoo oraz langfuse do ewaluacji i observability
+## Tooling
 
+- [ ] Browser session isolation — singleton causes parallel collisions. SP-75
+- [ ] Publish tool — expose files externally (security review required)
+- [ ] Share tool — inter-agent file sharing
+- [ ] Upload tool — file upload for users and agents
+- [ ] Human approval tool — Slack UI for destructive action confirmation
+- [ ] Ollama integration — local model support
 
-routing zapytań do dedykowanego modelu
+## Knowledge & Memory
 
-narzędzie 
-publish - udostępniania plików na zewnątrz ( security !!!)
-share - udostępenianie plików dla innych agentów
+- [ ] Knowledge accumulation — workspace seeded but unused. Add retrieval (grep, FTS5, semantic). (architecture-audit gap #4)
+- [ ] Memory vs log separation — shared memory space != shared log space
 
-tool upload przydatny dla usera i agentów
+## Infrastructure
 
+- [ ] Slack bot entry point — event-bus driven progress streaming. SP-71
+- [ ] Communication clients — Slack, CLI, Postman as I/O channels
+- [ ] File path hygiene — standardize save paths across tools
+- [ ] Browser feedback loop — collect tips and patterns during browsing
 
-heartbeat
+## Bugs
 
-rozbicie agentów na faktyczne skillesety
-
-przeredagowanie promptów
-
-
-dzielenie przestrzeni pamięci to jedno, czym innym jest dzielenie logów
-
-
-human approval tool with slack UI
-
-
-mode like headless (for cli), different for server as a part of AgentContext 
-
-support communication client slack/postman/cli etc
-
-porządek ze ścieżkami zapisu
-
-browser z feedbackiem i zbieraniem good tips
-
-browser obsługa screenshotów
-
-wpiecie ollamy
-
-web__download returns a ref: URI like file:///Users/.../output/uuid.json but the agent tried reading relative paths              
-(foodwarehouse/output/uuid.json). It looped through 10 glob attempts to locate the file. The download tool's response format     
-doesn't clearly hand off the absolute path.                                                                                      
-                                              
+- [ ] web__download path handling — returns `file:///` URI but agent tries relative paths, looping ~10 glob attempts. Response should hand off absolute path clearly. (partially addressed in bba1d06)
