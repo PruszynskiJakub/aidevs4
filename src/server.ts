@@ -60,6 +60,19 @@ app.use("*", async (c, next) => {
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
+app.use("/chat", async (c, next) => {
+  const secret = config.server.apiSecret;
+  if (!secret) return await next();
+
+  const header = c.req.header("Authorization") ?? "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+
+  if (token !== secret) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  await next();
+});
+
 app.post("/api/negotiations/search", async (c) => {
   const body = await c.req.json().catch(() => null);
   const params = (body as Record<string, unknown> | null)?.params;

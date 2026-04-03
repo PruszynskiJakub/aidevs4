@@ -55,6 +55,7 @@ export const config = deepFreeze({
   },
   server: {
     port: env.port,
+    apiSecret: env.apiSecret,
   },
   memory: {
     observationThreshold: 30_000,

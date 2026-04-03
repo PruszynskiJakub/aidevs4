@@ -24,4 +24,5 @@ export const env = {
   langfuseSecretKey: process.env.LANGFUSE_SECRET_KEY,
   langfuseBaseUrl: process.env.LANGFUSE_BASE_URL,
   browserHeadless: process.env.BROWSER_HEADLESS !== "false",
+  apiSecret: process.env.API_SECRET,
 } as const;
