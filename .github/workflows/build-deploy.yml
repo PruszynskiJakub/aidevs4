@@ -74,13 +74,15 @@ jobs:
           LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_APP_TOKEN: ${{ secrets.SLACK_APP_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         with:
           host: ${{ secrets.VPS_HOST }}
           port: ${{ secrets.VPS_PORT }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: HUB_API_KEY,OPENAI_API_KEY,GEMINI_API_KEY,LANGFUSE_SECRET_KEY,LANGFUSE_PUBLIC_KEY,LANGFUSE_BASE_URL,SLACK_BOT_TOKEN,SLACK_APP_TOKEN
+          envs: HUB_API_KEY,OPENAI_API_KEY,GEMINI_API_KEY,LANGFUSE_SECRET_KEY,LANGFUSE_PUBLIC_KEY,LANGFUSE_BASE_URL,SLACK_BOT_TOKEN,SLACK_APP_TOKEN,GH_PAT
           script: |
+            echo "$GH_PAT" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker pull ${{ env.REGISTRY }}/${{ needs.build.outputs.image_name }}:latest
             docker stop personal-os || true
             docker rm personal-os || true
