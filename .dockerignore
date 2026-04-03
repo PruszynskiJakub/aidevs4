@@ -1,0 +1,11 @@
+node_modules
+.env
+.git
+workspace/sessions
+playground/*/output
+_specs
+_aidocs
+_cases
+*.md
+!src/**/*.md
+!workspace/**/*.md
