@@ -12,6 +12,8 @@ import {
   splitMessage,
   StatusTracker,
 } from "./slack-utils.ts";
+import { setConfirmationProvider } from "./agent/confirmation.ts";
+import { SlackConfirmationProvider } from "./slack-confirmation.ts";
 
 // ── Config ─────────────────────────────────────────────────
 
@@ -108,6 +110,9 @@ const app = new App({
   socketMode: true,
 });
 
+const slackConfirmation = new SlackConfirmationProvider(app);
+setConfirmationProvider(slackConfirmation);
+
 /** Track in-flight requests to deduplicate Slack retries. */
 const inFlight = new Set<string>();
 
@@ -127,6 +132,7 @@ async function handleMessage(
   inFlight.add(dedupeKey);
 
   const sessionId = deriveSessionId(teamId, channelId, threadTs, messageTs);
+  slackConfirmation.setThreadContext(sessionId, { channel: channelId, threadTs: replyThread });
 
   try {
     await app.client.reactions.add({
@@ -174,6 +180,7 @@ async function handleMessage(
   } finally {
     unsubscribe();
     status.destroy();
+    slackConfirmation.clearThreadContext(sessionId);
     inFlight.delete(dedupeKey);
 
     try {
