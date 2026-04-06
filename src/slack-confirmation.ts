@@ -19,7 +19,7 @@ interface PendingBatch {
   resolve: (decisions: Map<string, Decision>) => void;
   timeout: ReturnType<typeof setTimeout>;
   decisions: Map<string, Decision>;
-  callIds: string[];
+  toolCallIds: string[];
   messageTs: string | null;
   channel: string;
   threadTs: string;
@@ -28,7 +28,7 @@ interface PendingBatch {
 export class SlackConfirmationProvider implements ConfirmationProvider {
   private threadContexts = new Map<string, ThreadContext>();
   private pendingBatches = new Map<string, PendingBatch>();
-  private callToBatch = new Map<string, string>();
+  private toolCallToBatch = new Map<string, string>();
 
   constructor(
     private boltApp: App,
@@ -51,29 +51,29 @@ export class SlackConfirmationProvider implements ConfirmationProvider {
 
     if (!ctx) {
       log.error(`[slack-confirm] No thread context for session ${sessionId}, auto-denying`);
-      return new Map(requests.map((r) => [r.callId, "deny" as const]));
+      return new Map(requests.map((r) => [r.toolCallId, "deny" as const]));
     }
 
     return new Promise<Map<string, Decision>>((resolve) => {
-      const callIds = requests.map((r) => r.callId);
+      const toolCallIds = requests.map((r) => r.toolCallId);
       const batch: PendingBatch = {
         resolve,
         timeout: setTimeout(() => this.handleTimeout(sessionId), this.timeoutMs),
         decisions: new Map(),
-        callIds,
+        toolCallIds,
         messageTs: null,
         channel: ctx.channel,
         threadTs: ctx.threadTs,
       };
 
       this.pendingBatches.set(sessionId, batch);
-      for (const callId of callIds) {
-        this.callToBatch.set(callId, sessionId);
+      for (const toolCallId of toolCallIds) {
+        this.toolCallToBatch.set(toolCallId, sessionId);
       }
 
       this.postConfirmationMessage(batch, requests).catch((err) => {
         log.error(`[slack-confirm] Failed to post confirmation message: ${err}`);
-        this.resolveBatch(sessionId, new Map(callIds.map((id) => [id, "deny" as const])));
+        this.resolveBatch(sessionId, new Map(toolCallIds.map((id) => [id, "deny" as const])));
       });
     });
   }
@@ -109,15 +109,15 @@ export class SlackConfirmationProvider implements ConfirmationProvider {
             type: "button",
             text: { type: "plain_text", text: "Approve" },
             style: "primary",
-            action_id: `confirm_approve_${req.callId}`,
-            value: req.callId,
+            action_id: `confirm_approve_${req.toolCallId}`,
+            value: req.toolCallId,
           },
           {
             type: "button",
             text: { type: "plain_text", text: "Deny" },
             style: "danger",
-            action_id: `confirm_deny_${req.callId}`,
-            value: req.callId,
+            action_id: `confirm_deny_${req.toolCallId}`,
+            value: req.toolCallId,
           },
         ],
       });
@@ -137,31 +137,31 @@ export class SlackConfirmationProvider implements ConfirmationProvider {
     this.boltApp.action(/^confirm_approve_/, async ({ action, ack }) => {
       await ack();
       if (action.type !== "button") return;
-      const callId = action.action_id.replace("confirm_approve_", "");
-      this.recordDecision(callId, "approve");
+      const toolCallId = action.action_id.replace("confirm_approve_", "");
+      this.recordDecision(toolCallId, "approve");
     });
 
     this.boltApp.action(/^confirm_deny_/, async ({ action, ack }) => {
       await ack();
       if (action.type !== "button") return;
-      const callId = action.action_id.replace("confirm_deny_", "");
-      this.recordDecision(callId, "deny");
+      const toolCallId = action.action_id.replace("confirm_deny_", "");
+      this.recordDecision(toolCallId, "deny");
     });
   }
 
-  private recordDecision(callId: string, decision: Decision): void {
-    const sessionId = this.callToBatch.get(callId);
+  private recordDecision(toolCallId: string, decision: Decision): void {
+    const sessionId = this.toolCallToBatch.get(toolCallId);
     if (!sessionId) return;
 
     const batch = this.pendingBatches.get(sessionId);
     if (!batch) return;
 
     // Idempotent — ignore duplicate clicks
-    if (batch.decisions.has(callId)) return;
+    if (batch.decisions.has(toolCallId)) return;
 
-    batch.decisions.set(callId, decision);
+    batch.decisions.set(toolCallId, decision);
 
-    if (batch.decisions.size >= batch.callIds.length) {
+    if (batch.decisions.size >= batch.toolCallIds.length) {
       this.resolveBatch(sessionId, batch.decisions);
     }
   }
@@ -171,9 +171,9 @@ export class SlackConfirmationProvider implements ConfirmationProvider {
     if (!batch) return;
 
     // Auto-deny all undecided calls
-    for (const callId of batch.callIds) {
-      if (!batch.decisions.has(callId)) {
-        batch.decisions.set(callId, "deny");
+    for (const toolCallId of batch.toolCallIds) {
+      if (!batch.decisions.has(toolCallId)) {
+        batch.decisions.set(toolCallId, "deny");
       }
     }
 
@@ -190,8 +190,8 @@ export class SlackConfirmationProvider implements ConfirmationProvider {
 
     clearTimeout(batch.timeout);
     this.pendingBatches.delete(sessionId);
-    for (const callId of batch.callIds) {
-      this.callToBatch.delete(callId);
+    for (const toolCallId of batch.toolCallIds) {
+      this.toolCallToBatch.delete(toolCallId);
     }
 
     this.updateMessageAfterResolution(batch, decisions, timedOut).catch((err) => {
@@ -208,14 +208,14 @@ export class SlackConfirmationProvider implements ConfirmationProvider {
   ): Promise<void> {
     if (!batch.messageTs) return;
 
-    const lines = batch.callIds.map((callId) => {
-      const decision = decisions.get(callId) ?? "deny";
+    const lines = batch.toolCallIds.map((toolCallId) => {
+      const decision = decisions.get(toolCallId) ?? "deny";
       if (timedOut && decision === "deny") {
-        return `:hourglass:  \`${callId}\` — _Timed out_`;
+        return `:hourglass:  \`${toolCallId}\` — _Timed out_`;
       }
       return decision === "approve"
-        ? `:white_check_mark:  \`${callId}\` — *Approved*`
-        : `:no_entry_sign:  \`${callId}\` — *Denied*`;
+        ? `:white_check_mark:  \`${toolCallId}\` — *Approved*`
+        : `:no_entry_sign:  \`${toolCallId}\` — *Denied*`;
     });
 
     await this.boltApp.client.chat.update({

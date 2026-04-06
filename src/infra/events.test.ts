@@ -33,9 +33,9 @@ describe("EventBus", () => {
     const received: string[] = [];
     bus.onAny((e) => received.push(e.type));
 
-    bus.emit("tool.called", { callId: "c1", name: "web_search", args: "{}", batchIndex: 0, batchSize: 1 });
+    bus.emit("tool.called", { toolCallId: "c1", name: "web_search", args: "{}", batchIndex: 0, batchSize: 1 });
     bus.emit("tool.succeeded", {
-      callId: "c1",
+      toolCallId: "c1",
       name: "web_search",
       durationMs: 100,
       result: "ok",
@@ -83,9 +83,9 @@ describe("EventBus", () => {
     const received: string[] = [];
     const unsub = bus.onAny((e) => received.push(e.type));
 
-    bus.emit("tool.called", { callId: "c1", name: "a", args: "{}", batchIndex: 0, batchSize: 1 });
+    bus.emit("tool.called", { toolCallId: "c1", name: "a", args: "{}", batchIndex: 0, batchSize: 1 });
     unsub();
-    bus.emit("tool.called", { callId: "c2", name: "b", args: "{}", batchIndex: 0, batchSize: 1 });
+    bus.emit("tool.called", { toolCallId: "c2", name: "b", args: "{}", batchIndex: 0, batchSize: 1 });
 
     expect(received).toHaveLength(1);
   });
@@ -112,7 +112,7 @@ describe("EventBus", () => {
     bus.onAny(fn);
     bus.offAny(fn);
 
-    bus.emit("tool.called", { callId: "c1", name: "a", args: "{}", batchIndex: 0, batchSize: 1 });
+    bus.emit("tool.called", { toolCallId: "c1", name: "a", args: "{}", batchIndex: 0, batchSize: 1 });
     expect(received).toHaveLength(0);
   });
 
@@ -163,7 +163,7 @@ describe("EventBus", () => {
       bus.on("tool.called", (e) => received.push(e.data.name));
       bus.onAny((e) => received.push("wild:" + e.type));
 
-      bus.emit("tool.called", { callId: "c1", name: "test_tool" });
+      bus.emit("tool.called", { toolCallId: "c1", name: "test_tool" });
 
       expect(received).toEqual(["test_tool", "wild:tool.called"]);
       expect(consoleSpy).toHaveBeenCalled();

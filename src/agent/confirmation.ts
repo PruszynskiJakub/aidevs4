@@ -5,7 +5,7 @@ import { bus } from "../infra/events.ts";
 import { safeParse } from "../utils/parse.ts";
 
 export interface ConfirmationRequest {
-  callId: string;
+  toolCallId: string;
   toolName: string;
   args: Record<string, unknown>;
 }
@@ -54,11 +54,11 @@ export async function confirmBatch(calls: LLMToolCall[]): Promise<GateResult> {
     const shouldConfirm = meta.confirmIf({
       action: extractAction(name),
       args: parsed,
-      callId: call.id,
+      toolCallId: call.id,
     });
 
     if (shouldConfirm) {
-      needsApproval.push({ call, request: { callId: call.id, toolName: name, args: parsed } });
+      needsApproval.push({ call, request: { toolCallId: call.id, toolName: name, args: parsed } });
     } else {
       autoApproved.push(call);
     }
@@ -71,7 +71,7 @@ export async function confirmBatch(calls: LLMToolCall[]): Promise<GateResult> {
   const requests = needsApproval.map((e) => e.request);
 
   bus.emit("confirmation.requested", {
-    calls: requests.map((r) => ({ callId: r.callId, toolName: r.toolName })),
+    calls: requests.map((r) => ({ toolCallId: r.toolCallId, toolName: r.toolName })),
   });
 
   let decisions: Map<string, Decision>;
@@ -79,7 +79,7 @@ export async function confirmBatch(calls: LLMToolCall[]): Promise<GateResult> {
     decisions = await provider.confirm(requests);
   } catch (err) {
     console.error("[confirmation] Provider error, denying all pending calls:", err);
-    decisions = new Map(requests.map((r) => [r.callId, "deny" as const]));
+    decisions = new Map(requests.map((r) => [r.toolCallId, "deny" as const]));
   }
 
   const approved = [...autoApproved];

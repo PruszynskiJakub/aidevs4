@@ -299,8 +299,8 @@ describe("registry", () => {
 
       expect(meta).toBeDefined();
       expect(meta!.confirmIf).toBeDefined();
-      expect(meta!.confirmIf!({ action: "scrape", args: {}, callId: "x" })).toBe(true);
-      expect(meta!.confirmIf!({ action: "download", args: {}, callId: "x" })).toBe(false);
+      expect(meta!.confirmIf!({ action: "scrape", args: {}, toolCallId: "x" })).toBe(true);
+      expect(meta!.confirmIf!({ action: "download", args: {}, toolCallId: "x" })).toBe(false);
     });
 
     it("returns undefined for unknown tool", () => {

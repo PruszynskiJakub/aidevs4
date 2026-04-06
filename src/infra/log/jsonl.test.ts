@@ -105,9 +105,9 @@ describe("JsonlWriter", () => {
   it("each line is valid JSON", async () => {
     const { bus, writer } = await setup();
 
-    bus.emit("tool.called", { callId: "c1", name: "web_search", args: "{}", batchIndex: 0, batchSize: 1 });
+    bus.emit("tool.called", { toolCallId: "c1", name: "web_search", args: "{}", batchIndex: 0, batchSize: 1 });
     bus.emit("tool.succeeded", {
-      callId: "c1",
+      toolCallId: "c1",
       name: "web_search",
       durationMs: 500,
       result: "found it",

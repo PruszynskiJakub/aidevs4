@@ -1,9 +1,6 @@
 import { config } from "./config/index.ts";
 import { executeTurn } from "./agent/orchestrator.ts";
-import { initMcpTools, shutdownMcp } from "./tools/index.ts";
-import { initTracing, shutdownTracing } from "./infra/tracing.ts";
-import { attachLangfuseSubscriber } from "./infra/langfuse-subscriber.ts";
-import { bus } from "./infra/events.ts";
+import { initServices, shutdownServices } from "./infra/bootstrap.ts";
 import { setConfirmationProvider } from "./agent/confirmation.ts";
 import type { ConfirmationRequest } from "./agent/confirmation.ts";
 import type { Decision } from "./types/tool.ts";
@@ -40,9 +37,7 @@ if (args.length >= 2) {
   process.exit(1);
 }
 
-initTracing();
-attachLangfuseSubscriber(bus);
-await initMcpTools();
+await initServices();
 
 setConfirmationProvider({
   async confirm(requests: ConfirmationRequest[]) {
@@ -54,7 +49,7 @@ setConfirmationProvider({
         console.log(`  Tool: ${req.toolName}`);
         console.log(`  Args: ${JSON.stringify(req.args, null, 2)}`);
         const answer = await rl.question("  Approve? [Y/n] ");
-        results.set(req.callId, answer.trim().toLowerCase() === "n" ? "deny" : "approve");
+        results.set(req.toolCallId, answer.trim().toLowerCase() === "n" ? "deny" : "approve");
       }
     } finally {
       rl.close();
@@ -73,5 +68,4 @@ const { answer, sessionId: resolvedSessionId } = await executeTurn({
 console.log(`\nSession: ${resolvedSessionId}`);
 if (answer) console.log(answer);
 
-await shutdownTracing();
-await shutdownMcp();
+await shutdownServices();

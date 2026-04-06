@@ -129,7 +129,7 @@ async function dispatchTools(
   if (approved.length > 1) {
     bus.emit("batch.started", {
       batchId,
-      callIds: approved.map((tc) => tc.id),
+      toolCallIds: approved.map((tc) => tc.id),
       count: approved.length,
     });
   }
@@ -137,7 +137,7 @@ async function dispatchTools(
   for (let idx = 0; idx < approved.length; idx++) {
     const tc = approved[idx];
     bus.emit("tool.called", {
-      callId: tc.id,
+      toolCallId: tc.id,
       name: tc.function.name,
       args: tc.function.arguments,
       batchIndex: idx,
@@ -168,7 +168,7 @@ async function dispatchTools(
       if (isError) {
         failed++;
         bus.emit("tool.failed", {
-          callId: tc.id,
+          toolCallId: tc.id,
           name: tc.function.name,
           durationMs,
           error: content,
@@ -178,7 +178,7 @@ async function dispatchTools(
       } else {
         succeeded++;
         bus.emit("tool.succeeded", {
-          callId: tc.id,
+          toolCallId: tc.id,
           name: tc.function.name,
           durationMs,
           result: content,
@@ -195,7 +195,7 @@ async function dispatchTools(
       failed++;
       const errorMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
       bus.emit("tool.failed", {
-        callId: tc.id,
+        toolCallId: tc.id,
         name: tc.function.name,
         durationMs: 0,
         error: errorMsg,
@@ -226,6 +226,59 @@ export interface AgentResult {
   messages: LLMMessage[];
 }
 
+interface MemoryContext {
+  systemPrompt: string;
+  messagesSnapshot: LLMMessage[];
+  contextLength: number;
+}
+
+async function buildTurnContext(
+  actSystemPrompt: string,
+  state: AgentState,
+  memoryEnabled: boolean,
+  provider: LLMProvider,
+): Promise<MemoryContext> {
+  if (!memoryEnabled) {
+    return {
+      systemPrompt: actSystemPrompt,
+      messagesSnapshot: [...state.messages],
+      contextLength: state.messages.length,
+    };
+  }
+
+  const { context, state: updatedMemory } = await processMemory(
+    actSystemPrompt,
+    state.messages,
+    state.memory,
+    provider,
+    state.sessionId,
+  );
+  state.memory = updatedMemory;
+
+  const messagesSnapshot = [...state.messages];
+  state.messages = [...context.messages];
+
+  return {
+    systemPrompt: context.systemPrompt,
+    messagesSnapshot,
+    contextLength: context.messages.length,
+  };
+}
+
+function createMemorySaver(state: AgentState) {
+  let lastSavedJson = "";
+  return async function saveMemoryIfChanged(): Promise<void> {
+    const json = JSON.stringify(state.memory);
+    if (json === lastSavedJson) return;
+    await saveState(state.sessionId, state.memory);
+    lastSavedJson = json;
+  };
+}
+
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export async function runAgent(
   state: AgentState,
   provider: LLMProvider = defaultLLM,
@@ -236,15 +289,8 @@ export async function runAgent(
   const inputLength = state.messages.length;
 
   return runWithContext(state, log, async () => {
-    let lastSavedJson = "";
+    const saveMemoryIfChanged = createMemorySaver(state);
     const agentStartTime = performance.now();
-
-    async function saveIfChanged(): Promise<void> {
-      const json = JSON.stringify(state.memory);
-      if (json === lastSavedJson) return;
-      await saveState(state.sessionId, state.memory);
-      lastSavedJson = json;
-    }
 
     try {
       const resolved = await agentsService.resolve(state.assistant);
@@ -270,52 +316,32 @@ export async function runAgent(
       });
 
       const actSystemPrompt = resolved.prompt;
-
       const memoryEnabled = resolved.memory !== false;
       let turnStartTime = 0;
+
       for (let i = 0; i < config.limits.maxIterations; i++) {
         state.iteration = i;
-
         turnStartTime = performance.now();
+
         bus.emit("turn.started", {
           iteration: i + 1,
           maxIterations: config.limits.maxIterations,
           model: state.model,
           messageCount: state.messages.length,
         });
-        let contextSystemPrompt = actSystemPrompt;
-        let originalMessages = state.messages;
-        let contextLength: number;
 
-        if (memoryEnabled) {
-          const { context, state: updatedMemory } = await processMemory(
-            actSystemPrompt,
-            state.messages,
-            state.memory,
-            provider,
-            state.sessionId,
-          );
-          state.memory = updatedMemory;
-          contextSystemPrompt = context.systemPrompt;
-          originalMessages = state.messages;
-          contextLength = context.messages.length;
-          state.messages = [...context.messages];
-        } else {
-          originalMessages = [...state.messages];
-          contextLength = state.messages.length;
-        }
+        const turnCtx = await buildTurnContext(actSystemPrompt, state, memoryEnabled, provider);
+        const response = await executeActPhase(turnCtx.systemPrompt, provider);
 
-        const response = await executeActPhase(contextSystemPrompt, provider);
+        const newMessages = state.messages.slice(turnCtx.contextLength);
+        state.messages = turnCtx.messagesSnapshot.concat(newMessages);
 
-        const newMessages = state.messages.slice(contextLength);
-        state.messages = originalMessages.concat(newMessages);
-
-        await saveIfChanged();
+        await saveMemoryIfChanged();
 
         if (response.finishReason === "stop" || !response.toolCalls.length) {
           if (memoryEnabled) {
             state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
-            await saveIfChanged();
+            await saveMemoryIfChanged();
           }
 
           bus.emit("turn.completed", {
@@ -354,7 +380,7 @@ export async function runAgent(
 
       if (memoryEnabled) {
         state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
-        await saveIfChanged();
+        await saveMemoryIfChanged();
       }
 
       bus.emit("turn.completed", {
@@ -378,16 +404,17 @@ export async function runAgent(
 
       return { answer: "", messages: state.messages.slice(inputLength) };
     } catch (err) {
+      const errorMsg = getErrorMessage(err);
       bus.emit("agent.failed", {
         agentName: state.agentName ?? state.assistant,
         durationMs: performance.now() - agentStartTime,
         iterations: state.iteration + 1,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMsg,
       });
       bus.emit("session.failed", {
         iterations: state.iteration + 1,
         tokens: { ...state.tokens },
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMsg,
       });
       throw err;
     } finally {

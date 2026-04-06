@@ -13,7 +13,7 @@ export type Decision = "approve" | "deny";
 export interface ConfirmableToolCall {
   action: string;
   args: Record<string, unknown>;
-  callId: string;
+  toolCallId: string;
 }
 
 export interface SimpleToolSchema {

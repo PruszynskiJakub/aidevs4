@@ -77,7 +77,7 @@ describe("attachLoggerListener (Bus→Logger)", () => {
 
   it("tool.called → log.toolHeader() on first + log.toolCall()", () => {
     bus.emit("tool.called", {
-      callId: "c1",
+      toolCallId: "c1",
       name: "web_search",
       args: '{"query":"test"}',
       batchIndex: 0,
@@ -85,7 +85,7 @@ describe("attachLoggerListener (Bus→Logger)", () => {
       startTime: Date.now(),
     });
     bus.emit("tool.called", {
-      callId: "c2",
+      toolCallId: "c2",
       name: "read_file",
       args: '{"path":"/tmp"}',
       batchIndex: 1,
@@ -105,7 +105,7 @@ describe("attachLoggerListener (Bus→Logger)", () => {
 
   it("tool.succeeded → log.toolOk()", () => {
     bus.emit("tool.succeeded", {
-      callId: "c1",
+      toolCallId: "c1",
       name: "web_search",
       durationMs: 1200,
       result: "",
@@ -119,7 +119,7 @@ describe("attachLoggerListener (Bus→Logger)", () => {
 
   it("tool.failed → log.toolErr()", () => {
     bus.emit("tool.failed", {
-      callId: "c1",
+      toolCallId: "c1",
       name: "web_search",
       durationMs: 0,
       error: "timeout",

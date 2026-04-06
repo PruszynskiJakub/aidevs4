@@ -5,9 +5,7 @@ import { executeTurn } from "./agent/orchestrator.ts";
 import { log } from "./infra/log/logger.ts";
 import { config } from "./config/index.ts";
 import { bus } from "./infra/events.ts";
-import { initMcpTools, shutdownMcp } from "./tools/index.ts";
-import { initTracing, shutdownTracing } from "./infra/tracing.ts";
-import { attachLangfuseSubscriber } from "./infra/langfuse-subscriber.ts";
+import { initServices, installSignalHandlers } from "./infra/bootstrap.ts";
 import { setConfirmationProvider } from "./agent/confirmation.ts";
 import type { Decision } from "./types/tool.ts";
 import { requireState } from "./agent/context.ts";
@@ -99,7 +97,7 @@ setConfirmationProvider({
     const { sessionId } = requireState();
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
-        const denied = new Map(requests.map((r) => [r.callId, "deny" as const]));
+        const denied = new Map(requests.map((r) => [r.toolCallId, "deny" as const]));
         resolvePending(sessionId, denied);
       }, 120_000);
 
@@ -244,26 +242,8 @@ app.post("/chat", async (c) => {
   }
 });
 
-initTracing();
-attachLangfuseSubscriber(bus);
-await initMcpTools();
-
-async function gracefulShutdown() {
-  await shutdownTracing();
-  await shutdownMcp();
-}
-
-process.on("beforeExit", async () => {
-  await gracefulShutdown();
-});
-process.on("SIGTERM", async () => {
-  await gracefulShutdown();
-  process.exit(0);
-});
-process.on("SIGINT", async () => {
-  await gracefulShutdown();
-  process.exit(0);
-});
+await initServices();
+installSignalHandlers();
 
 const port = config.server.port;
 

@@ -3,7 +3,7 @@ import type { LLMToolCall } from "../types/llm.ts";
 import type { ToolAnnotations } from "../types/tool.ts";
 
 // Mock the registry to control getToolMeta
-let mockToolMeta: Record<string, { annotations?: ToolAnnotations; confirmIf?: (call: { action: string; args: Record<string, unknown>; callId: string }) => boolean }> = {};
+let mockToolMeta: Record<string, { annotations?: ToolAnnotations; confirmIf?: (call: { action: string; args: Record<string, unknown>; toolCallId: string }) => boolean }> = {};
 
 mock.module("../tools/registry.ts", () => ({
   SEPARATOR: "__",
@@ -71,7 +71,7 @@ describe("confirmBatch", () => {
     setConfirmationProvider({
       async confirm(requests) {
         receivedRequests.push(...requests);
-        return new Map(requests.map((r) => [r.callId, "approve" as const]));
+        return new Map(requests.map((r) => [r.toolCallId, "approve" as const]));
       },
     });
 
@@ -95,7 +95,7 @@ describe("confirmBatch", () => {
 
     setConfirmationProvider({
       async confirm(requests) {
-        return new Map(requests.map((r) => [r.callId, "deny" as const]));
+        return new Map(requests.map((r) => [r.toolCallId, "deny" as const]));
       },
     });
 
@@ -122,7 +122,7 @@ describe("confirmBatch", () => {
       async confirm(requests) {
         const decisions = new Map<string, "approve" | "deny">();
         for (const r of requests) {
-          decisions.set(r.callId, r.toolName.includes("scrape") ? "approve" : "deny");
+          decisions.set(r.toolCallId, r.toolName.includes("scrape") ? "approve" : "deny");
         }
         return decisions;
       },
@@ -141,7 +141,7 @@ describe("confirmBatch", () => {
     expect(result.denied[0].call.id).toBe("c2");
   });
 
-  it("defaults to deny when provider omits a callId from results", async () => {
+  it("defaults to deny when provider omits a toolCallId from results", async () => {
     mockToolMeta["web"] = {
       confirmIf: (call) => call.action === "scrape",
     };
@@ -189,7 +189,7 @@ describe("confirmBatch", () => {
 
     setConfirmationProvider({
       async confirm(requests) {
-        return new Map(requests.map((r) => [r.callId, "approve" as const]));
+        return new Map(requests.map((r) => [r.toolCallId, "approve" as const]));
       },
     });
 
@@ -211,7 +211,7 @@ describe("confirmBatch", () => {
 
     setConfirmationProvider({
       async confirm(requests) {
-        return new Map(requests.map((r) => [r.callId, "approve" as const]));
+        return new Map(requests.map((r) => [r.toolCallId, "approve" as const]));
       },
     });
 
@@ -227,7 +227,7 @@ describe("confirmBatch", () => {
 
     setConfirmationProvider({
       async confirm(requests) {
-        return new Map(requests.map((r) => [r.callId, "approve" as const]));
+        return new Map(requests.map((r) => [r.toolCallId, "approve" as const]));
       },
     });
 

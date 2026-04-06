@@ -2,9 +2,7 @@ import { App } from "@slack/bolt";
 import { executeTurn } from "./agent/orchestrator.ts";
 import { bus } from "./infra/events.ts";
 import { log } from "./infra/log/logger.ts";
-import { initMcpTools, shutdownMcp } from "./tools/index.ts";
-import { initTracing, shutdownTracing } from "./infra/tracing.ts";
-import { attachLangfuseSubscriber } from "./infra/langfuse-subscriber.ts";
+import { initServices, installSignalHandlers } from "./infra/bootstrap.ts";
 import type { BusEvent } from "./types/events.ts";
 import {
   deriveSessionId,
@@ -220,24 +218,8 @@ app.event("app_mention", async ({ event }) => {
 
 // ── Startup ────────────────────────────────────────────────
 
-initTracing();
-attachLangfuseSubscriber(bus);
-await initMcpTools();
-
-async function gracefulShutdown() {
-  await shutdownTracing();
-  await shutdownMcp();
-  await app.stop();
-}
-
-process.on("SIGTERM", async () => {
-  await gracefulShutdown();
-  process.exit(0);
-});
-process.on("SIGINT", async () => {
-  await gracefulShutdown();
-  process.exit(0);
-});
+await initServices();
+installSignalHandlers(async () => { await app.stop(); });
 
 await app.start();
 log.info("[slack] Bot is running in Socket Mode");

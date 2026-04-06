@@ -11,6 +11,9 @@ function dateFolderNow(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const EXPIRY_CHECK_INTERVAL_MS = 5 * 60 * 1000; // check every 5 minutes
+
 function createSessionService(
   fileService: FileProvider = defaultFiles,
   sessionsDir: string = defaultConfig.paths.sessionsDir,
@@ -20,6 +23,17 @@ function createSessionService(
 
   // Process-level fallback for calls outside any session context
   let fallbackSessionId: string | undefined;
+
+  const expiryTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [id, session] of sessions) {
+      if (queues.has(id)) continue; // don't expire sessions with in-flight work
+      if (now - session.updatedAt.getTime() > SESSION_TTL_MS) {
+        sessions.delete(id);
+      }
+    }
+  }, EXPIRY_CHECK_INTERVAL_MS);
+  expiryTimer.unref(); // don't prevent process exit
 
   return {
     getOrCreate(id: string): Session {
@@ -125,6 +139,7 @@ function createSessionService(
       sessions.clear();
       queues.clear();
       fallbackSessionId = undefined;
+      clearInterval(expiryTimer);
     },
   };
 }

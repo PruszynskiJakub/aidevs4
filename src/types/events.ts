@@ -76,12 +76,12 @@ export interface EventMap {
   };
 
   // ── Tool execution ───────────────────────────────────────
-  "tool.called": { callId: string; name: string; args: string; batchIndex: number; batchSize: number; startTime: number };
-  "tool.succeeded": { callId: string; name: string; durationMs: number; result: string; args?: string; startTime?: number };
-  "tool.failed": { callId: string; name: string; durationMs: number; error: string; args?: string; startTime?: number };
+  "tool.called": { toolCallId: string; name: string; args: string; batchIndex: number; batchSize: number; startTime: number };
+  "tool.succeeded": { toolCallId: string; name: string; durationMs: number; result: string; args?: string; startTime?: number };
+  "tool.failed": { toolCallId: string; name: string; durationMs: number; error: string; args?: string; startTime?: number };
   "batch.started": {
     batchId: string;
-    callIds: string[];
+    toolCallIds: string[];
     count: number;
   };
   "batch.completed": {
@@ -94,7 +94,7 @@ export interface EventMap {
 
   // ── Confirmation ────────────────────────────────────────
   "confirmation.requested": {
-    calls: Array<{ callId: string; toolName: string }>;
+    calls: Array<{ toolCallId: string; toolName: string }>;
   };
   "confirmation.resolved": {
     approved: string[];
