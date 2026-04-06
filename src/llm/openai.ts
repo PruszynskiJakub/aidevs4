@@ -22,15 +22,17 @@ type OpenAIContentPart =
 function contentToOpenAI(content: string | ContentPart[]): string | OpenAIContentPart[] {
   if (typeof content === "string") return content;
 
-  return content.map((part): OpenAIContentPart => {
-    if (part.type === "text") {
-      return { type: "text", text: part.text };
-    }
-    return {
-      type: "image_url",
-      image_url: { url: `data:${part.mimeType};base64,${part.data}` },
-    };
-  });
+  return content
+    .filter((part) => part.type !== "resource")
+    .map((part): OpenAIContentPart => {
+      if (part.type === "text") {
+        return { type: "text", text: part.text };
+      }
+      return {
+        type: "image_url",
+        image_url: { url: `data:${part.mimeType};base64,${part.data}` },
+      };
+    });
 }
 
 function toOpenAIMessages(messages: LLMMessage[]): ChatCompletionMessageParam[] {
@@ -105,26 +107,32 @@ export function createOpenAIProvider(client?: OpenAI): LLMProvider {
 
   return {
     async chatCompletion(params: ChatCompletionParams): Promise<LLMChatResponse> {
-      const response = await openai.chat.completions.create({
-        model: params.model,
-        messages: toOpenAIMessages(params.messages),
-        ...(params.tools?.length && { tools: toOpenAITools(params.tools) }),
-        ...(params.temperature !== undefined && { temperature: params.temperature }),
-        ...(params.maxTokens !== undefined && { max_tokens: params.maxTokens }),
-      });
+      const response = await openai.chat.completions.create(
+        {
+          model: params.model,
+          messages: toOpenAIMessages(params.messages),
+          ...(params.tools?.length && { tools: toOpenAITools(params.tools) }),
+          ...(params.temperature !== undefined && { temperature: params.temperature }),
+          ...(params.maxTokens !== undefined && { max_tokens: params.maxTokens }),
+        },
+        { signal: AbortSignal.timeout(config.limits.openaiTimeout) },
+      );
 
       return toResponse(response.choices[0], response.usage);
     },
 
     async completion(params: CompletionParams): Promise<string> {
-      const response = await openai.chat.completions.create({
-        model: params.model,
-        temperature: params.temperature ?? 0,
-        messages: [
-          { role: "system", content: params.systemPrompt },
-          { role: "user", content: params.userPrompt },
-        ],
-      });
+      const response = await openai.chat.completions.create(
+        {
+          model: params.model,
+          temperature: params.temperature ?? 0,
+          messages: [
+            { role: "system", content: params.systemPrompt },
+            { role: "user", content: params.userPrompt },
+          ],
+        },
+        { signal: AbortSignal.timeout(config.limits.openaiTimeout) },
+      );
 
       return response.choices[0].message.content ?? "";
     },

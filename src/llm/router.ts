@@ -5,6 +5,7 @@ import type {
   CompletionParams,
 } from "../types/llm.ts";
 import { isFatalLLMError, extractErrorCode } from "./errors.ts";
+import { errorMessage } from "../utils/parse.ts";
 import { bus } from "../infra/events.ts";
 
 interface ProviderEntry {
@@ -65,7 +66,7 @@ export class ProviderRegistry implements LLMProvider {
   private emitCallFailed(model: string, err: unknown): void {
     bus.emit("llm.call.failed", {
       model,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
       fatal: isFatalLLMError(err),
       code: extractErrorCode(err),
     });

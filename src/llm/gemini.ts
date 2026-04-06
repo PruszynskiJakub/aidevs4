@@ -12,17 +12,30 @@ import type {
 } from "../types/llm.ts";
 import { config } from "../config/index.ts";
 
+function findToolCallName(messages: LLMMessage[], toolCallId: string): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "assistant" && m.toolCalls) {
+      const tc = m.toolCalls.find((t) => t.id === toolCallId);
+      if (tc) return tc.function.name;
+    }
+  }
+  return undefined;
+}
+
 function contentPartsToGemini(content: string | ContentPart[]): Part[] {
   if (typeof content === "string") {
     return [{ text: content }];
   }
 
-  return content.map((part): Part => {
-    if (part.type === "text") {
-      return { text: part.text };
-    }
-    return { inlineData: { data: part.data, mimeType: part.mimeType } };
-  });
+  return content
+    .filter((part) => part.type !== "resource")
+    .map((part): Part => {
+      if (part.type === "text") {
+        return { text: part.text };
+      }
+      return { inlineData: { data: part.data, mimeType: part.mimeType } };
+    });
 }
 
 function toGeminiContents(
@@ -71,12 +84,14 @@ function toGeminiContents(
       case "tool": {
         let response: Record<string, unknown>;
         try { response = JSON.parse(msg.content); } catch { response = { result: msg.content }; }
+        // Recover the function name from the preceding assistant message's tool calls
+        const fnName = findToolCallName(messages, msg.toolCallId) ?? msg.toolCallId;
         contents.push({
           role: "user",
           parts: [{
             functionResponse: {
               id: msg.toolCallId,
-              name: msg.toolCallId,
+              name: fnName,
               response,
             },
           }],
