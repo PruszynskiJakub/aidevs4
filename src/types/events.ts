@@ -92,6 +92,15 @@ export interface EventMap {
     failed: number;
   };
 
+  // ── Confirmation ────────────────────────────────────────
+  "confirmation.requested": {
+    calls: Array<{ callId: string; toolName: string }>;
+  };
+  "confirmation.resolved": {
+    approved: string[];
+    denied: string[];
+  };
+
   // ── Memory — observation lifecycle ──────────────────────
   "memory.observation.started": { tokensBefore: number };
   "memory.observation.completed": {

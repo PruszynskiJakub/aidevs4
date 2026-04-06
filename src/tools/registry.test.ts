@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { describe, it, expect, beforeEach } from "bun:test";
-import { register, getTools, getToolsByName, dispatch, reset, serializeContent } from "./registry.ts";
+import { register, getTools, getToolsByName, dispatch, reset, serializeContent, getToolMeta } from "./registry.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 import { text } from "../types/tool-result.ts";
 
@@ -254,6 +254,57 @@ describe("registry", () => {
         { type: "resource", uri: "file:///tmp/f.txt", description: "Full file" },
       ]);
       expect(result).toBe("Summary\n\nFull file (ref: file:///tmp/f.txt)");
+    });
+  });
+
+  describe("getToolMeta", () => {
+    it("returns metadata for simple tool", () => {
+      const tool: ToolDefinition = {
+        name: "guarded",
+        schema: {
+          name: "guarded",
+          description: "A guarded tool",
+          schema: z.object({}),
+        },
+        handler: async () => text("ok"),
+        annotations: { destructiveHint: true },
+        confirmIf: () => true,
+      };
+
+      register(tool);
+      const meta = getToolMeta("guarded");
+
+      expect(meta).toBeDefined();
+      expect(meta!.annotations?.destructiveHint).toBe(true);
+      expect(meta!.confirmIf).toBeDefined();
+    });
+
+    it("resolves multi-action expanded name to base tool meta", () => {
+      const tool: ToolDefinition = {
+        name: "web",
+        schema: {
+          name: "web",
+          description: "Web tool",
+          actions: {
+            scrape: { description: "Scrape", schema: z.object({}) },
+            download: { description: "Download", schema: z.object({}) },
+          },
+        },
+        handler: async () => text("ok"),
+        confirmIf: (call) => call.action === "scrape",
+      };
+
+      register(tool);
+      const meta = getToolMeta("web__scrape");
+
+      expect(meta).toBeDefined();
+      expect(meta!.confirmIf).toBeDefined();
+      expect(meta!.confirmIf!({ action: "scrape", args: {}, callId: "x" })).toBe(true);
+      expect(meta!.confirmIf!({ action: "download", args: {}, callId: "x" })).toBe(false);
+    });
+
+    it("returns undefined for unknown tool", () => {
+      expect(getToolMeta("nonexistent")).toBeUndefined();
     });
   });
 

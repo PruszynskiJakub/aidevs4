@@ -5,6 +5,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { CreateMessageRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { LLMProvider, LLMMessage, ContentPart } from "../types/llm.ts";
+import type { ToolAnnotations } from "../types/tool.ts";
 import { type ToolResult, error as toolError } from "../types/tool-result.ts";
 import { registerRaw } from "../tools/registry.ts";
 import { errorMessage } from "../utils/parse.ts";
@@ -206,7 +207,7 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
               };
 
               try {
-                registerRaw(registeredName, description, parameters, handler);
+                registerRaw(registeredName, description, parameters, handler, tool.annotations as ToolAnnotations | undefined);
               } catch (err) {
                 console.warn(`[mcp] Failed to register tool "${registeredName}": ${errorMessage(err)}`);
               }

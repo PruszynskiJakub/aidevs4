@@ -1,6 +1,19 @@
 import type { z } from "zod";
 import type { ToolResult } from "./tool-result.ts";
 
+export interface ToolAnnotations {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
+export interface ConfirmableToolCall {
+  action: string;
+  args: Record<string, unknown>;
+  callId: string;
+}
+
 export interface SimpleToolSchema {
   name: string;
   description: string;
@@ -24,4 +37,6 @@ export interface ToolDefinition {
   name: string;
   schema: ToolSchema;
   handler: (args: Record<string, unknown>) => Promise<ToolResult>;
+  annotations?: ToolAnnotations;
+  confirmIf?: (call: ConfirmableToolCall) => boolean;
 }

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { LLMTool } from "../types/llm.ts";
 import type { ContentPart } from "../types/llm.ts";
-import type { ToolDefinition, ToolSchema } from "../types/tool.ts";
+import type { ToolDefinition, ToolSchema, ToolAnnotations } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { safeParse } from "../utils/parse.ts";
 import { estimateTokens } from "../utils/tokens.ts";
@@ -63,6 +63,7 @@ export function registerRaw(
   description: string,
   parameters: Record<string, unknown>,
   handler: (args: Record<string, unknown>) => Promise<ToolResult>,
+  annotations?: ToolAnnotations,
 ): void {
   if (handlers.has(name)) {
     throw new Error(`Duplicate tool registration: "${name}"`);
@@ -72,6 +73,7 @@ export function registerRaw(
     name,
     schema: { name, description, schema: {} as z.ZodObject },
     handler,
+    annotations,
   });
 
   expandedTools.push({
@@ -100,6 +102,23 @@ export async function getTools(): Promise<LLMTool[]> {
 export function getToolsByName(name: string): LLMTool[] | undefined {
   const matched = expandedTools.filter((t) => baseName(t.function.name) === name);
   return matched.length > 0 ? matched : undefined;
+}
+
+export interface ToolMeta {
+  annotations?: ToolAnnotations;
+  confirmIf?: ToolDefinition["confirmIf"];
+}
+
+export function getToolMeta(expandedName: string): ToolMeta | undefined {
+  const direct = handlers.get(expandedName);
+  if (direct) return { annotations: direct.annotations, confirmIf: direct.confirmIf };
+
+  const base = baseName(expandedName);
+  if (base !== expandedName) {
+    const tool = handlers.get(base);
+    if (tool) return { annotations: tool.annotations, confirmIf: tool.confirmIf };
+  }
+  return undefined;
 }
 
 export interface DispatchResult {

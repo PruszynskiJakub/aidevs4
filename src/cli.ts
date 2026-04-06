@@ -4,6 +4,9 @@ import { initMcpTools, shutdownMcp } from "./tools/index.ts";
 import { initTracing, shutdownTracing } from "./infra/tracing.ts";
 import { attachLangfuseSubscriber } from "./infra/langfuse-subscriber.ts";
 import { bus } from "./infra/events.ts";
+import { setConfirmationProvider } from "./agent/confirmation.ts";
+import type { ConfirmationRequest } from "./agent/confirmation.ts";
+import * as readline from "node:readline/promises";
 
 function extractFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
@@ -39,6 +42,25 @@ if (args.length >= 2) {
 initTracing();
 attachLangfuseSubscriber(bus);
 await initMcpTools();
+
+setConfirmationProvider({
+  async confirm(requests: ConfirmationRequest[]) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const results = new Map<string, "approve" | "deny">();
+    try {
+      console.log("\nTool confirmation required:");
+      for (const req of requests) {
+        console.log(`  Tool: ${req.toolName}`);
+        console.log(`  Args: ${JSON.stringify(req.args, null, 2)}`);
+        const answer = await rl.question("  Approve? [Y/n] ");
+        results.set(req.callId, answer.trim().toLowerCase() === "n" ? "deny" : "approve");
+      }
+    } finally {
+      rl.close();
+    }
+    return results;
+  },
+});
 
 const { answer, sessionId: resolvedSessionId } = await executeTurn({
   sessionId,

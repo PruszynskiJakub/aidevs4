@@ -8,6 +8,8 @@ import { bus } from "./infra/events.ts";
 import { initMcpTools, shutdownMcp } from "./tools/index.ts";
 import { initTracing, shutdownTracing } from "./infra/tracing.ts";
 import { attachLangfuseSubscriber } from "./infra/langfuse-subscriber.ts";
+import { setConfirmationProvider } from "./agent/confirmation.ts";
+import { requireState } from "./agent/context.ts";
 
 interface ChatRequest {
   sessionId: string;
@@ -71,6 +73,65 @@ app.use("/chat", async (c, next) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
   await next();
+});
+
+// ── Confirmation gate (HTTP) ─────────────────────────────────
+
+const pendingConfirmations = new Map<string, {
+  resolve: (decisions: Map<string, "approve" | "deny">) => void;
+  timeout: Timer;
+}>();
+
+function resolvePending(
+  sessionId: string,
+  decisions: Map<string, "approve" | "deny">,
+): void {
+  const pending = pendingConfirmations.get(sessionId);
+  if (!pending) return;
+  clearTimeout(pending.timeout);
+  pendingConfirmations.delete(sessionId);
+  pending.resolve(decisions);
+}
+
+setConfirmationProvider({
+  async confirm(requests) {
+    const { sessionId } = requireState();
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        const denied = new Map(requests.map((r) => [r.callId, "deny" as const]));
+        resolvePending(sessionId, denied);
+      }, 120_000);
+
+      pendingConfirmations.set(sessionId, { resolve, timeout });
+    });
+  },
+});
+
+app.post("/chat/:sessionId/confirm", async (c) => {
+  const { sessionId } = c.req.param();
+  const pending = pendingConfirmations.get(sessionId);
+  if (!pending) {
+    return c.json({ error: "No pending confirmation for this session" }, 404);
+  }
+
+  const body = await c.req.json();
+  const decisions = new Map<string, "approve" | "deny">(
+    Object.entries((body as Record<string, unknown>).decisions ?? {}) as Array<[string, "approve" | "deny"]>,
+  );
+  resolvePending(sessionId, decisions);
+
+  return c.json({ status: "ok" });
+});
+
+bus.on("session.completed", (e) => {
+  if (e.sessionId && pendingConfirmations.has(e.sessionId)) {
+    resolvePending(e.sessionId, new Map());
+  }
+});
+bus.on("session.failed", (e) => {
+  if (e.sessionId && pendingConfirmations.has(e.sessionId)) {
+    resolvePending(e.sessionId, new Map());
+  }
 });
 
 app.post("/api/negotiations/search", async (c) => {

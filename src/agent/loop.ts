@@ -4,6 +4,7 @@ import type { AgentState } from "../types/agent-state.ts";
 import { llm as defaultLLM } from "../llm/llm.ts";
 import { config } from "../config/index.ts";
 import { dispatch } from "../tools/registry.ts";
+import { confirmBatch } from "./confirmation.ts";
 import { agentsService } from "./agents.ts";
 import { MarkdownLogger } from "../infra/log/markdown.ts";
 import { ConsoleLogger } from "../infra/log/console.ts";
@@ -111,40 +112,55 @@ async function dispatchTools(
   const batchId = randomUUID();
   const dispatchTime = Date.now();
 
-  if (functionCalls.length > 1) {
-    bus.emit("batch.started", {
-      batchId,
-      callIds: functionCalls.map((tc) => tc.id),
-      count: functionCalls.length,
+  // ── Confirmation gate ──────────────────────────────────────
+  const { approved, denied } = await confirmBatch(functionCalls);
+
+  for (const { call } of denied) {
+    state.messages.push({
+      role: "tool",
+      toolCallId: call.id,
+      content: "Error: Tool call denied by operator.",
     });
   }
 
-  for (let idx = 0; idx < functionCalls.length; idx++) {
-    const tc = functionCalls[idx];
+  if (approved.length === 0) return;
+
+  // ── Emit tool.called only for approved calls ──────────────
+  if (approved.length > 1) {
+    bus.emit("batch.started", {
+      batchId,
+      callIds: approved.map((tc) => tc.id),
+      count: approved.length,
+    });
+  }
+
+  for (let idx = 0; idx < approved.length; idx++) {
+    const tc = approved[idx];
     bus.emit("tool.called", {
       callId: tc.id,
       name: tc.function.name,
       args: tc.function.arguments,
       batchIndex: idx,
-      batchSize: functionCalls.length,
+      batchSize: approved.length,
       startTime: dispatchTime,
     });
   }
 
+  // ── Dispatch approved calls ───────────────────────────────
   const batchStart = performance.now();
   let succeeded = 0;
   let failed = 0;
 
   const settled = await Promise.allSettled(
-    functionCalls.map(async (tc) => {
+    approved.map(async (tc) => {
       const start = performance.now();
       const result = await dispatch(tc.function.name, tc.function.arguments, tc.id);
       return { ...result, durationMs: performance.now() - start };
     })
   );
 
-  for (let j = 0; j < functionCalls.length; j++) {
-    const tc = functionCalls[j];
+  for (let j = 0; j < approved.length; j++) {
+    const tc = approved[j];
     const outcome = settled[j];
 
     if (outcome.status === "fulfilled") {
@@ -194,10 +210,10 @@ async function dispatchTools(
     }
   }
 
-  if (functionCalls.length > 1) {
+  if (approved.length > 1) {
     bus.emit("batch.completed", {
       batchId,
-      count: functionCalls.length,
+      count: approved.length,
       durationMs: performance.now() - batchStart,
       succeeded,
       failed,
