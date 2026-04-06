@@ -7,7 +7,7 @@ import { safeParse } from "../utils/parse.ts";
 import { estimateTokens } from "../utils/tokens.ts";
 import { resultStore } from "../infra/result-store.ts";
 
-const SEPARATOR = "__";
+export const SEPARATOR = "__";
 
 const handlers = new Map<string, ToolDefinition>();
 const expandedTools: LLMTool[] = [];
@@ -104,10 +104,7 @@ export function getToolsByName(name: string): LLMTool[] | undefined {
   return matched.length > 0 ? matched : undefined;
 }
 
-export interface ToolMeta {
-  annotations?: ToolAnnotations;
-  confirmIf?: ToolDefinition["confirmIf"];
-}
+export type ToolMeta = Pick<ToolDefinition, "annotations" | "confirmIf">;
 
 export function getToolMeta(expandedName: string): ToolMeta | undefined {
   const direct = handlers.get(expandedName);

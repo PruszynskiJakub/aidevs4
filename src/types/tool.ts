@@ -8,6 +8,8 @@ export interface ToolAnnotations {
   openWorldHint?: boolean;
 }
 
+export type Decision = "approve" | "deny";
+
 export interface ConfirmableToolCall {
   action: string;
   args: Record<string, unknown>;

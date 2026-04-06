@@ -6,6 +6,7 @@ import { attachLangfuseSubscriber } from "./infra/langfuse-subscriber.ts";
 import { bus } from "./infra/events.ts";
 import { setConfirmationProvider } from "./agent/confirmation.ts";
 import type { ConfirmationRequest } from "./agent/confirmation.ts";
+import type { Decision } from "./types/tool.ts";
 import * as readline from "node:readline/promises";
 
 function extractFlag(args: string[], flag: string): string | undefined {
@@ -46,7 +47,7 @@ await initMcpTools();
 setConfirmationProvider({
   async confirm(requests: ConfirmationRequest[]) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const results = new Map<string, "approve" | "deny">();
+    const results = new Map<string, Decision>();
     try {
       console.log("\nTool confirmation required:");
       for (const req of requests) {

@@ -1,9 +1,8 @@
 import type { LLMToolCall } from "../types/llm.ts";
-import { getToolMeta } from "../tools/registry.ts";
+import type { Decision } from "../types/tool.ts";
+import { getToolMeta, SEPARATOR } from "../tools/registry.ts";
 import { bus } from "../infra/events.ts";
 import { safeParse } from "../utils/parse.ts";
-
-// ── Types ──────────────────────────────────────────────────
 
 export interface ConfirmationRequest {
   callId: string;
@@ -12,15 +11,13 @@ export interface ConfirmationRequest {
 }
 
 export interface ConfirmationProvider {
-  confirm(requests: ConfirmationRequest[]): Promise<Map<string, "approve" | "deny">>;
+  confirm(requests: ConfirmationRequest[]): Promise<Map<string, Decision>>;
 }
 
 export interface GateResult {
   approved: LLMToolCall[];
   denied: Array<{ call: LLMToolCall; reason: string }>;
 }
-
-// ── Global provider slot ───────────────────────────────────
 
 let provider: ConfirmationProvider | null = null;
 
@@ -32,41 +29,36 @@ export function clearConfirmationProvider(): void {
   provider = null;
 }
 
-// ── Classification ─────────────────────────────────────────
-
-const SEPARATOR = "__";
-
 function extractAction(expandedName: string): string {
   const idx = expandedName.indexOf(SEPARATOR);
   return idx === -1 ? expandedName : expandedName.slice(idx + SEPARATOR.length);
 }
-
-function needsConfirmation(toolCall: LLMToolCall): boolean {
-  const name = toolCall.function.name;
-  const meta = getToolMeta(name);
-  if (!meta?.confirmIf) return false;
-
-  const parsed = safeParse<Record<string, unknown>>(toolCall.function.arguments, name);
-  return meta.confirmIf({
-    action: extractAction(name),
-    args: parsed,
-    callId: toolCall.id,
-  });
-}
-
-// ── Batch gate ─────────────────────────────────────────────
 
 export async function confirmBatch(calls: LLMToolCall[]): Promise<GateResult> {
   if (!provider) {
     return { approved: calls, denied: [] };
   }
 
-  const needsApproval: LLMToolCall[] = [];
+  const needsApproval: Array<{ call: LLMToolCall; request: ConfirmationRequest }> = [];
   const autoApproved: LLMToolCall[] = [];
 
   for (const call of calls) {
-    if (needsConfirmation(call)) {
-      needsApproval.push(call);
+    const name = call.function.name;
+    const meta = getToolMeta(name);
+    if (!meta?.confirmIf) {
+      autoApproved.push(call);
+      continue;
+    }
+
+    const parsed = safeParse<Record<string, unknown>>(call.function.arguments, name);
+    const shouldConfirm = meta.confirmIf({
+      action: extractAction(name),
+      args: parsed,
+      callId: call.id,
+    });
+
+    if (shouldConfirm) {
+      needsApproval.push({ call, request: { callId: call.id, toolName: name, args: parsed } });
     } else {
       autoApproved.push(call);
     }
@@ -76,17 +68,13 @@ export async function confirmBatch(calls: LLMToolCall[]): Promise<GateResult> {
     return { approved: calls, denied: [] };
   }
 
-  const requests: ConfirmationRequest[] = needsApproval.map((tc) => ({
-    callId: tc.id,
-    toolName: tc.function.name,
-    args: safeParse<Record<string, unknown>>(tc.function.arguments, tc.function.name),
-  }));
+  const requests = needsApproval.map((e) => e.request);
 
   bus.emit("confirmation.requested", {
     calls: requests.map((r) => ({ callId: r.callId, toolName: r.toolName })),
   });
 
-  let decisions: Map<string, "approve" | "deny">;
+  let decisions: Map<string, Decision>;
   try {
     decisions = await provider.confirm(requests);
   } catch (err) {
@@ -96,18 +84,20 @@ export async function confirmBatch(calls: LLMToolCall[]): Promise<GateResult> {
 
   const approved = [...autoApproved];
   const denied: GateResult["denied"] = [];
+  const operatorApprovedIds: string[] = [];
 
-  for (const tc of needsApproval) {
-    const decision = decisions.get(tc.id) ?? "deny";
+  for (const { call } of needsApproval) {
+    const decision = decisions.get(call.id) ?? "deny";
     if (decision === "approve") {
-      approved.push(tc);
+      approved.push(call);
+      operatorApprovedIds.push(call.id);
     } else {
-      denied.push({ call: tc, reason: "Denied by operator" });
+      denied.push({ call, reason: "Denied by operator" });
     }
   }
 
   bus.emit("confirmation.resolved", {
-    approved: approved.filter((tc) => needsApproval.includes(tc)).map((tc) => tc.id),
+    approved: operatorApprovedIds,
     denied: denied.map((d) => d.call.id),
   });
 

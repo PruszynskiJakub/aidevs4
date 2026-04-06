@@ -9,6 +9,7 @@ import { initMcpTools, shutdownMcp } from "./tools/index.ts";
 import { initTracing, shutdownTracing } from "./infra/tracing.ts";
 import { attachLangfuseSubscriber } from "./infra/langfuse-subscriber.ts";
 import { setConfirmationProvider } from "./agent/confirmation.ts";
+import type { Decision } from "./types/tool.ts";
 import { requireState } from "./agent/context.ts";
 
 interface ChatRequest {
@@ -78,13 +79,13 @@ app.use("/chat", async (c, next) => {
 // ── Confirmation gate (HTTP) ─────────────────────────────────
 
 const pendingConfirmations = new Map<string, {
-  resolve: (decisions: Map<string, "approve" | "deny">) => void;
+  resolve: (decisions: Map<string, Decision>) => void;
   timeout: Timer;
 }>();
 
 function resolvePending(
   sessionId: string,
-  decisions: Map<string, "approve" | "deny">,
+  decisions: Map<string, Decision>,
 ): void {
   const pending = pendingConfirmations.get(sessionId);
   if (!pending) return;
@@ -115,24 +116,22 @@ app.post("/chat/:sessionId/confirm", async (c) => {
   }
 
   const body = await c.req.json();
-  const decisions = new Map<string, "approve" | "deny">(
-    Object.entries((body as Record<string, unknown>).decisions ?? {}) as Array<[string, "approve" | "deny"]>,
+  const raw = Object.entries((body as Record<string, unknown>).decisions ?? {});
+  const decisions = new Map<string, Decision>(
+    raw.map(([id, v]) => [id, v === "approve" ? "approve" : "deny"]),
   );
   resolvePending(sessionId, decisions);
 
   return c.json({ status: "ok" });
 });
 
-bus.on("session.completed", (e) => {
-  if (e.sessionId && pendingConfirmations.has(e.sessionId)) {
-    resolvePending(e.sessionId, new Map());
-  }
-});
-bus.on("session.failed", (e) => {
-  if (e.sessionId && pendingConfirmations.has(e.sessionId)) {
-    resolvePending(e.sessionId, new Map());
-  }
-});
+for (const evt of ["session.completed", "session.failed"] as const) {
+  bus.on(evt, (e) => {
+    if (e.sessionId && pendingConfirmations.has(e.sessionId)) {
+      resolvePending(e.sessionId, new Map());
+    }
+  });
+}
 
 app.post("/api/negotiations/search", async (c) => {
   const body = await c.req.json().catch(() => null);

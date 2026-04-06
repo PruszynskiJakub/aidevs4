@@ -6,6 +6,7 @@ import type { ToolAnnotations } from "../types/tool.ts";
 let mockToolMeta: Record<string, { annotations?: ToolAnnotations; confirmIf?: (call: { action: string; args: Record<string, unknown>; callId: string }) => boolean }> = {};
 
 mock.module("../tools/registry.ts", () => ({
+  SEPARATOR: "__",
   getToolMeta: (expandedName: string) => mockToolMeta[expandedName] ?? mockToolMeta[expandedName.split("__")[0]] ?? undefined,
 }));
 
