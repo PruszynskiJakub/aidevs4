@@ -1,10 +1,6 @@
-import type { BrowserFeedbackTracker } from "./browser-feedback.ts";
+import type { BrowserFeedbackTracker, BrowserInterventions } from "../types/browser.ts";
 
-export interface BrowserInterventions {
-  checkScreenshotHint(): string | null;
-  checkDiscoveryHint(outcome: "success" | "fail"): string | null;
-  checkEndOfTaskHint(): string | null;
-}
+export type { BrowserInterventions } from "../types/browser.ts";
 
 export function createBrowserInterventions(tracker: BrowserFeedbackTracker): BrowserInterventions {
   let screenshotHintSent = false;

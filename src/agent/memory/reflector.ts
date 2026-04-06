@@ -11,10 +11,8 @@ const COMPRESSION_GUIDANCE: Record<number, string> = {
   2: "Level 2 — Essential only: Keep only durable facts — 🔴 Critical items, key 🟡 Important findings still relevant to the active task. Collapse all 🟢 Context into a single brief summary if any context remains relevant.",
 };
 
-export interface ReflectResult {
-  text: string;
-  generations: MemoryGeneration[];
-}
+export type { ReflectResult } from "../../types/memory-ops.ts";
+import type { ReflectResult } from "../../types/memory-ops.ts";
 
 export async function reflect(
   observations: string,

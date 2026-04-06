@@ -22,3 +22,18 @@ export interface AgentLogger {
 }
 
 export interface Logger extends GeneralLogger, AgentLogger {}
+
+export interface ConsoleLoggerOptions {
+  level?: LogLevel;
+  truncateArgs?: number;
+  truncateResult?: number;
+}
+
+export interface JsonlWriter {
+  /** Wildcard listener — pass to bus.onAny(). */
+  listener: import("./events.ts").WildcardListener;
+  /** Wait for all pending writes to complete. */
+  flush(): Promise<void>;
+  /** Detach the beforeExit handler. Call in tests / on shutdown. */
+  dispose(): void;
+}

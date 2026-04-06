@@ -1,9 +1,7 @@
 import { config } from "../config/index.ts";
+import type { ScrapeResult } from "../types/serper.ts";
 
-export interface ScrapeResult {
-  text: string;
-  url: string;
-}
+export type { ScrapeResult } from "../types/serper.ts";
 
 function getApiKey(): string {
   const key = config.keys.serperApiKey;

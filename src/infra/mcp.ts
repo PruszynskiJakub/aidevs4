@@ -69,12 +69,8 @@ function mapMcpContent(content: unknown[]): ContentPart[] {
   });
 }
 
-export interface McpService {
-  connect(): Promise<void>;
-  registerTools(): Promise<void>;
-  disconnect(): Promise<void>;
-  getConnectedServers(): string[];
-}
+export type { McpService } from "../types/mcp.ts";
+import type { McpService } from "../types/mcp.ts";
 
 export function createMcpService(llmProvider: LLMProvider): McpService {
   const servers = new Map<string, ConnectedServer>();

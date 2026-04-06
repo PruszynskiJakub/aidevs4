@@ -1,16 +1,10 @@
 import { join } from "node:path";
 import { appendFile, mkdir } from "node:fs/promises";
 import type { BusEvent, WildcardListener } from "../../types/events.ts";
+import type { JsonlWriter } from "../../types/logger.ts";
 import { config } from "../../config/index.ts";
 
-export interface JsonlWriter {
-  /** Wildcard listener — pass to bus.onAny(). */
-  listener: WildcardListener;
-  /** Wait for all pending writes to complete. */
-  flush(): Promise<void>;
-  /** Detach the beforeExit handler. Call in tests / on shutdown. */
-  dispose(): void;
-}
+export type { JsonlWriter } from "../../types/logger.ts";
 
 function dateFolderFromTs(ts: number): string {
   return new Date(ts).toISOString().slice(0, 10);

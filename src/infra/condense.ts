@@ -3,31 +3,11 @@ import { promptService } from "../llm/prompt.ts";
 import { files } from "./file.ts";
 import { sessionService } from "../agent/session.ts";
 import { estimateTokens } from "../utils/tokens.ts";
-import type { LLMProvider } from "../types/llm.ts";
+import type { CondenseOpts, CondenseResult } from "../types/condense.ts";
+
+export type { CondenseOpts, CondenseResult } from "../types/condense.ts";
 
 const DEFAULT_THRESHOLD = 3_000; // tokens — below this, pass through
-
-export interface CondenseOpts {
-  /** Raw tool output text. */
-  content: string;
-  /** What the tool was trying to accomplish — steers the summary focus. */
-  intent: string;
-  /** Token threshold before condensing kicks in. Default: 3000. */
-  threshold?: number;
-  /** Filename hint for the full-output dump. Default: "full-output.txt". */
-  filename?: string;
-  /** Override LLM provider (for testing). */
-  provider?: LLMProvider;
-}
-
-export interface CondenseResult {
-  /** Either the original content (if small) or the LLM summary. */
-  text: string;
-  /** Absolute path to the full output file, or null if not condensed. */
-  fullPath: string | null;
-  /** Whether condensation actually happened. */
-  condensed: boolean;
-}
 
 /**
  * Condense large tool output into a focused summary.

@@ -1,17 +1,6 @@
-export interface FeedbackEvent {
-  tool: string;
-  outcome: "success" | "fail";
-  args: Record<string, unknown>;
-  error?: string;
-}
+import type { FeedbackEvent, BrowserFeedbackTracker } from "../types/browser.ts";
 
-export interface BrowserFeedbackTracker {
-  record(event: FeedbackEvent): void;
-  consecutiveFailures(): number;
-  lastVisitedHostname(): string | null;
-  generateHints(tool: string, outcome: "success" | "fail", error?: string): string[];
-  stats(): { total: number; successes: number; failures: number };
-}
+export type { FeedbackEvent, BrowserFeedbackTracker } from "../types/browser.ts";
 
 const MAX_HISTORY = 20;
 

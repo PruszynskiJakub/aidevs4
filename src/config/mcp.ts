@@ -1,26 +1,8 @@
 import { join } from "path";
 import { WORKSPACE_DIR } from "./paths.ts";
+import type { McpServerConfig, McpConfig } from "../types/mcp.ts";
 
-export interface McpStdioServer {
-  transport: "stdio";
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-}
-
-export interface McpHttpServer {
-  transport: "sse" | "http";
-  url: string;
-}
-
-export type McpServerConfig = (McpStdioServer | McpHttpServer) & {
-  name: string;
-  enabled?: boolean;
-};
-
-export interface McpConfig {
-  servers: McpServerConfig[];
-}
+export type { McpStdioServer, McpHttpServer, McpServerConfig, McpConfig } from "../types/mcp.ts";
 
 const MCP_CONFIG_PATH = join(WORKSPACE_DIR, "mcp.json");
 

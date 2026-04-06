@@ -1,23 +1,11 @@
 import type { LLMToolCall } from "../types/llm.ts";
 import type { Decision } from "../types/tool.ts";
+import type { ConfirmationRequest, ConfirmationProvider, GateResult } from "../types/confirmation.ts";
 import { getToolMeta, SEPARATOR } from "../tools/registry.ts";
 import { bus } from "../infra/events.ts";
 import { safeParse } from "../utils/parse.ts";
 
-export interface ConfirmationRequest {
-  toolCallId: string;
-  toolName: string;
-  args: Record<string, unknown>;
-}
-
-export interface ConfirmationProvider {
-  confirm(requests: ConfirmationRequest[]): Promise<Map<string, Decision>>;
-}
-
-export interface GateResult {
-  approved: LLMToolCall[];
-  denied: Array<{ call: LLMToolCall; reason: string }>;
-}
+export type { ConfirmationRequest, ConfirmationProvider, GateResult } from "../types/confirmation.ts";
 
 let provider: ConfirmationProvider | null = null;
 

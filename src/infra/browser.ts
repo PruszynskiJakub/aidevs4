@@ -5,27 +5,11 @@ import { config } from "../config/index.ts";
 import { files } from "./file.ts";
 import { safeParse } from "../utils/parse.ts";
 import { requireSessionId } from "../agent/context.ts";
-import { createBrowserFeedbackTracker, type BrowserFeedbackTracker } from "./browser-feedback.ts";
-import { createBrowserInterventions, type BrowserInterventions } from "./browser-interventions.ts";
+import type { BrowserFeedbackTracker, BrowserInterventions, BrowserSession, BrowserPool } from "../types/browser.ts";
+import { createBrowserFeedbackTracker } from "./browser-feedback.ts";
+import { createBrowserInterventions } from "./browser-interventions.ts";
 
-// ── Interfaces ─────────────────────────────────────────────────
-
-export interface BrowserSession {
-  getPage(): Promise<Page>;
-  saveSession(): Promise<void>;
-  close(): Promise<void>;
-  isRunning(): boolean;
-  readonly feedbackTracker: BrowserFeedbackTracker;
-  readonly interventions: BrowserInterventions;
-}
-
-export interface BrowserPool {
-  get(): BrowserSession;
-  close(sessionId: string): Promise<void>;
-  closeAll(): Promise<void>;
-  /** @internal — number of active sessions in the pool */
-  size(): number;
-}
+export type { BrowserSession, BrowserPool } from "../types/browser.ts";
 
 // ── BrowserSession factory ─────────────────────────────────────
 

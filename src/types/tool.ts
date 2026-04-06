@@ -42,3 +42,10 @@ export interface ToolDefinition {
   annotations?: ToolAnnotations;
   confirmIf?: (call: ConfirmableToolCall) => boolean;
 }
+
+export type ToolMeta = Pick<ToolDefinition, "annotations" | "confirmIf">;
+
+export interface DispatchResult {
+  content: string;
+  isError: boolean;
+}

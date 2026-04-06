@@ -104,7 +104,8 @@ export function getToolsByName(name: string): LLMTool[] | undefined {
   return matched.length > 0 ? matched : undefined;
 }
 
-export type ToolMeta = Pick<ToolDefinition, "annotations" | "confirmIf">;
+export type { ToolMeta, DispatchResult } from "../types/tool.ts";
+import type { ToolMeta, DispatchResult } from "../types/tool.ts";
 
 export function getToolMeta(expandedName: string): ToolMeta | undefined {
   const direct = handlers.get(expandedName);
@@ -116,11 +117,6 @@ export function getToolMeta(expandedName: string): ToolMeta | undefined {
     if (tool) return { annotations: tool.annotations, confirmIf: tool.confirmIf };
   }
   return undefined;
-}
-
-export interface DispatchResult {
-  content: string;
-  isError: boolean;
 }
 
 /** Serialize content parts to plain text. */

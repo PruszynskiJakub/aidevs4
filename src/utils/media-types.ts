@@ -2,7 +2,8 @@
 
 import { extname } from "path";
 
-export type MediaCategory = "image" | "text" | "audio" | "video" | "document";
+export type { MediaCategory } from "../types/media.ts";
+import type { MediaCategory } from "../types/media.ts";
 
 export const IMAGE_EXTENSIONS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico",

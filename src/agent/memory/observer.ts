@@ -44,10 +44,8 @@ export function serializeMessages(messages: LLMMessage[]): string {
   return lines.join("\n\n");
 }
 
-export interface ObserveResult {
-  text: string;
-  generation: MemoryGeneration;
-}
+export type { ObserveResult } from "../../types/memory-ops.ts";
+import type { ObserveResult } from "../../types/memory-ops.ts";
 
 export async function observe(
   messages: LLMMessage[],

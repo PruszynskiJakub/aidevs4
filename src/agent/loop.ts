@@ -221,10 +221,8 @@ async function dispatchTools(
   }
 }
 
-export interface AgentResult {
-  answer: string;
-  messages: LLMMessage[];
-}
+export type { AgentResult } from "../types/agent.ts";
+import type { AgentResult } from "../types/agent.ts";
 
 interface MemoryContext {
   systemPrompt: string;

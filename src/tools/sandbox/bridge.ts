@@ -8,10 +8,8 @@ interface BridgeConfig {
   cwd?: string;
 }
 
-export interface BridgeHandle {
-  port: number;
-  stop: () => void;
-}
+export type { BridgeHandle } from "../../types/sandbox.ts";
+import type { BridgeHandle } from "../../types/sandbox.ts";
 
 export async function startBridge(cfg: BridgeConfig): Promise<BridgeHandle> {
   const fs = createBunFileService(cfg.readPaths, cfg.writePaths);

@@ -1,15 +1,7 @@
 import type { ToolResult } from "../types/tool-result.ts";
+import type { ToolCallRecord } from "../types/result-store.ts";
 
-export interface ToolCallRecord {
-  toolCallId: string;
-  toolName: string;
-  args: Record<string, unknown>;
-  result: ToolResult | null;
-  tokens: number;
-  status: "pending" | "ok" | "error";
-  createdAt: number;
-  completedAt: number | null;
-}
+export type { ToolCallRecord } from "../types/result-store.ts";
 
 function createResultStore() {
   const records = new Map<string, ToolCallRecord>();

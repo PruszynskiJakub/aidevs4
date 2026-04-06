@@ -1,12 +1,9 @@
 import { join } from "path";
 import matter from "gray-matter";
 import { files } from "../infra/file.ts";
+import type { PromptResult } from "../types/prompt.ts";
 
-export interface PromptResult {
-  model?: string;
-  temperature?: number;
-  content: string;
-}
+export type { PromptResult } from "../types/prompt.ts";
 
 const PROMPTS_DIR = join(import.meta.dir, "..", "prompts");
 

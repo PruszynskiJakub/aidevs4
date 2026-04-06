@@ -7,12 +7,8 @@ import { getTools, getToolsByName } from "../tools/registry.ts";
 
 const AGENTS_DIR = resolve(import.meta.dir, "../../workspace/agents");
 
-export interface ResolvedAgent {
-  prompt: string;
-  model: string;
-  tools: LLMTool[];
-  memory?: boolean;
-}
+export type { ResolvedAgent, AgentSummary } from "../types/agent.ts";
+import type { ResolvedAgent, AgentSummary } from "../types/agent.ts";
 
 function stringArray(data: Record<string, unknown>, field: string, filename: string): string[] | undefined {
   if (data[field] === undefined) return undefined;
@@ -71,11 +67,6 @@ function resolveTools(agentName: string, toolNames: string[]): LLMTool[] {
     }
   }
   return resolved;
-}
-
-export interface AgentSummary {
-  name: string;
-  description: string;
 }
 
 export function createAgentsService() {
