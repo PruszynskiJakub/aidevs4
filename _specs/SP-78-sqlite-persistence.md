@@ -47,12 +47,24 @@ cross-session agent tracing, and historical tool call analysis.
 ## Constraints
 
 - **`bun:sqlite` only** — zero external dependencies. No ORM.
+- **Provider-swappable architecture** — the DB service exposes a typed
+  interface (`DbProvider`) that all consumers depend on. The SQLite
+  implementation is the only provider today, but the interface is engine-
+  agnostic:
+  - `src/types/db.ts` — `DbProvider` interface (pure types, no SQL)
+  - `src/infra/db/sqlite.ts` — SQLite implementation (`bun:sqlite`)
+  - `src/infra/db/index.ts` — re-exports the active provider
+  - To swap to Supabase/Postgres: add `src/infra/db/supabase.ts` implementing
+    `DbProvider`, change the re-export. No consumer code changes.
+  - The interface uses only portable types (strings, numbers, plain objects) —
+    no SQLite-specific types leak to consumers.
 - **Schema versioning** via `PRAGMA user_version` — each migration bumps the
-  version. Migrations run forward-only on startup.
-- **Single DB file** at `workspace/db/agent.db` (gitignored).
-- **No raw SQL in tools or agent code** — all access through a `db` service
-  in `src/infra/db.ts`. Tools and orchestrator call typed methods.
-- **WAL mode** for concurrent read performance.
+  version. Migrations run forward-only on startup. (Provider-specific — a
+  Supabase provider would use its own migration strategy.)
+- **Single DB file** at `data/agent.db` (gitignored).
+- **No raw SQL outside `src/infra/db/`** — all access through typed methods.
+  Tools and orchestrator never import from the provider directly.
+- **WAL mode** for concurrent read performance (SQLite-specific).
 - **Transaction boundaries** at turn level — each turn's items (assistant
   message + tool calls + tool results) are inserted in a single transaction.
   Crash mid-turn = no partial state.
@@ -61,7 +73,7 @@ cross-session agent tracing, and historical tool call analysis.
 
 ## Acceptance criteria
 
-- [ ] `workspace/db/agent.db` is created on first run with correct schema
+- [ ] `data/agent.db` is created on first run with correct schema
 - [ ] Schema migrations run automatically via `PRAGMA user_version`
 - [ ] Sessions survive process restart — `--session ID` resumes with full
       message history
@@ -80,9 +92,14 @@ cross-session agent tracing, and historical tool call analysis.
 
 ## Implementation plan
 
-### 1. Schema & migrations (`src/infra/db.ts`)
+### 1. Schema & migrations (`src/infra/db/`)
 
-Create the DB service with `bun:sqlite`. Three tables:
+Create `src/infra/db/` directory:
+- `index.ts` — re-exports the active provider singleton
+- `provider.ts` — `DbProvider` interface (same as types in `src/types/db.ts`)
+- `sqlite.ts` — SQLite implementation using `bun:sqlite`
+
+Three tables:
 
 ```sql
 -- sessions: user-facing conversation container
@@ -145,7 +162,7 @@ Migration approach:
   version
 - Expose: `db.init()`, `db.close()`
 
-### 2. DB service typed API (`src/infra/db.ts`)
+### 2. DB service typed API (`DbProvider` interface)
 
 Expose methods, not SQL, to the rest of the codebase:
 
@@ -246,19 +263,25 @@ In `src/infra/bootstrap.ts`:
 - `initServices()`: call `db.init()` (open DB, run migrations)
 - `shutdownServices()`: call `db.close()`
 
-Add `workspace/db/` to `.gitignore`.
+Add `data/` to `.gitignore`.
 
 ### 7. Update types
 
-- Add `src/types/db.ts` with row-level types: `DbSession`, `DbAgent`, `DbItem`,
-  `AgentStatus`, `CreateAgentOpts`, `NewItem`
+- Add `src/types/db.ts`:
+  - `DbProvider` interface — the contract all implementations satisfy.
+    Contains only portable types (strings, numbers, plain objects). No
+    SQLite-specific types, no `Database` import, no SQL strings.
+  - Row types: `DbSession`, `DbAgent`, `DbItem`
+  - Input types: `CreateAgentOpts`, `NewItem`
+  - `AgentStatus = 'pending' | 'running' | 'completed' | 'failed'`
 - These are **separate from** existing runtime types (`Session`, `AgentState`,
   `LLMMessage`). The DB service translates between them:
   - `DbSession` ↔ `Session` (mapping in sessionService)
   - `DbAgent` is new — no existing runtime equivalent persists this data
   - `DbItem[]` ↔ `LLMMessage[]` (mapping in sessionService)
-- `AgentStatus = 'pending' | 'running' | 'completed' | 'failed'` — matches
-  the two terminal outcomes in the current orchestrator (success / throw)
+- Consumers import from `src/infra/db/index.ts` (the singleton), never from
+  `src/infra/db/sqlite.ts` directly. Swapping providers means changing one
+  re-export.
 
 ## Testing scenarios
 

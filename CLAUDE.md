@@ -83,6 +83,7 @@ n  │   ├── knowledge/                  # API templates & procedures docu
   │   ├── cli.ts                      # CLI entry point
   │   ├── server.ts                   # HTTP server (Hono)
   │   └── slack.ts                    # Slack bot entry point
+  ├── data/                            # Technical runtime data (DB files) — NOT for agent content
   ├── _specs/                         # Task specifications & backlog
   ├── _aidocs/                        # Internal docs (tool standard, course materials)
   ├── _cases/                         # Use case scratchpads
