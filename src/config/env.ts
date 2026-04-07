@@ -25,4 +25,5 @@ export const env = {
   langfuseBaseUrl: process.env.LANGFUSE_BASE_URL,
   browserHeadless: process.env.BROWSER_HEADLESS !== "false",
   apiSecret: process.env.API_SECRET,
+  databaseUrl: process.env.DATABASE_URL ?? "./data/dev.db",
 } as const;

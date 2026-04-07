@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { sessionService } from "./agent/session.ts";
 import { config } from "./config/index.ts";
+import { randomUUID } from "node:crypto";
+import * as dbOps from "./infra/db/index.ts";
 
 // Mock the orchestrator — avoids polluting agent/loop.ts mock across test files
 const KNOWN_AGENTS = ["default", "proxy"];
@@ -12,9 +14,13 @@ mock.module("./agent/orchestrator.ts", () => ({
       throw new Error(`Unknown agent "${assistantName}". Available: ${KNOWN_AGENTS.join(", ")}`);
     }
     const session = sessionService.getOrCreate(sid);
-    if (!session.assistant) session.assistant = assistantName;
-    sessionService.appendMessage(sid, { role: "user", content: opts.prompt });
-    sessionService.appendMessage(sid, { role: "assistant", content: "mock answer" });
+    if (!session.assistant) {
+      sessionService.setAssistant(sid, assistantName);
+    }
+    const agentId = randomUUID();
+    dbOps.createAgent({ id: agentId, sessionId: sid, template: assistantName, task: opts.prompt });
+    sessionService.appendMessage(sid, agentId, { role: "user", content: opts.prompt });
+    sessionService.appendMessage(sid, agentId, { role: "assistant", content: "mock answer" });
     return { answer: "mock answer", sessionId: sid };
   },
 }));

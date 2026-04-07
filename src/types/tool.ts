@@ -35,10 +35,14 @@ export interface MultiActionToolSchema {
 
 export type ToolSchema = SimpleToolSchema | MultiActionToolSchema;
 
+export interface ToolCallContext {
+  toolCallId: string;
+}
+
 export interface ToolDefinition {
   name: string;
   schema: ToolSchema;
-  handler: (args: Record<string, unknown>) => Promise<ToolResult>;
+  handler: (args: Record<string, unknown>, ctx?: ToolCallContext) => Promise<ToolResult>;
   annotations?: ToolAnnotations;
   confirmIf?: (call: ConfirmableToolCall) => boolean;
 }

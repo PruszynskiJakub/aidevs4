@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import { getSessionId, getLogger, getAgentId, getRootAgentId, getTraceId, getDepth } from "../agent/context.ts";
@@ -9,7 +9,7 @@ import { agentsService } from "../agent/agents.ts";
 
 const MAX_PROMPT_LENGTH = 10_000;
 
-async function delegate(args: Record<string, unknown>): Promise<ToolResult> {
+async function delegate(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
   const { agent, prompt } = args as { agent: string; prompt: string };
 
   assertMaxLength(prompt, "prompt", MAX_PROMPT_LENGTH);
@@ -29,6 +29,7 @@ async function delegate(args: Record<string, unknown>): Promise<ToolResult> {
       parentRootAgentId: getRootAgentId(),
       parentTraceId: getTraceId(),
       parentDepth: getDepth(),
+      sourceCallId: ctx?.toolCallId,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

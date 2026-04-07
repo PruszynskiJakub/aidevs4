@@ -9,11 +9,14 @@
     "transform_csv": "bun run playground/transform_csv/transform_csv.ts",
     "agent": "bun run src/cli.ts",
     "server": "bun run src/server.ts",
-    "slack": "bun run src/slack.ts"
+    "slack": "bun run src/slack.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun run src/infra/db/migrate.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/sharp": "^0.32.0"
+    "@types/sharp": "^0.32.0",
+    "drizzle-kit": "^0.31.10"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -26,6 +29,7 @@
     "@opentelemetry/sdk-node": "^0.214.0",
     "@slack/bolt": "^4.6.0",
     "csv-parse": "^6.1.0",
+    "drizzle-orm": "^0.45.2",
     "grammy": "^1.41.1",
     "gray-matter": "^4.0.3",
     "hono": "^4.12.7",

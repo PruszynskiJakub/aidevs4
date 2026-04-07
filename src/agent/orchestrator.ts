@@ -11,6 +11,7 @@ import type { AgentState } from "../types/agent-state.ts";
 import type { Session } from "../types/session.ts";
 import { emptyMemoryState } from "../types/memory.ts";
 import { loadState } from "./memory/persistence.ts";
+import * as dbOps from "../infra/db/index.ts";
 
 interface ExecuteTurnOpts {
   sessionId?: string;
@@ -21,6 +22,7 @@ interface ExecuteTurnOpts {
   parentRootAgentId?: string;
   parentTraceId?: string;
   parentDepth?: number;
+  sourceCallId?: string;
 }
 
 interface ExecuteTurnResult {
@@ -72,18 +74,37 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
   assertNotFlagged(moderation);
 
   if (!session.assistant) {
-    session.assistant = assistantName;
+    sessionService.setAssistant(sessionId, assistantName);
   }
-
-  sessionService.appendMessage(sessionId, { role: "user", content: opts.prompt });
-
-  const messages: LLMMessage[] = [...session.messages];
-
-  const persisted = await loadState(sessionId);
 
   const agentId = randomUUID();
   const traceId = opts.parentTraceId ?? randomUUID();
   const depth = opts.parentAgentId ? (opts.parentDepth ?? 0) + 1 : 0;
+
+  // Persist agent row
+  dbOps.createAgent({
+    id: agentId,
+    sessionId,
+    parentId: opts.parentAgentId,
+    sourceCallId: opts.sourceCallId,
+    template: assistantName,
+    task: opts.prompt,
+  });
+
+  // Set root agent for the session if this is the root agent
+  if (!opts.parentAgentId) {
+    dbOps.setRootAgent(sessionId, agentId);
+  }
+
+  dbOps.updateAgentStatus(agentId, "running");
+
+  // Append user message to DB
+  sessionService.appendMessage(sessionId, agentId, { role: "user", content: opts.prompt });
+
+  // Load full conversation for this agent
+  const messages: LLMMessage[] = sessionService.getMessages(sessionId, agentId);
+
+  const persisted = await loadState(sessionId);
 
   const state: AgentState = {
     sessionId,
@@ -102,11 +123,18 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
     memory: persisted ?? emptyMemoryState(),
   };
 
-  const result = await runAgent(state);
+  try {
+    const result = await runAgent(state);
 
-  for (const m of result.messages) {
-    sessionService.appendMessage(sessionId, m);
+    // Persist the turn messages produced by the agent loop
+    sessionService.appendTurn(sessionId, agentId, result.messages);
+
+    dbOps.updateAgentStatus(agentId, "completed", result.answer);
+
+    return { answer: result.answer, sessionId };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    dbOps.updateAgentStatus(agentId, "failed", undefined, errorMsg);
+    throw err;
   }
-
-  return { answer: result.answer, sessionId };
 }

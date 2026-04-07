@@ -142,7 +142,7 @@ async function tryDispatch(
   toolCallId: string,
 ): Promise<DispatchResult> {
   try {
-    const result = await tool.handler(args);
+    const result = await tool.handler(args, { toolCallId });
     const content = serializeContent(result.content);
     const tokens = estimateTokens(content);
     resultStore.complete(toolCallId, result, tokens);

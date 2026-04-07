@@ -10,6 +10,7 @@ import { runWithContext } from "./context.ts";
 import type { AgentState } from "../types/agent-state.ts";
 import type { Logger } from "../types/logger.ts";
 import { emptyMemoryState } from "../types/memory.ts";
+import * as dbOps from "../infra/db/index.ts";
 
 const noopLog = new Proxy({} as Logger, { get: () => () => {} });
 
@@ -30,41 +31,60 @@ function withSession<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
   return runWithContext(makeState(sessionId), noopLog, fn);
 }
 
+/** Create a session + agent pair for testing message operations */
+function setupSessionAgent(sessionId: string, agentId: string): void {
+  dbOps.createSession(sessionId);
+  dbOps.createAgent({
+    id: agentId,
+    sessionId,
+    template: "default",
+    task: "test",
+  });
+}
+
 beforeEach(() => {
   sessionService._clear();
 });
 
 describe("sessionService", () => {
   it("creates a new session on getOrCreate", () => {
-    const session = sessionService.getOrCreate("s1");
-    expect(session.id).toBe("s1");
+    const session = sessionService.getOrCreate("s-new-1");
+    expect(session.id).toBe("s-new-1");
     expect(session.messages).toEqual([]);
     expect(session.createdAt).toBeInstanceOf(Date);
   });
 
-  it("returns the same session on repeated getOrCreate", () => {
-    const a = sessionService.getOrCreate("s1");
-    const b = sessionService.getOrCreate("s1");
-    expect(a).toBe(b);
+  it("returns equivalent session on repeated getOrCreate", () => {
+    const a = sessionService.getOrCreate("s-eq-1");
+    const b = sessionService.getOrCreate("s-eq-1");
+    expect(a.id).toBe(b.id);
   });
 
   it("appends messages and updates timestamp", async () => {
-    sessionService.getOrCreate("s1");
-    const before = sessionService.getOrCreate("s1").updatedAt;
+    const sid = "s-append-1";
+    const agentId = "a-append-1";
+    setupSessionAgent(sid, agentId);
 
+    const before = sessionService.getOrCreate(sid).updatedAt;
     await new Promise((r) => setTimeout(r, 5));
 
-    sessionService.appendMessage("s1", { role: "user", content: "hi" });
-    const session = sessionService.getOrCreate("s1");
-    expect(session.messages).toHaveLength(1);
-    expect(session.messages[0]).toEqual({ role: "user", content: "hi" });
-    expect(session.updatedAt.getTime()).toBeGreaterThan(before.getTime());
+    sessionService.appendMessage(sid, agentId, { role: "user", content: "hi" });
+    const msgs = sessionService.getMessages(sid, agentId);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toEqual({ role: "user", content: "hi" });
+
+    const after = sessionService.getOrCreate(sid).updatedAt;
+    expect(after.getTime()).toBeGreaterThan(before.getTime());
   });
 
   it("getMessages returns session messages", () => {
-    sessionService.appendMessage("s1", { role: "user", content: "a" });
-    sessionService.appendMessage("s1", { role: "user", content: "b" });
-    const msgs = sessionService.getMessages("s1");
+    const sid = "s-getmsgs-1";
+    const agentId = "a-getmsgs-1";
+    setupSessionAgent(sid, agentId);
+
+    sessionService.appendMessage(sid, agentId, { role: "user", content: "a" });
+    sessionService.appendMessage(sid, agentId, { role: "user", content: "b" });
+    const msgs = sessionService.getMessages(sid, agentId);
     expect(msgs).toHaveLength(2);
   });
 
@@ -97,7 +117,6 @@ describe("sessionService", () => {
     });
 
     await Promise.all([p1, p2]);
-    // s2 should finish first because it doesn't sleep
     expect(order).toEqual(["s2", "s1"]);
   });
 });
@@ -173,7 +192,6 @@ describe("outputPath", () => {
     const dir = result.replace(/\/[^/]+$/, "");
     const s = await stat(dir);
     expect(s.isDirectory()).toBe(true);
-    // dir should end with /output (no extra nesting)
     expect(dir).toMatch(/\/output$/);
   });
 

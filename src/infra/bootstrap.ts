@@ -2,8 +2,12 @@ import { bus } from "./events.ts";
 import { initTracing, shutdownTracing } from "./tracing.ts";
 import { attachLangfuseSubscriber } from "./langfuse-subscriber.ts";
 import { initMcpTools, shutdownMcp } from "../tools/index.ts";
+import { sqlite } from "./db/connection.ts";
 
 export async function initServices(): Promise<void> {
+  // DB connection is initialized on import of connection.ts (above).
+  // Migrations are NOT run here — they run as a dedicated startup step
+  // via `bun run db:migrate` before the app starts.
   initTracing();
   attachLangfuseSubscriber(bus);
   await initMcpTools();
@@ -12,6 +16,7 @@ export async function initServices(): Promise<void> {
 export async function shutdownServices(): Promise<void> {
   await shutdownTracing();
   await shutdownMcp();
+  sqlite.close();
 }
 
 export function installSignalHandlers(extra?: () => Promise<void>): void {

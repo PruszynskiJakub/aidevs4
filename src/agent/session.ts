@@ -1,58 +1,193 @@
 import { join, resolve, extname } from "node:path";
-import type { LLMMessage } from "../types/llm.ts";
+import { randomUUID } from "node:crypto";
+import type { LLMMessage, LLMAssistantMessage, LLMToolCall } from "../types/llm.ts";
 import type { Session } from "../types/session.ts";
 import type { FileProvider } from "../types/file.ts";
+import type { NewItem } from "../types/db.ts";
 import { randomSessionId } from "../utils/id.ts";
 import { getSessionId, getAgentName } from "./context.ts";
 import { files as defaultFiles } from "../infra/file.ts";
 import { config as defaultConfig } from "../config/index.ts";
+import * as dbOps from "../infra/db/index.ts";
 
 function dateFolderNow(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
-const EXPIRY_CHECK_INTERVAL_MS = 5 * 60 * 1000; // check every 5 minutes
+// ── Message ↔ Item conversion ───────────────────────────────
+
+function messagesToItems(agentId: string, messages: LLMMessage[], startSeq: number): NewItem[] {
+  const result: NewItem[] = [];
+  let seq = startSeq;
+
+  for (const msg of messages) {
+    if (msg.role === "system") continue; // system prompts are not persisted
+
+    if (msg.role === "user") {
+      const content = typeof msg.content === "string"
+        ? msg.content
+        : JSON.stringify(msg.content);
+      result.push({
+        id: randomUUID(),
+        agentId,
+        sequence: seq++,
+        type: "message",
+        role: "user",
+        content,
+      });
+    } else if (msg.role === "assistant") {
+      const assistantMsg = msg as LLMAssistantMessage;
+      result.push({
+        id: randomUUID(),
+        agentId,
+        sequence: seq++,
+        type: "message",
+        role: "assistant",
+        content: assistantMsg.content ?? undefined,
+      });
+      if (assistantMsg.toolCalls) {
+        for (const tc of assistantMsg.toolCalls) {
+          result.push({
+            id: randomUUID(),
+            agentId,
+            sequence: seq++,
+            type: "function_call",
+            callId: tc.id,
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          });
+        }
+      }
+    } else if (msg.role === "tool") {
+      result.push({
+        id: randomUUID(),
+        agentId,
+        sequence: seq++,
+        type: "function_call_output",
+        callId: msg.toolCallId,
+        output: msg.content,
+      });
+    }
+  }
+  return result;
+}
+
+function itemsToMessages(dbItems: { type: string; role: string | null; content: string | null; callId: string | null; name: string | null; arguments: string | null; output: string | null }[]): LLMMessage[] {
+  const messages: LLMMessage[] = [];
+  let i = 0;
+
+  while (i < dbItems.length) {
+    const item = dbItems[i];
+
+    if (item.type === "message" && item.role === "user") {
+      let content: string | import("../types/llm.ts").ContentPart[];
+      try {
+        const parsed = JSON.parse(item.content ?? "");
+        if (Array.isArray(parsed)) {
+          content = parsed;
+        } else {
+          content = item.content ?? "";
+        }
+      } catch {
+        content = item.content ?? "";
+      }
+      messages.push({ role: "user", content });
+      i++;
+    } else if (item.type === "message" && item.role === "assistant") {
+      const toolCalls: LLMToolCall[] = [];
+      // Collect subsequent function_call items that belong to this assistant message
+      let j = i + 1;
+      while (j < dbItems.length && dbItems[j].type === "function_call") {
+        const fc = dbItems[j];
+        toolCalls.push({
+          id: fc.callId!,
+          type: "function",
+          function: {
+            name: fc.name!,
+            arguments: fc.arguments!,
+          },
+        });
+        j++;
+      }
+      const msg: LLMAssistantMessage = {
+        role: "assistant",
+        content: item.content ?? null,
+        ...(toolCalls.length > 0 && { toolCalls }),
+      };
+      messages.push(msg);
+      i = j;
+    } else if (item.type === "function_call_output") {
+      messages.push({
+        role: "tool",
+        toolCallId: item.callId!,
+        content: item.output ?? "",
+      });
+      i++;
+    } else {
+      // Skip unexpected items (e.g. orphaned function_call not preceded by assistant)
+      i++;
+    }
+  }
+
+  return messages;
+}
+
+// ── Session service ─────────────────────────────────────────
 
 function createSessionService(
   fileService: FileProvider = defaultFiles,
   sessionsDir: string = defaultConfig.paths.sessionsDir,
 ) {
-  const sessions = new Map<string, Session>();
   const queues = new Map<string, Promise<unknown>>();
 
   // Process-level fallback for calls outside any session context
   let fallbackSessionId: string | undefined;
 
-  const expiryTimer = setInterval(() => {
-    const now = Date.now();
-    for (const [id, session] of sessions) {
-      if (queues.has(id)) continue; // don't expire sessions with in-flight work
-      if (now - session.updatedAt.getTime() > SESSION_TTL_MS) {
-        sessions.delete(id);
-      }
-    }
-  }, EXPIRY_CHECK_INTERVAL_MS);
-  expiryTimer.unref(); // don't prevent process exit
-
   return {
     getOrCreate(id: string): Session {
-      let session = sessions.get(id);
-      if (!session) {
-        session = { id, messages: [], createdAt: new Date(), updatedAt: new Date() };
-        sessions.set(id, session);
+      const existing = dbOps.getSession(id);
+      if (existing) {
+        const msgs = this.getMessages(id);
+        return {
+          id: existing.id,
+          assistant: existing.assistant ?? undefined,
+          messages: msgs,
+          createdAt: new Date(existing.createdAt),
+          updatedAt: new Date(existing.updatedAt),
+        };
       }
-      return session;
+      dbOps.createSession(id);
+      return { id, messages: [], createdAt: new Date(), updatedAt: new Date() };
     },
 
-    appendMessage(id: string, message: LLMMessage): void {
-      const session = this.getOrCreate(id);
-      session.messages.push(message);
-      session.updatedAt = new Date();
+    setAssistant(id: string, assistant: string): void {
+      dbOps.setAssistant(id, assistant);
     },
 
-    getMessages(id: string): LLMMessage[] {
-      return this.getOrCreate(id).messages;
+    appendMessage(id: string, agentId: string, message: LLMMessage): void {
+      if (message.role === "system") return;
+      const seq = dbOps.nextSequence(agentId);
+      const newItems = messagesToItems(agentId, [message], seq);
+      for (const item of newItems) {
+        dbOps.appendItem(item);
+      }
+      dbOps.touchSession(id);
+    },
+
+    appendTurn(id: string, agentId: string, messages: LLMMessage[]): void {
+      const nonSystem = messages.filter((m) => m.role !== "system");
+      if (nonSystem.length === 0) return;
+      const seq = dbOps.nextSequence(agentId);
+      const newItems = messagesToItems(agentId, nonSystem, seq);
+      dbOps.appendItems(newItems);
+      dbOps.touchSession(id);
+    },
+
+    getMessages(id: string, agentId?: string): LLMMessage[] {
+      const dbItems = agentId
+        ? dbOps.listItemsByAgent(agentId)
+        : dbOps.listItemsBySession(id);
+      return itemsToMessages(dbItems);
     },
 
     /**
@@ -63,7 +198,6 @@ function createSessionService(
       const prev = queues.get(sessionId) ?? Promise.resolve();
       const next = prev.then(fn, fn);
       queues.set(sessionId, next);
-      // Clean up queue entry once this promise settles to avoid unbounded growth
       next.then(() => {
         if (queues.get(sessionId) === next) queues.delete(sessionId);
       }, () => {
@@ -111,10 +245,6 @@ function createSessionService(
       return join(dir, `${uuid}${ext}`);
     },
 
-    /**
-     * Convert an absolute path to a session-relative path.
-     * Strips everything up to and including {sessionId}/ prefix.
-     */
     toSessionPath(absolutePath: string): string {
       const sessionId = this.getEffectiveSessionId();
       const marker = `/${sessionId}/`;
@@ -125,10 +255,6 @@ function createSessionService(
       return absolutePath;
     },
 
-    /**
-     * Resolve a session-relative path to an absolute path.
-     * If the path is already absolute, returns it unchanged.
-     */
     resolveSessionPath(pathOrRelative: string): string {
       if (pathOrRelative.startsWith("/")) return pathOrRelative;
       return resolve(join(this.sessionDir(), pathOrRelative));
@@ -136,16 +262,15 @@ function createSessionService(
 
     /** Visible for testing */
     _clear(): void {
-      sessions.clear();
       queues.clear();
       fallbackSessionId = undefined;
-      clearInterval(expiryTimer);
+      dbOps._clearAll();
     },
   };
 }
 
 export type SessionService = ReturnType<typeof createSessionService>;
 
-export { createSessionService };
+export { createSessionService, messagesToItems, itemsToMessages };
 
 export const sessionService = createSessionService();

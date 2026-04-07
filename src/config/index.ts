@@ -102,5 +102,8 @@ export const config = deepFreeze({
     maxPoolSize: 3,
     idleTimeout: 5 * 60_000,
   },
+  database: {
+    url: env.databaseUrl,
+  },
   assistant: env.assistant,
 });
