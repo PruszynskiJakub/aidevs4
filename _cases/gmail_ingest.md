@@ -18,6 +18,84 @@ Meta goal: the user never opens Gmail. The agent is the email interface.
 | **What's the cost of a mistake?** | False archive (missed important email) = **high**. False keep (noise stays) = **low**. Bias toward keeping. |
 | **Expected volume?** | ~50-150 emails/day, 5-15 per run. Mostly noise (promos, GitHub notifications). |
 
+## Classification Taxonomy
+
+Three orthogonal dimensions — an email gets one label from each. This supports
+retrieval along any axis: "all invoices", "everything from accountant",
+"what needs action today".
+
+### 0. Context (personal or business?)
+
+Top-level split — affects downstream routing, retention, and urgency defaults.
+
+| Label | Signal |
+|---|---|
+| `context/business` | Invoices, clients, accountant, employer, recruiting, SaaS tools used for work |
+| `context/personal` | Shopping, personal subscriptions, friends/family, personal banking |
+
+Emails can be ambiguous (e.g. a SaaS receipt for a tool used both personally and
+for work). Default to `context/business` when unclear — easier to reclassify down
+than to recover a missed business email.
+
+### 1. Content (what is it?)
+
+| Label | Examples |
+|---|---|
+| `content/newsletter` | AlphaSignal, Medium digests, Substack, Superhuman tips |
+| `content/learning` | BRAVE Education / AI_devs 4, Readwise, Coursera |
+| `content/invoice` | next step studio invoices, księgowość, SaaS receipts |
+| `content/taxes` | Tax filings, PIT declarations, accountant tax docs |
+| `content/job-offer` | LinkedIn alerts, NoFluffJobs listings |
+| `content/transactional` | Shipping confirmations, password resets, 2FA codes, order status |
+| `content/promotion` | ERLI, Frisco, Empik, Vistula — shopping promos |
+| `content/dev-alert` | Vercel deploys, GitHub notifications, Google Apps Script errors |
+| `content/personal` | Direct human correspondence not fitting other categories |
+| `content/other` | Catch-all for unclassified content |
+
+### 2. Participants (who is it from?)
+
+Flat dimension — no sub-nesting. Fine-grained sender filtering is Gmail search's
+job (`from:sender`), not the taxonomy's.
+
+| Label | Examples |
+|---|---|
+| `participant/accountant` | Księgowość, tax advisor |
+| `participant/employer` | Current/past employer comms |
+| `participant/recruiter` | LinkedIn recruiters, job board senders |
+| `participant/service` | Autopay, InPost, bank, SaaS platforms |
+| `participant/community` | Course peers, Slack/Discord digests, meetup groups |
+| `participant/personal` | Friends, family, direct contacts |
+| `participant/bot` | Automated senders with no human behind them |
+
+### 3. Priority (do I need to act?)
+
+Three-valued — binary loses "waiting" which matters for freelance/consulting
+(invoices awaiting payment, job applications pending, course deadlines).
+Collapse to binary at query time if needed (`!= fyi`).
+
+| Label | Signal | Examples |
+|---|---|---|
+| `priority/action` | Requires a response or decision within 24-48h | Invoice to pay, direct question, deadline reminder |
+| `priority/waiting` | Ball is in someone else's court, track for follow-up | Sent proposal awaiting reply, support ticket open, application submitted |
+| `priority/fyi` | No action needed, reference only | Newsletters, promos, deploy notifications, shipping updates |
+
+### Design Rationale
+
+- **Three dimensions over flat labels**: flat labels like `autopay` or `linkedin`
+  tell you _who_, not _what_ or _how urgent_. Multi-dimensional lets you query
+  along any axis without mutual exclusion.
+- **content/newsletter vs content/learning**: split because consumption reading
+  (AlphaSignal, Medium) and active learning (AI_devs, Coursera) are treated
+  differently — different urgency, different follow-up.
+- **content/transactional**: high volume, almost always noise, but occasionally
+  needed for retrieval (tracking numbers, password resets). Without this bucket
+  they'd fall through the cracks.
+- **Flat participants**: `participant/service/autopay` is three levels deep for
+  something `from:autopay` handles natively. Keep it flat, let sender metadata
+  do fine-grained filtering.
+- **Retire existing Gmail labels** (`autopay`, `inpost`, `proko`, `padi`) in
+  favor of this taxonomy. The AI classifier + sender metadata replaces them.
+
 ## Input
 
 - All new emails since last successful run (tracked via Gmail historyId)
@@ -40,12 +118,15 @@ For **kept** emails, ingest also:
 ### Stored record per email
 
 ```
-{ id, gmail_id, from, subject, date, tags[], urgency, archived,
-  extracted_summary, processed_at }
+{ id, gmail_id, from, subject, date,
+  context_label, content_label, participant_label, priority_label,
+  tags[], archived, extracted_summary, processed_at }
 ```
 
-- **tags**: freeform, LLM-assigned (e.g. `["finance", "invoice", "recurring"]`). No fixed enum — downstream processors query by tags they care about.
-- **urgency**: urgent / normal / noise — the one classification ingest does need to make for Slack routing.
+- **content_label**: one value from the `content/*` dimension (e.g. `content/invoice`).
+- **participant_label**: one value from the `participant/*` dimension (e.g. `participant/service`).
+- **priority_label**: one value from the `priority/*` dimension — drives Slack routing (`priority/action` → notify, `priority/fyi` → silent).
+- **tags**: freeform, LLM-assigned (e.g. `["recurring", "kotlin", "remote"]`). Supplementary to the taxonomy — captures specifics that don't fit the fixed dimensions. Downstream processors can query by tags for domain logic.
 
 ## Downstream
 
