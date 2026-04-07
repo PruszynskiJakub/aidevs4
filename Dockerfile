@@ -14,5 +14,7 @@ COPY . .
 # Install Playwright browsers (Chromium only)
 RUN bunx playwright install --with-deps chromium
 
+ENV NODE_ENV=production
+
 EXPOSE 3000
 CMD ["sh", "-c", "bun run server & bun run slack & wait"]

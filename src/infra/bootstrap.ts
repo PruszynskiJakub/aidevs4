@@ -1,5 +1,6 @@
+import { config } from "../config/index.ts";
 import { bus } from "./events.ts";
-import { initTracing, shutdownTracing } from "./tracing.ts";
+import { initTracing, isTracingEnabled, shutdownTracing } from "./tracing.ts";
 import { attachLangfuseSubscriber } from "./langfuse-subscriber.ts";
 import { initMcpTools, shutdownMcp } from "../tools/index.ts";
 import { sqlite } from "./db/connection.ts";
@@ -8,6 +9,7 @@ export async function initServices(): Promise<void> {
   // DB connection is initialized on import of connection.ts (above).
   // Migrations are NOT run here — they run as a dedicated startup step
   // via `bun run db:migrate` before the app starts.
+  console.log(`[boot] env=${config.env} db=${config.database.url} langfuse=${isTracingEnabled() ? "on" : "off"}`);
   initTracing();
   attachLangfuseSubscriber(bus);
   await initMcpTools();

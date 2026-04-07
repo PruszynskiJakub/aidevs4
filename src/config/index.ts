@@ -15,6 +15,8 @@ function deepFreeze<T extends object>(obj: T): T {
 const HUB_BASE_URL = "https://hub.ag3nts.org";
 
 export const config = deepFreeze({
+  env: env.nodeEnv,
+  isProduction: env.isProduction,
   paths: {
     projectRoot: PROJECT_ROOT,
     workspaceDir: WORKSPACE_DIR,
@@ -76,6 +78,7 @@ export const config = deepFreeze({
     publicKey: env.langfusePublicKey,
     secretKey: env.langfuseSecretKey,
     baseUrl: env.langfuseBaseUrl ?? "https://cloud.langfuse.com",
+    environment: env.langfuseEnvironment,
   },
   retry: {
     openaiMaxRetries: 2,

@@ -13,6 +13,7 @@ export function initTracing(): void {
   process.env.LANGFUSE_PUBLIC_KEY ??= config.langfuse.publicKey!;
   process.env.LANGFUSE_SECRET_KEY ??= config.langfuse.secretKey!;
   process.env.LANGFUSE_BASEURL ??= config.langfuse.baseUrl;
+  process.env.LANGFUSE_ENVIRONMENT ??= config.langfuse.environment;
 
   try {
     // Dynamic imports to avoid loading OTel when tracing is disabled
