@@ -46,35 +46,49 @@ cross-session agent tracing, and historical tool call analysis.
 
 ## Constraints
 
-- **`bun:sqlite` only** — zero external dependencies. No ORM.
-- **Provider-swappable architecture** — the DB service exposes a typed
-  interface (`DbProvider`) that all consumers depend on. The SQLite
-  implementation is the only provider today, but the interface is engine-
-  agnostic:
-  - `src/types/db.ts` — `DbProvider` interface (pure types, no SQL)
-  - `src/infra/db/sqlite.ts` — SQLite implementation (`bun:sqlite`)
-  - `src/infra/db/index.ts` — re-exports the active provider
-  - To swap to Supabase/Postgres: add `src/infra/db/supabase.ts` implementing
-    `DbProvider`, change the re-export. No consumer code changes.
-  - The interface uses only portable types (strings, numbers, plain objects) —
-    no SQLite-specific types leak to consumers.
-- **Schema versioning** via `PRAGMA user_version` — each migration bumps the
-  version. Migrations run forward-only on startup. (Provider-specific — a
-  Supabase provider would use its own migration strategy.)
-- **Single DB file** at `data/agent.db` (gitignored).
-- **No raw SQL outside `src/infra/db/`** — all access through typed methods.
-  Tools and orchestrator never import from the provider directly.
-- **WAL mode** for concurrent read performance (SQLite-specific).
+- **Drizzle ORM + `bun:sqlite`** — typed schema definitions, generated SQL
+  migrations. No raw SQL outside `src/infra/db/`.
+  - `drizzle-orm` — runtime query builder + migrator
+  - `drizzle-kit` — dev dependency for `generate` / `migrate` CLI commands
+  - Driver: `drizzle-orm/bun-sqlite` (uses Bun's built-in `bun:sqlite`, no
+    extra native dependency)
+  - No additional abstraction layer (no `DbProvider` interface) — Drizzle
+    itself is the typed abstraction. If a Postgres migration is ever needed,
+    swap the Drizzle driver and regenerate migrations.
+- **Environment-aware database path** — configured via `DATABASE_URL` env var,
+  wired through `src/config/env.ts` → `config.database.url`. Single source of
+  truth for the default (`./data/dev.db`). Prod sets
+  `DATABASE_URL=/data/aidevs/prod.db` via Docker env. The DB file is never
+  committed — `data/` is added to `.gitignore`.
+- **Migrations via Drizzle Kit** — schema changes follow a strict workflow:
+  1. Edit schema in `src/infra/db/schema.ts`
+  2. Run `bun run db:generate` — produces a numbered SQL migration in
+     `src/infra/db/migrations/`
+  3. Review and commit the generated migration file
+  4. On container startup, a dedicated `bun run db:migrate` step applies
+     pending migrations before services start
+  - `drizzle-kit push` is **forbidden in prod** — all prod changes go through
+    generated migrations
+  - Migration files are committed to git — they are source code, not artifacts
+- **Everything under `src/infra/db/`** — schema, connection, migrations, and
+  query functions all live in one directory. Consumers import from
+  `src/infra/db/index.ts`. No cross-directory coupling.
+- **WAL mode** for concurrent read performance (set via pragma on connection
+  init, inside `src/infra/db/`).
 - **Transaction boundaries** at turn level — each turn's items (assistant
-  message + tool calls + tool results) are inserted in a single transaction.
-  Crash mid-turn = no partial state.
+  message + tool calls + tool results) are inserted in a single Drizzle
+  transaction. Crash mid-turn = no partial state.
 - **Backward compatible** — existing file-based artifacts (logs, memory,
   outputs) are unaffected. The in-memory session store is replaced, not layered.
+- **Migrations run as a dedicated startup step** — the Docker entrypoint runs
+  `bun run db:migrate` before starting `server` and `slack`. This avoids
+  multi-process race conditions (server and slack are separate processes with
+  separate module caches).
 
 ## Acceptance criteria
 
-- [ ] `data/agent.db` is created on first run with correct schema
-- [ ] Schema migrations run automatically via `PRAGMA user_version`
+- [ ] DB file is created on first run at the path specified by `DATABASE_URL`
+- [ ] Drizzle migrations run automatically on app startup via `migrate()`
 - [ ] Sessions survive process restart — `--session ID` resumes with full
       message history
 - [ ] Agent hierarchy is persisted — parent/child relationships queryable
@@ -84,119 +98,235 @@ cross-session agent tracing, and historical tool call analysis.
 - [ ] `delegate` tool spawns are tracked with `source_call_id` linking the
       spawning tool call to the child agent
 - [ ] In-memory `sessionService` replaced — reads/writes go through DB
-- [ ] In-memory `resultStore` replaced for persistence (may keep in-memory
-      cache for hot-path reads during execution)
+- [ ] In-memory `resultStore` replaced — reads go through SQLite directly
+      (no in-memory cache; `bun:sqlite` sync reads are fast enough)
 - [ ] Existing tests pass; new tests cover DB service CRUD operations
 - [ ] Agent runs produce identical behavior — DB is transparent to the
       agent loop
 
 ## Implementation plan
 
-### 1. Schema & migrations (`src/infra/db/`)
+### 1. Schema, connection & migrations
 
-Create `src/infra/db/` directory:
-- `index.ts` — re-exports the active provider singleton
-- `provider.ts` — `DbProvider` interface (same as types in `src/types/db.ts`)
-- `sqlite.ts` — SQLite implementation using `bun:sqlite`
+#### Dependencies
 
-Three tables:
-
-```sql
--- sessions: user-facing conversation container
-CREATE TABLE sessions (
-  id            TEXT PRIMARY KEY,
-  root_agent_id TEXT,
-  title         TEXT,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-);
-
--- agents: runtime instances with parent-child hierarchy
-CREATE TABLE agents (
-  id              TEXT PRIMARY KEY,
-  session_id      TEXT NOT NULL REFERENCES sessions(id),
-  parent_id       TEXT REFERENCES agents(id),
-  source_call_id  TEXT,
-  template        TEXT NOT NULL,       -- agent name (e.g. "default", "negotiations")
-  task            TEXT NOT NULL,        -- the prompt that started this agent
-  status          TEXT NOT NULL DEFAULT 'pending'
-                  CHECK(status IN ('pending','running','completed','failed')),
-  result          TEXT,
-  error           TEXT,
-  turn_count      INTEGER NOT NULL DEFAULT 0,
-  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  started_at      TEXT,
-  completed_at    TEXT
-);
-
--- items: polymorphic conversation entries per agent
-CREATE TABLE items (
-  id         TEXT PRIMARY KEY,
-  agent_id   TEXT NOT NULL REFERENCES agents(id),
-  sequence   INTEGER NOT NULL,
-  type       TEXT NOT NULL
-             CHECK(type IN ('message','function_call','function_call_output')),
-  -- message fields
-  role       TEXT,
-  content    TEXT,                    -- JSON for multi-part, plain string for text
-  -- function_call fields
-  call_id    TEXT,
-  name       TEXT,
-  arguments  TEXT,
-  -- function_call_output fields
-  output     TEXT,
-  -- meta
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-);
-
-CREATE INDEX idx_agents_session ON agents(session_id);
-CREATE INDEX idx_agents_parent ON agents(parent_id);
-CREATE UNIQUE INDEX idx_items_agent_seq ON items(agent_id, sequence);
-CREATE INDEX idx_items_call_id ON items(call_id);
+```bash
+bun add drizzle-orm
+bun add -d drizzle-kit
 ```
 
-Migration approach:
-- `PRAGMA user_version` starts at 0 (no DB)
-- Version 1: create the three tables above
-- On startup: open DB, check `user_version`, run pending migrations, set new
-  version
-- Expose: `db.init()`, `db.close()`
+#### File structure
 
-### 2. DB service typed API (`DbProvider` interface)
+Everything lives under `src/infra/db/`:
 
-Expose methods, not SQL, to the rest of the codebase:
+```
+src/
+  infra/
+    db/
+      schema.ts            # Drizzle table definitions (source of truth)
+      connection.ts        # bun:sqlite Database + Drizzle instance
+      migrate.ts           # Standalone migration runner (called from CLI)
+      index.ts             # Re-exports db instance + query functions
+      migrations/          # Generated SQL files (committed to git)
+        0001_initial.sql
+        meta/              # Drizzle Kit metadata (committed)
+drizzle.config.ts          # Drizzle Kit config (project root)
+```
+
+#### Environment configuration
+
+Add `DATABASE_URL` to `src/config/env.ts` (single source of truth for the
+default):
+
+```typescript
+databaseUrl: process.env.DATABASE_URL ?? "./data/dev.db",
+```
+
+Add to `src/config/index.ts`:
+
+```typescript
+database: {
+  url: env.databaseUrl,
+},
+```
+
+All DB code reads the path from `config.database.url` — never from
+`process.env` directly. The only exception is `drizzle.config.ts`, which is
+a standalone CLI tool config and must read `process.env`.
+
+#### Drizzle schema (`src/infra/db/schema.ts`)
+
+```typescript
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+
+const timestamp = () =>
+  text().notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`);
+
+export const sessions = sqliteTable("sessions", {
+  id:          text("id").primaryKey(),
+  rootAgentId: text("root_agent_id"),
+  title:       text("title"),
+  createdAt:   timestamp(),
+  updatedAt:   timestamp(),
+});
+
+export const agents = sqliteTable("agents", {
+  id:            text("id").primaryKey(),
+  sessionId:     text("session_id").notNull().references(() => sessions.id),
+  parentId:      text("parent_id").references(() => agents.id),
+  sourceCallId:  text("source_call_id"),
+  template:      text("template").notNull(),
+  task:          text("task").notNull(),
+  status:        text("status", { enum: ["pending", "running", "completed", "failed"] })
+                   .notNull().default("pending"),
+  result:        text("result"),
+  error:         text("error"),
+  turnCount:     integer("turn_count").notNull().default(0),
+  createdAt:     timestamp(),
+  startedAt:     text("started_at"),
+  completedAt:   text("completed_at"),
+}, (table) => [
+  index("idx_agents_session").on(table.sessionId),
+  index("idx_agents_parent").on(table.parentId),
+]);
+
+export const items = sqliteTable("items", {
+  id:        text("id").primaryKey(),
+  agentId:   text("agent_id").notNull().references(() => agents.id),
+  sequence:  integer("sequence").notNull(),
+  type:      text("type", { enum: ["message", "function_call", "function_call_output"] })
+               .notNull(),
+  role:      text("role"),
+  content:   text("content"),
+  callId:    text("call_id"),
+  name:      text("name"),
+  arguments: text("arguments"),
+  output:    text("output"),
+  createdAt: timestamp(),
+}, (table) => [
+  uniqueIndex("idx_items_agent_seq").on(table.agentId, table.sequence),
+  index("idx_items_call_id").on(table.callId),
+]);
+```
+
+#### Connection (`src/infra/db/connection.ts`)
+
+```typescript
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { Database } from "bun:sqlite";
+import { mkdirSync } from "fs";
+import { dirname } from "path";
+import { config } from "../../config/index.ts";
+import * as schema from "./schema.ts";
+
+mkdirSync(dirname(config.database.url), { recursive: true });
+
+const sqlite = new Database(config.database.url);
+sqlite.run("PRAGMA journal_mode = WAL");
+sqlite.run("PRAGMA foreign_keys = ON");
+
+export const db = drizzle(sqlite, { schema });
+export { sqlite };  // exported for shutdown cleanup
+```
+
+PRAGMAs are raw SQL but contained within the connection bootstrap file inside
+`src/infra/db/` — consistent with the "no raw SQL outside this directory" rule.
+
+#### Migration runner (`src/infra/db/migrate.ts`)
+
+```typescript
+import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { db } from "./connection.ts";
+
+migrate(db, { migrationsFolder: "./src/infra/db/migrations" });
+```
+
+Called as a standalone script from Docker entrypoint or `package.json`:
+
+```bash
+bun run src/infra/db/migrate.ts
+```
+
+#### Drizzle Kit config (`drizzle.config.ts`)
+
+```typescript
+import { defineConfig } from "drizzle-kit";
+
+export default defineConfig({
+  schema: "./src/infra/db/schema.ts",
+  out: "./src/infra/db/migrations",
+  dialect: "sqlite",
+  dbCredentials: {
+    url: process.env.DATABASE_URL ?? "./data/dev.db",
+  },
+});
+```
+
+Note: `drizzle.config.ts` reads `process.env` directly because it runs as a
+standalone CLI tool, outside the app runtime. The default is duplicated here
+by necessity.
+
+#### Package scripts
+
+Add to `package.json`:
+
+```json
+{
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun run src/infra/db/migrate.ts"
+  }
+}
+```
+
+#### Migration workflow
+
+```bash
+# After editing schema.ts:
+bun run db:generate             # produces numbered SQL migration
+
+# Review the generated SQL, then commit it:
+git add src/infra/db/migrations/
+
+# On next app start (or manually):
+bun run db:migrate              # applies pending migrations
+```
+
+### 2. Query functions (`src/infra/db/index.ts`)
+
+Export typed query functions from `src/infra/db/index.ts` — no `DbProvider`
+interface. Drizzle's typed query builder is the abstraction layer.
 
 ```typescript
 // Sessions
-db.sessions.create(id: string): void
-db.sessions.get(id: string): DbSession | null
-db.sessions.touch(id: string): void
-db.sessions.setRootAgent(id: string, agentId: string): void
+createSession(id: string): void
+getSession(id: string): DbSession | null
+touchSession(id: string): void
+setRootAgent(sessionId: string, agentId: string): void
 
 // Agents
-db.agents.create(opts: CreateAgentOpts): void
-db.agents.get(id: string): DbAgent | null
-db.agents.updateStatus(id: string, status: AgentStatus, result?: string, error?: string): void
-db.agents.listBySession(sessionId: string): DbAgent[]
+createAgent(opts: CreateAgentOpts): void
+getAgent(id: string): DbAgent | null
+updateAgentStatus(id: string, status: AgentStatus, result?: string, error?: string): void
+listAgentsBySession(sessionId: string): DbAgent[]
 
 // Items
-db.items.append(agentId: string, item: NewItem): void
-db.items.appendBatch(agentId: string, items: NewItem[]): void  // wraps in transaction
-db.items.listByAgent(agentId: string): DbItem[]
-db.items.listBySession(sessionId: string): DbItem[]            // joins through agents
-db.items.nextSequence(agentId: string): number
+appendItem(agentId: string, item: NewItem): void
+appendItems(agentId: string, items: NewItem[]): void  // wraps in transaction
+listItemsByAgent(agentId: string): DbItem[]
+listItemsBySession(sessionId: string): DbItem[]       // joins through agents
+nextSequence(agentId: string): number
 ```
 
-All write methods use prepared statements. `appendBatch` wraps inserts in an
-explicit transaction — used at turn boundaries to atomically persist the
-assistant message + tool calls + tool results. Single `append` is available
-for the initial user message.
+`appendItems` wraps inserts in a Drizzle `db.transaction()` — used at turn
+boundaries to atomically persist the assistant message + tool calls + tool
+results. Single `appendItem` is available for the initial user message.
 
-**Note on `bun:sqlite` sync nature**: All DB calls are synchronous and block
-the event loop. For single-session CLI usage this is negligible (~50-200μs per
-statement). For `server.ts` with concurrent sessions, writes serialize briefly
-at the JS level. This is acceptable for the current scale; if it becomes a
-bottleneck, writes can be deferred to a microtask batch.
+**Note on `bun:sqlite` sync nature**: Drizzle over `bun:sqlite` is
+synchronous. For single-session CLI usage this is negligible (~50-200μs per
+statement). For `server.ts` with concurrent sessions, writes serialize
+briefly. Acceptable for current scale.
 
 ### 3. Replace `sessionService` (`src/agent/session.ts`)
 
@@ -237,8 +367,9 @@ Tool call lifecycle now persists through items:
   already written when assistant message is stored (step 3)
 - `resultStore.complete(toolCallId, result, tokens)` → `function_call_output`
   item written when tool result message is stored
-- For hot-path reads during execution (e.g. `resultStore.get()`), keep a
-  thin in-memory cache that shadows the DB writes. Clear per-session.
+- No in-memory cache — read directly from SQLite. `bun:sqlite` synchronous
+  reads are ~50-200μs, negligible vs LLM latency. Avoids cache invalidation
+  complexity.
 
 ### 5. Wire agent hierarchy in orchestrator
 
@@ -257,39 +388,48 @@ In `delegate.ts`:
   to `executeTurn()` as `sourceCallId`
 - Orchestrator stores it as `source_call_id` on the child agent row
 
-### 6. Bootstrap integration
+### 6. Bootstrap & deployment
 
 In `src/infra/bootstrap.ts`:
-- `initServices()`: call `db.init()` (open DB, run migrations)
-- `shutdownServices()`: call `db.close()`
+- `initServices()`: import `src/infra/db/connection.ts` to initialize the
+  Drizzle instance. Migrations are NOT run here — they run as a separate
+  step before the app starts.
+- `shutdownServices()`: call `sqlite.close()` on the underlying `bun:sqlite`
+  `Database` instance (exported from `connection.ts`).
 
-Add `data/` to `.gitignore`.
+Docker entrypoint (Dockerfile `CMD`):
+```bash
+bun run db:migrate && bun run server & bun run slack & wait
+```
+
+Migrations run once before either service starts, avoiding multi-process
+race conditions.
+
+Add `data/` to `.gitignore` and `DATABASE_URL` to `.env.example`.
 
 ### 7. Update types
 
 - Add `src/types/db.ts`:
-  - `DbProvider` interface — the contract all implementations satisfy.
-    Contains only portable types (strings, numbers, plain objects). No
-    SQLite-specific types, no `Database` import, no SQL strings.
-  - Row types: `DbSession`, `DbAgent`, `DbItem`
+  - Plain TypeScript interfaces: `DbSession`, `DbAgent`, `DbItem` — no
+    Drizzle imports, no `$inferSelect`. Defined manually to keep the types
+    file independent of the ORM.
   - Input types: `CreateAgentOpts`, `NewItem`
   - `AgentStatus = 'pending' | 'running' | 'completed' | 'failed'`
 - These are **separate from** existing runtime types (`Session`, `AgentState`,
-  `LLMMessage`). The DB service translates between them:
+  `LLMMessage`). The query functions in `src/infra/db/index.ts` translate
+  between them:
   - `DbSession` ↔ `Session` (mapping in sessionService)
   - `DbAgent` is new — no existing runtime equivalent persists this data
   - `DbItem[]` ↔ `LLMMessage[]` (mapping in sessionService)
-- Consumers import from `src/infra/db/index.ts` (the singleton), never from
-  `src/infra/db/sqlite.ts` directly. Swapping providers means changing one
-  re-export.
+- Consumers import query functions from `src/infra/db/index.ts`.
 
 ## Testing scenarios
 
 | Criterion | Test |
 |-----------|------|
-| DB created on first run | Unit: call `db.init()` with no existing file, assert tables exist via `sqlite_master` query |
-| Migrations run | Unit: create DB at version 0, run `db.init()`, assert `user_version = 1` and tables exist |
-| Session resume | Integration: create session, append messages, restart (new `db.init()`), load session, assert messages intact |
+| DB created on first run | Unit: point `DATABASE_URL` at a temp path, import `db.ts`, assert tables exist via `sqlite_master` query |
+| Migrations run | Unit: create empty DB, run `migrate()`, assert all tables and indexes exist |
+| Session resume | Integration: create session, append messages, re-import `connection.ts` (fresh process), load session, assert messages intact |
 | Agent hierarchy | Unit: create session + parent agent + child agent with `parent_id`, query `db.agents.listBySession()`, assert tree structure |
 | Item sequence ordering | Unit: append 5 items, query back, assert `sequence` is 0-4 in order |
 | Message ↔ item round-trip | Unit: convert `LLMMessage[]` → items → `LLMMessage[]`, assert deep equality. Include multi-part content (ContentPart[] with text + image), null assistant content, and multiple tool calls per assistant message. |

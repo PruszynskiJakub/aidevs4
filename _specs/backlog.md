@@ -59,3 +59,6 @@ doesn't clearly hand off the absolute path.
 
 prompt caching
 
+wsparcie dla wielu środowisk
+
+Cron
