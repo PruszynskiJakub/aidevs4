@@ -189,3 +189,6 @@ Two-layer classification:
 - How to handle attachments — store locally? Just metadata?
 - Rate limits — Gmail API quotas vs. polling frequency
 - Rules persistence format — JSON/YAML in workspace/knowledge/?
+
+## Ideas
+- dynamically assigned labels based on environment
