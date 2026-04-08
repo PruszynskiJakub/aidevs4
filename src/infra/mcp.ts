@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { CreateMessageRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { LLMProvider, LLMMessage, ContentPart } from "../types/llm.ts";
@@ -12,6 +13,7 @@ import { errorMessage } from "../utils/parse.ts";
 import { loadMcpConfig } from "../config/mcp.ts";
 import type { McpServerConfig } from "../config/mcp.ts";
 import { config } from "../config/index.ts";
+import { createOAuthProvider, waitForOAuthCallback } from "./mcp-oauth.ts";
 
 interface ConnectedServer {
   client: Client;
@@ -34,8 +36,14 @@ function createTransport(serverConfig: McpServerConfig): Transport {
       });
     case "sse":
       return new SSEClientTransport(new URL(serverConfig.url));
-    case "http":
-      return new StreamableHTTPClientTransport(new URL(serverConfig.url));
+    case "http": {
+      const opts: Record<string, unknown> = {};
+      if (serverConfig.oauth) {
+        const port = serverConfig.oauth.callbackPort ?? 8090;
+        opts.authProvider = createOAuthProvider(serverConfig.name, port);
+      }
+      return new StreamableHTTPClientTransport(new URL(serverConfig.url), opts);
+    }
     default:
       throw new Error(`Unknown MCP transport: ${(serverConfig as McpServerConfig).transport}`);
   }
@@ -71,6 +79,35 @@ function mapMcpContent(content: unknown[]): ContentPart[] {
 
 export type { McpService } from "../types/mcp.ts";
 import type { McpService } from "../types/mcp.ts";
+
+/** Kill stale mcp-remote processes left over from previous runs. */
+async function killStaleMcpRemoteProcesses(): Promise<void> {
+  try {
+    const proc = Bun.spawn(["pgrep", "-f", "mcp-remote"], {
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    const output = await new Response(proc.stdout).text();
+    const pids = output
+      .trim()
+      .split("\n")
+      .map((s) => parseInt(s, 10))
+      .filter((pid) => !isNaN(pid) && pid !== process.pid);
+
+    for (const pid of pids) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        /* already dead */
+      }
+    }
+    if (pids.length > 0) {
+      console.log(`[mcp] Killed ${pids.length} stale mcp-remote process(es)`);
+    }
+  } catch {
+    /* pgrep not found or no matches — nothing to clean up */
+  }
+}
 
 export function createMcpService(llmProvider: LLMProvider): McpService {
   const servers = new Map<string, ConnectedServer>();
@@ -136,6 +173,8 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
       if (connected) return;
       connected = true;
 
+      await killStaleMcpRemoteProcesses();
+
       const mcpConfig = await loadMcpConfig();
       if (mcpConfig.servers.length === 0) return;
 
@@ -152,7 +191,41 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
             setupSamplingHandler(client);
 
             const transport = createTransport(serverConfig);
-            await client.connect(transport);
+
+            try {
+              await client.connect(transport);
+            } catch (err) {
+              // Handle OAuth flow for HTTP transports
+              if (
+                err instanceof UnauthorizedError &&
+                serverConfig.transport === "http" &&
+                serverConfig.oauth
+              ) {
+                const port = serverConfig.oauth.callbackPort ?? 8090;
+                console.log(`[mcp] OAuth required for "${serverConfig.name}" — waiting for browser authorization...`);
+                const { code, server: callbackServer } = await waitForOAuthCallback(port);
+                try {
+                  await (transport as StreamableHTTPClientTransport).finishAuth(code);
+                  // Close the original client/transport before reconnecting
+                  await client.close().catch(() => {});
+                  // Create a fresh client + transport for the authenticated session
+                  const newClient = new Client(
+                    { name: "aidevs4-agent", version: "1.0.0" },
+                    { capabilities: { sampling: {} } },
+                  );
+                  setupSamplingHandler(newClient);
+                  const newTransport = createTransport(serverConfig);
+                  await newClient.connect(newTransport);
+                  servers.set(serverConfig.name, { client: newClient, transport: newTransport, config: serverConfig });
+                  console.log(`[mcp] Connected to "${serverConfig.name}" (after OAuth)`);
+                } finally {
+                  callbackServer.close();
+                }
+                return;
+              }
+              throw err;
+            }
+
             servers.set(serverConfig.name, { client, transport, config: serverConfig });
             console.log(`[mcp] Connected to "${serverConfig.name}"`);
           } catch (err) {

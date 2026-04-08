@@ -1,0 +1,13 @@
+{
+  "servers": [
+    {
+      "name": "gmail",
+      "transport": "http",
+      "url": "http://127.0.0.1:3000/mcp",
+      "oauth": {
+        "callbackPort": 8090
+      },
+      "enabled": true
+    }
+  ]
+}

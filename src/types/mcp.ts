@@ -8,6 +8,11 @@ export interface McpStdioServer {
 export interface McpHttpServer {
   transport: "sse" | "http";
   url: string;
+  /** OAuth configuration for authenticated remote MCP servers */
+  oauth?: {
+    /** Port for the local OAuth callback server (default: 8090) */
+    callbackPort?: number;
+  };
 }
 
 export type McpServerConfig = (McpStdioServer | McpHttpServer) & {

@@ -62,3 +62,5 @@ prompt caching
 wsparcie dla wielu środowisk
 
 Cron
+
+Przeorać MCP
