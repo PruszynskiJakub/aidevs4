@@ -1,6 +1,6 @@
 ---
 name: domatowo
-model: gpt-4.1
+model: gemini-3-flash-preview
 capabilities:
   - task solving
   - data analysis

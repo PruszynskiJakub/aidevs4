@@ -27,18 +27,28 @@ The agent's toolbox grows with each completed task.
 
 ```
   ├── workspace/                      # Unified workspace directory
-  │   ├── agents/                     # Agent definitions (.agent.md files)
-n  │   ├── knowledge/                  # API templates & procedures documentation
-  │   ├── sessions/                   # All session data (output, logs, shared)
+  │   ├── system/                     # Curated, version-controlled definitions
+  │   │   ├── agents/                 # Agent definitions (.agent.md files)
+  │   │   ├── skills/                 # Reusable skill definitions
+  │   │   ├── workflows/              # Workflow definitions
+  │   │   ├── tasks_prompts/          # Task and prompt management
+  │   │   └── mcp.json                # MCP server configuration
+  │   ├── knowledge/                  # Agent-curated persistent knowledge base
+  │   │   ├── _index.md               # Auto-maintained index
+  │   │   ├── procedures/             # How-to guides, methodologies
+  │   │   ├── reference/              # Lookup data, API docs, inventories
+  │   │   ├── insights/               # Agent-discovered patterns, learnings
+  │   │   ├── entities/               # Known people, places, concepts
+  │   │   └── datasets/               # CSVs, structured data for tooling
+  │   ├── scratch/                    # Freeform agent exploration space
+  │   ├── sessions/                   # Runtime output (ephemeral, per-run)
   │   │   └── {YYYY-MM-DD}/
   │   │       └── {sessionId}/
   │   │           ├── log/            # Markdown logs + JSONL events
   │   │           ├── shared/         # Inter-agent file dump
   │   │           └── {agentName}/
   │   │               └── output/     # Agent artifacts by file type
-  │   ├── skills/                     # Custom skills workspace
-  │   ├── tasks_prompts/              # Task and prompt management
-  │   └── workflows/                  # Workflow definitions
+  │   └── browser/                    # Browser state & cache
   ├── playground/<task_name>/         # Prototyping area — one dir per task
   │   ├── <task_name>.ts              # Standalone script
   │   └── output/                     # Generated artifacts (gitignored)

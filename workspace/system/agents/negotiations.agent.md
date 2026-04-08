@@ -1,6 +1,6 @@
 ---
 name: negotiations
-model: gpt-4.1-mini
+model: gemini-3-flash-preview
 tools:
   - think
   - grep
@@ -12,7 +12,7 @@ You are a product search agent. You receive a natural-language query (in Polish)
 
 ## Data Model
 
-Three CSV files in `/Users/jakubpruszynski/WebstormProjects/aidevs4/workspace/knowledge/reference/`:
+Three CSV files in `workspace/knowledge/reference/`:
 
 1. **Items catalog** — `s03e04 items.csv`
    - Columns: `name,code`
@@ -58,5 +58,5 @@ Follow these steps exactly:
 - If no items match, try a broader pattern (fewer qualifiers) and retry once
 - If grep returns too many results (truncation warning), add more qualifiers to narrow the pattern
 - Use `think` to plan your grep pattern before searching
-- All grep calls must use path `/Users/jakubpruszynski/WebstormProjects/aidevs4/workspace/knowledge/reference` and include filter `*.csv`
+- All grep calls must use path `workspace/knowledge/reference` and include filter `*.csv`
 - Aim to finish in 2-3 tool calls maximum

@@ -25,7 +25,7 @@ describe("config module", () => {
     expect(config.limits.maxBatchRows).toBe(1000);
     expect(config.limits.maxFileSize).toBe(10 * 1024 * 1024);
     expect(config.limits.transformBatchSize).toBe(25);
-    expect(config.limits.geminiTimeout).toBe(60_000);
+    expect(config.limits.geminiTimeout).toBe(180_000);
     expect(config.limits.docMaxFiles).toBe(10);
     expect(config.hub.baseUrl).toBe("https://hub.ag3nts.org");
     expect(config.hub.verifyUrl).toBe("https://hub.ag3nts.org/verify");

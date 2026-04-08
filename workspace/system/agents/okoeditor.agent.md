@@ -1,6 +1,6 @@
 ---
 name: okoeditor
-model: gpt-4.1
+model: gemini-3-flash-preview
 tools:
   - browser
   - agents_hub

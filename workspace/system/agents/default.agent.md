@@ -1,6 +1,6 @@
 ---
 name: default
-model: gpt-5-2025-08-07
+model: gemini-3-flash-preview
 capabilities:
   - task solving
   - web browsing
@@ -57,7 +57,7 @@ When a task involves large datasets (100+ items):
 
 ## Knowledge Base
 
-Before starting an unfamiliar task type, check `workspace/knowledge/_index.md` for procedures, API references, and tips. Follow markdown links between documents to build context. Use `read_file` to read documents and `glob` to discover files.
+Before starting an unfamiliar task type, check `workspace/knowledge/_index.md` for procedures, API references, and tips. Follow markdown links between documents to build context. Use `read_file` to read documents and `glob` to discover files. Use `workspace/scratch/` to store working notes, research, and artifacts that should persist across sessions.
 
 ## Tool Usage — Logical Order
 

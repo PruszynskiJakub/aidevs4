@@ -5,7 +5,7 @@ import type { LLMTool } from "../types/llm.ts";
 import { files } from "../infra/file.ts";
 import { getTools, getToolsByName } from "../tools/registry.ts";
 
-const AGENTS_DIR = resolve(import.meta.dir, "../../workspace/agents");
+const AGENTS_DIR = resolve(import.meta.dir, "../../workspace/system/agents");
 
 export type { ResolvedAgent, AgentSummary } from "../types/agent.ts";
 import type { ResolvedAgent, AgentSummary } from "../types/agent.ts";

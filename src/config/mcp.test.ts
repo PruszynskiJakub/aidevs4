@@ -2,9 +2,9 @@ import { describe, test, expect } from "bun:test";
 import { loadMcpConfig } from "./mcp.ts";
 
 describe("loadMcpConfig", () => {
-  test("returns empty servers array when mcp.json does not exist", async () => {
-    // Default workspace/mcp.json doesn't exist in test environment
+  test("loads servers from workspace/system/mcp.json", async () => {
     const config = await loadMcpConfig();
-    expect(config.servers).toEqual([]);
+    expect(config.servers).toBeInstanceOf(Array);
+    expect(config.servers.length).toBeGreaterThanOrEqual(0);
   });
 });

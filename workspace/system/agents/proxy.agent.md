@@ -1,6 +1,6 @@
 ---
 name: proxy
-model: gpt-4.1
+model: gemini-3-flash-preview
 tools:
   - shipping
   - think

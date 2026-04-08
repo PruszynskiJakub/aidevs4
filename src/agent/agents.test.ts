@@ -29,7 +29,7 @@ describe("agentsService", () => {
       expect(config.name).toBe("default");
       expect(config.prompt).toContain("autonomous agent");
       expect(config.prompt).toContain("AG3NTS hub");
-      expect(config.model).toBe("gpt-5-2025-08-07");
+      expect(config.model).toBe("gemini-3-flash-preview");
       expect(config.tools).toBeUndefined();
     });
 
@@ -37,7 +37,7 @@ describe("agentsService", () => {
       const config = await agentsService.get("proxy");
       expect(config.name).toBe("proxy");
       expect(config.prompt).toContain("logistics");
-      expect(config.model).toBe("gpt-4.1");
+      expect(config.model).toBe("gemini-3-flash-preview");
       expect(config.tools).toEqual(["shipping", "think"]);
     });
 
@@ -75,7 +75,7 @@ describe("agentsService", () => {
 
       const result = await agentsService.resolve("default");
       expect(result.prompt).toContain("autonomous agent");
-      expect(result.model).toBe("gpt-5-2025-08-07");
+      expect(result.model).toBe("gemini-3-flash-preview");
       expect(result.tools).toHaveLength(2);
     });
 
@@ -85,7 +85,7 @@ describe("agentsService", () => {
       registerTool("bash");
 
       const result = await agentsService.resolve("proxy");
-      expect(result.model).toBe("gpt-4.1");
+      expect(result.model).toBe("gemini-3-flash-preview");
       const names = result.tools.map((t) => t.function.name);
       expect(names).toContain("shipping");
       expect(names).toContain("think");
