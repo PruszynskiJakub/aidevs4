@@ -1,0 +1,170 @@
+[
+  {
+    "id": "ts-001",
+    "message": "What files are in the workspace directory?",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["glob"],
+      "forbiddenTools": ["bash"],
+      "maxToolCalls": 5
+    }
+  },
+  {
+    "id": "ts-002",
+    "message": "Search the source code for all occurrences of 'executeTurn'",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["grep"],
+      "forbiddenTools": ["bash"],
+      "maxToolCalls": 5
+    }
+  },
+  {
+    "id": "ts-003",
+    "message": "Read the contents of the file src/config/index.ts",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["read_file"],
+      "maxToolCalls": 3
+    }
+  },
+  {
+    "id": "ts-004",
+    "message": "What is 2 + 2?",
+    "expect": {
+      "shouldUseTools": false,
+      "requiredTools": [],
+      "maxToolCalls": 0
+    }
+  },
+  {
+    "id": "ts-005",
+    "message": "Explain what a closure is in JavaScript.",
+    "expect": {
+      "shouldUseTools": false,
+      "requiredTools": [],
+      "maxToolCalls": 0
+    }
+  },
+  {
+    "id": "ts-006",
+    "message": "Write a Python function that reverses a string to the file workspace/sessions/eval/reverse.py",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["write_file"],
+      "maxToolCalls": 5
+    }
+  },
+  {
+    "id": "ts-007",
+    "message": "Run the command 'echo hello world' in the terminal",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["bash"],
+      "maxToolCalls": 3
+    }
+  },
+  {
+    "id": "ts-008",
+    "message": "Find all TypeScript files in src/tools/ and tell me how many there are",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["glob"],
+      "forbiddenTools": ["bash"],
+      "maxToolCalls": 5
+    }
+  },
+  {
+    "id": "ts-009",
+    "message": "Calculate the distance between Warsaw (52.2297, 21.0122) and Berlin (52.5200, 13.4050)",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["geo_distance"],
+      "maxToolCalls": 3
+    }
+  },
+  {
+    "id": "ts-010",
+    "message": "Summarize the key points of the Agile manifesto.",
+    "expect": {
+      "shouldUseTools": false,
+      "requiredTools": [],
+      "maxToolCalls": 0
+    }
+  },
+  {
+    "id": "ts-011",
+    "message": "Search for the string 'TODO' across all files in the project and list the matches",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["grep"],
+      "forbiddenTools": ["bash"],
+      "maxToolCalls": 5
+    }
+  },
+  {
+    "id": "ts-012",
+    "message": "List all .md files in the _specs directory",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["glob"],
+      "forbiddenTools": ["bash"],
+      "maxToolCalls": 5
+    }
+  },
+  {
+    "id": "ts-013",
+    "message": "Think step by step about how to design a rate limiter, then share your analysis",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["think"],
+      "maxToolCalls": 5
+    }
+  },
+  {
+    "id": "ts-014",
+    "message": "Read the file src/agent/orchestrator.ts and find the executeTurn function signature",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["read_file"],
+      "maxToolCalls": 5
+    }
+  },
+  {
+    "id": "ts-015",
+    "message": "What is the capital of France?",
+    "expect": {
+      "shouldUseTools": false,
+      "requiredTools": [],
+      "maxToolCalls": 0
+    }
+  },
+  {
+    "id": "ts-016",
+    "message": "Execute this JavaScript code: console.log(Array.from({length: 5}, (_, i) => i * 2))",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["execute_code"],
+      "maxToolCalls": 3
+    }
+  },
+  {
+    "id": "ts-017",
+    "message": "Find all files named 'index.ts' in the src directory",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["glob"],
+      "forbiddenTools": ["bash"],
+      "maxToolCalls": 5
+    }
+  },
+  {
+    "id": "ts-018",
+    "message": "Replace the word 'hello' with 'world' in the file workspace/sessions/eval/test.txt",
+    "expect": {
+      "shouldUseTools": true,
+      "requiredTools": ["edit_file"],
+      "maxToolCalls": 5
+    }
+  }
+]

@@ -11,7 +11,9 @@
     "server": "bun run src/server.ts",
     "slack": "bun run src/slack.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "bun run src/infra/db/migrate.ts"
+    "db:migrate": "bun run src/infra/db/migrate.ts",
+    "eval": "bun run src/evals/runner.ts",
+    "eval:tool-selection": "bun run src/evals/runner.ts --dataset tool-selection"
   },
   "devDependencies": {
     "@types/bun": "latest",
