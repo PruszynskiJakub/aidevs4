@@ -9,8 +9,6 @@ skills
 workflows
 
 fallback mechanism
-smart retry baed on api body
-
 ---
 ### Problems
 nie mam pojecia ile tokeów lata
@@ -37,9 +35,6 @@ przeredagowanie promptów
 dzielenie przestrzeni pamięci to jedno, czym innym jest dzielenie logów
 
 
-human approval tool with slack UI
-
-
 mode like headless (for cli), different for server as a part of AgentContext
 
 support communication client slack/postman/cli etc
@@ -64,3 +59,13 @@ wsparcie dla wielu środowisk
 Cron
 
 Przeorać MCP
+oAuth ze Slackiem jak ?
+
+MCP OAuth Web Panel
+- Web panel on Hono server for managing MCP server authorization
+- Shows all configured MCP servers with their auth status (authorized / needs auth)
+- "Authorize" button triggers OAuth flow — redirect URL points back to the Hono server (not localhost:8090)
+- OAuth callback route on the server completes the token exchange
+- MCP tools are only discovered and registered after successful OAuth (not at startup)
+- Needs: unregister/re-register support in tool registry, per-server connect+registerTools, panel UI
+- Works for both server and Slack entrypoints (Slack bot can share the same token store)

@@ -80,7 +80,6 @@ function mapMcpContent(content: unknown[]): ContentPart[] {
         mimeType: res.mimeType as string | undefined,
       };
     }
-    // Fallback: serialize unknown content types as text
     return { type: "text", text: JSON.stringify(item) };
   });
 }
@@ -121,18 +120,14 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
   const servers = new Map<string, ConnectedServer>();
   let connected = false;
 
-  process.on("exit", () => {
-    for (const { transport } of servers.values()) {
-      if (transport instanceof StdioClientTransport) {
-        try {
-          const pid = transport.pid;
-          if (pid != null) process.kill(pid);
-        } catch {
-          /* already dead */
-        }
-      }
-    }
-  });
+  function createClient(): Client {
+    const client = new Client(
+      { name: "aidevs4-agent", version: "1.0.0" },
+      { capabilities: { sampling: {} } },
+    );
+    setupSamplingHandler(client);
+    return client;
+  }
 
   function setupSamplingHandler(client: Client): void {
     client.setRequestHandler(CreateMessageRequestSchema, async (request) => {
@@ -181,29 +176,23 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
       if (connected) return;
       connected = true;
 
-      await killStaleMcpRemoteProcesses();
-
       const mcpConfig = await loadMcpConfig();
       if (mcpConfig.servers.length === 0) return;
 
       const enabled = mcpConfig.servers.filter((s) => s.enabled !== false);
+      if (enabled.some((s) => s.transport === "stdio")) {
+        await killStaleMcpRemoteProcesses();
+      }
 
       await Promise.allSettled(
         enabled.map(async (serverConfig) => {
           try {
-            const client = new Client(
-              { name: "aidevs4-agent", version: "1.0.0" },
-              { capabilities: { sampling: {} } },
-            );
-
-            setupSamplingHandler(client);
-
+            const client = createClient();
             const transport = createTransport(serverConfig);
 
             try {
               await client.connect(transport);
             } catch (err) {
-              // Handle OAuth flow for HTTP transports
               if (
                 err instanceof UnauthorizedError &&
                 serverConfig.transport === "http" &&
@@ -214,14 +203,8 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
                 const { code, server: callbackServer } = await waitForOAuthCallback(port);
                 try {
                   await (transport as StreamableHTTPClientTransport).finishAuth(code);
-                  // Close the original client/transport before reconnecting
                   await client.close().catch(() => {});
-                  // Create a fresh client + transport for the authenticated session
-                  const newClient = new Client(
-                    { name: "aidevs4-agent", version: "1.0.0" },
-                    { capabilities: { sampling: {} } },
-                  );
-                  setupSamplingHandler(newClient);
+                  const newClient = createClient();
                   const newTransport = createTransport(serverConfig);
                   await newClient.connect(newTransport);
                   servers.set(serverConfig.name, { client: newClient, transport: newTransport, config: serverConfig });
@@ -273,6 +256,14 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
                   const content = Array.isArray(result.content)
                     ? mapMcpContent(result.content)
                     : [{ type: "text" as const, text: String(result.content ?? "") }];
+
+                  // MCP servers may return structuredContent alongside the text
+                  // snippet in content.  Serialize it as an additional text part
+                  // so the LLM sees the full data.
+                  const structured = (result as Record<string, unknown>).structuredContent;
+                  if (structured != null) {
+                    content.push({ type: "text" as const, text: JSON.stringify(structured) });
+                  }
 
                   return {
                     content,

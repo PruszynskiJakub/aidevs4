@@ -52,8 +52,8 @@ export const config = deepFreeze({
     maxBatchRows: 1000,
     maxFileSize: 10 * 1024 * 1024,
     transformBatchSize: 25,
-    openaiTimeout: 60_000,
-    geminiTimeout: 60_000,
+    openaiTimeout: 180_000,
+    geminiTimeout: 180_000,
     docMaxFiles: 10,
   },
   server: {

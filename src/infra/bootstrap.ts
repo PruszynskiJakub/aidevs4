@@ -27,7 +27,6 @@ export function installSignalHandlers(extra?: () => Promise<void>): void {
     if (extra) await extra();
   }
 
-  process.on("beforeExit", async () => { await gracefulShutdown(); });
   process.on("SIGTERM", async () => {
     await gracefulShutdown();
     process.exit(0);

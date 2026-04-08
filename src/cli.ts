@@ -1,6 +1,6 @@
 import { config } from "./config/index.ts";
 import { executeTurn } from "./agent/orchestrator.ts";
-import { initServices, shutdownServices } from "./infra/bootstrap.ts";
+import { initServices, shutdownServices, installSignalHandlers } from "./infra/bootstrap.ts";
 import { setConfirmationProvider } from "./agent/confirmation.ts";
 import type { ConfirmationRequest } from "./agent/confirmation.ts";
 import type { Decision } from "./types/tool.ts";
@@ -38,6 +38,7 @@ if (args.length >= 2) {
 }
 
 await initServices();
+installSignalHandlers();
 
 setConfirmationProvider({
   async confirm(requests: ConfirmationRequest[]) {

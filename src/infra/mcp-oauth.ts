@@ -1,5 +1,5 @@
 import { join } from "path";
-import { mkdirSync, existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { createServer, type Server } from "node:http";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
@@ -13,7 +13,7 @@ const DATA_DIR = join(import.meta.dir, "../../data/mcp-oauth");
 
 function stateDir(serverName: string): string {
   const dir = join(DATA_DIR, serverName);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true });
   return dir;
 }
 
@@ -133,6 +133,11 @@ export function createOAuthProvider(
  */
 export function waitForOAuthCallback(port: number): Promise<{ code: string; server: Server }> {
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      server.close();
+      reject(new Error("OAuth callback timed out after 5 minutes"));
+    }, 5 * 60 * 1000);
+
     const server = createServer((req, res) => {
       if (req.url === "/favicon.ico") {
         res.writeHead(404);
@@ -145,6 +150,7 @@ export function waitForOAuthCallback(port: number): Promise<{ code: string; serv
       const error = parsedUrl.searchParams.get("error");
 
       if (code) {
+        clearTimeout(timer);
         console.log(`[mcp-oauth] Authorization code received`);
         res.writeHead(200, { "Content-Type": "text/html" });
         res.end(`<html><body><h1>Authorization Successful!</h1>
@@ -153,6 +159,7 @@ export function waitForOAuthCallback(port: number): Promise<{ code: string; serv
         </body></html>`);
         resolve({ code, server });
       } else if (error) {
+        clearTimeout(timer);
         console.error(`[mcp-oauth] Authorization error: ${error}`);
         res.writeHead(400, { "Content-Type": "text/html" });
         res.end(`<html><body><h1>Authorization Failed</h1><p>${error}</p></body></html>`);
@@ -167,11 +174,5 @@ export function waitForOAuthCallback(port: number): Promise<{ code: string; serv
     server.listen(port, "127.0.0.1", () => {
       console.log(`[mcp-oauth] Callback server listening on http://127.0.0.1:${port}`);
     });
-
-    // Timeout after 5 minutes
-    setTimeout(() => {
-      server.close();
-      reject(new Error("OAuth callback timed out after 5 minutes"));
-    }, 5 * 60 * 1000);
   });
 }
