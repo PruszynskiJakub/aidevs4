@@ -7,13 +7,17 @@ import { CreateMessageRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { LLMProvider, LLMMessage, ContentPart } from "../types/llm.ts";
 import type { ToolAnnotations } from "../types/tool.ts";
-import { type ToolResult, error as toolError } from "../types/tool-result.ts";
+import { type ToolResult, error as toolError, resource } from "../types/tool-result.ts";
 import { registerRaw } from "../tools/registry.ts";
 import { errorMessage } from "../utils/parse.ts";
 import { loadMcpConfig } from "../config/mcp.ts";
 import type { McpServerConfig } from "../config/mcp.ts";
 import { config } from "../config/index.ts";
 import { createOAuthProvider, waitForOAuthCallback } from "./mcp-oauth.ts";
+import { estimateTokens } from "../utils/tokens.ts";
+import { getSessionId } from "../agent/context.ts";
+import { sessionService } from "../agent/session.ts";
+import { files } from "./file.ts";
 
 interface ConnectedServer {
   client: Client;
@@ -86,6 +90,32 @@ function mapMcpContent(content: unknown[]): ContentPart[] {
 
 export type { McpService } from "../types/mcp.ts";
 import type { McpService } from "../types/mcp.ts";
+
+/** Token threshold for inlining structuredContent vs writing to file. */
+const STRUCTURED_CONTENT_TOKEN_LIMIT = 3_000;
+
+/**
+ * Handle MCP structuredContent: inline small payloads as text,
+ * write large ones to a session file and return a ResourceRef.
+ */
+async function handleStructuredContent(
+  structured: unknown,
+  toolName: string,
+  serverName: string,
+): Promise<ContentPart[]> {
+  const json = JSON.stringify(structured);
+  const tokens = estimateTokens(json);
+
+  if (tokens <= STRUCTURED_CONTENT_TOKEN_LIMIT || !getSessionId()) {
+    return [{ type: "text", text: json }];
+  }
+
+  const path = await sessionService.outputPath(`${serverName}-${toolName}.json`);
+  await files.write(path, json);
+
+  const sizeKB = Math.ceil(json.length / 1024);
+  return [resource(path, `Full structured response from ${serverName}/${toolName} (${sizeKB}KB)`, "application/json")];
+}
 
 /** Kill stale mcp-remote processes left over from previous runs. */
 async function killStaleMcpRemoteProcesses(): Promise<void> {
@@ -187,43 +217,62 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
       await Promise.allSettled(
         enabled.map(async (serverConfig) => {
           try {
-            const client = createClient();
-            const transport = createTransport(serverConfig);
-
-            try {
-              await client.connect(transport);
-            } catch (err) {
-              if (
-                err instanceof UnauthorizedError &&
-                serverConfig.transport === "http" &&
-                serverConfig.oauth
-              ) {
-                const port = serverConfig.oauth.callbackPort ?? 8090;
-                console.log(`[mcp] OAuth required for "${serverConfig.name}" — waiting for browser authorization...`);
-                const { code, server: callbackServer } = await waitForOAuthCallback(port);
-                try {
-                  await (transport as StreamableHTTPClientTransport).finishAuth(code);
-                  await client.close().catch(() => {});
-                  const newClient = createClient();
-                  const newTransport = createTransport(serverConfig);
-                  await newClient.connect(newTransport);
-                  servers.set(serverConfig.name, { client: newClient, transport: newTransport, config: serverConfig });
-                  console.log(`[mcp] Connected to "${serverConfig.name}" (after OAuth)`);
-                } finally {
-                  callbackServer.close();
-                }
-                return;
-              }
-              throw err;
-            }
-
-            servers.set(serverConfig.name, { client, transport, config: serverConfig });
-            console.log(`[mcp] Connected to "${serverConfig.name}"`);
+            await connectServer(serverConfig);
           } catch (err) {
             console.warn(`[mcp] Failed to connect to "${serverConfig.name}": ${errorMessage(err)}`);
           }
         }),
       );
+
+      async function connectServer(serverConfig: McpServerConfig, attempt = 0): Promise<void> {
+        const MAX_RETRIES = 2;
+        const client = createClient();
+        const transport = createTransport(serverConfig);
+
+        try {
+          await client.connect(transport);
+        } catch (err) {
+          // Always clean up the half-connected client — the SDK sets _transport
+          // before start(), so a failed connect leaves it in a broken state.
+          await client.close().catch(() => {});
+
+          if (
+            err instanceof UnauthorizedError &&
+            serverConfig.transport === "http" &&
+            serverConfig.oauth
+          ) {
+            const port = serverConfig.oauth.callbackPort ?? 8090;
+            console.log(`[mcp] OAuth required for "${serverConfig.name}" — waiting for browser authorization...`);
+            const { code, server: callbackServer } = await waitForOAuthCallback(port);
+            try {
+              await (transport as StreamableHTTPClientTransport).finishAuth(code);
+              const freshClient = createClient();
+              const freshTransport = createTransport(serverConfig);
+              await freshClient.connect(freshTransport);
+              servers.set(serverConfig.name, { client: freshClient, transport: freshTransport, config: serverConfig });
+              console.log(`[mcp] Connected to "${serverConfig.name}" (after OAuth)`);
+            } catch (retryErr) {
+              console.warn(`[mcp] Post-OAuth connect failed for "${serverConfig.name}": ${errorMessage(retryErr)}`);
+            } finally {
+              callbackServer.close();
+            }
+            return;
+          }
+
+          // Retry once on transient server errors (e.g. stale session from a crashed run)
+          if (attempt < MAX_RETRIES) {
+            const delay = 1000 * (attempt + 1);
+            console.log(`[mcp] Retrying "${serverConfig.name}" in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})...`);
+            await new Promise((r) => setTimeout(r, delay));
+            return connectServer(serverConfig, attempt + 1);
+          }
+
+          throw err;
+        }
+
+        servers.set(serverConfig.name, { client, transport, config: serverConfig });
+        console.log(`[mcp] Connected to "${serverConfig.name}"`);
+      }
     },
 
     async registerTools(): Promise<void> {
@@ -257,12 +306,10 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
                     ? mapMcpContent(result.content)
                     : [{ type: "text" as const, text: String(result.content ?? "") }];
 
-                  // MCP servers may return structuredContent alongside the text
-                  // snippet in content.  Serialize it as an additional text part
-                  // so the LLM sees the full data.
                   const structured = (result as Record<string, unknown>).structuredContent;
                   if (structured != null) {
-                    content.push({ type: "text" as const, text: JSON.stringify(structured) });
+                    const parts = await handleStructuredContent(structured, tool.name, serverName);
+                    content.push(...parts);
                   }
 
                   return {
