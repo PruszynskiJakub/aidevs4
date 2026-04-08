@@ -37,19 +37,20 @@ async function scheduleAction(payload: {
   name: string;
   message: string;
   cron: string;
-  agent?: string;
+  agent: string;
 }): Promise<ToolResult> {
   assertMaxLength(payload.name, "name", MAX_NAME_LEN);
   assertMaxLength(payload.message, "message", MAX_MESSAGE_LEN);
   validateCron(payload.cron);
-  if (payload.agent) assertMaxLength(payload.agent, "agent", MAX_AGENT_LEN);
+  const agent = payload.agent || undefined;
+  if (agent) assertMaxLength(agent, "agent", MAX_AGENT_LEN);
 
   const id = randomUUID();
   dbOps.createJob({
     id,
     name: payload.name,
     message: payload.message,
-    agent: payload.agent,
+    agent,
     schedule: payload.cron,
   });
 
@@ -63,12 +64,13 @@ async function delayAction(payload: {
   name: string;
   message: string;
   delay: string;
-  agent?: string;
+  agent: string;
 }): Promise<ToolResult> {
   assertMaxLength(payload.name, "name", MAX_NAME_LEN);
   assertMaxLength(payload.message, "message", MAX_MESSAGE_LEN);
   assertMaxLength(payload.delay, "delay", MAX_DELAY_LEN);
-  if (payload.agent) assertMaxLength(payload.agent, "agent", MAX_AGENT_LEN);
+  const agent = payload.agent || undefined;
+  if (agent) assertMaxLength(agent, "agent", MAX_AGENT_LEN);
 
   // Validate and compute runAt
   const runAt = delayToRunAt(payload.delay);
@@ -78,7 +80,7 @@ async function delayAction(payload: {
     id,
     name: payload.name,
     message: payload.message,
-    agent: payload.agent,
+    agent,
     runAt,
   });
 
@@ -187,7 +189,7 @@ export default {
           name: z.string().describe("Human-readable job name"),
           message: z.string().describe("The prompt to send to the agent on each trigger"),
           cron: z.string().describe('Standard cron expression (e.g. "*/5 * * * *" for every 5 minutes)'),
-          agent: z.string().optional().describe("Agent template name (omit for default assistant)"),
+          agent: z.string().describe('Agent template name (empty string for default assistant)'),
         }),
       },
       delay: {
@@ -196,7 +198,7 @@ export default {
           name: z.string().describe("Human-readable job name"),
           message: z.string().describe("The prompt to send to the agent when the timer fires"),
           delay: z.string().describe('Duration string (e.g. "30m", "2h", "1d")'),
-          agent: z.string().optional().describe("Agent template name (omit for default assistant)"),
+          agent: z.string().describe('Agent template name (empty string for default assistant)'),
         }),
       },
       list: {
