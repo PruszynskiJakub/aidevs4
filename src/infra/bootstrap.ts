@@ -4,6 +4,7 @@ import { initTracing, isTracingEnabled, shutdownTracing } from "./tracing.ts";
 import { attachLangfuseSubscriber } from "./langfuse-subscriber.ts";
 import { initMcpTools, shutdownMcp } from "../tools/index.ts";
 import { sqlite } from "./db/connection.ts";
+import { scheduler } from "./scheduler.ts";
 
 export async function initServices(): Promise<void> {
   // DB connection is initialized on import of connection.ts (above).
@@ -13,9 +14,11 @@ export async function initServices(): Promise<void> {
   initTracing();
   attachLangfuseSubscriber(bus);
   await initMcpTools();
+  scheduler.loadAll();
 }
 
 export async function shutdownServices(): Promise<void> {
+  scheduler.shutdown();
   await shutdownTracing();
   await shutdownMcp();
   sqlite.close();

@@ -19,6 +19,7 @@ import grep from "./grep.ts";
 import execute_code from "./execute_code.ts";
 import delegate from "./delegate.ts";
 import browser from "./browser.ts";
+import scheduler from "./scheduler.ts";
 
 register(think);
 register(bash);
@@ -36,6 +37,7 @@ register(grep);
 register(execute_code);
 register(delegate);
 register(browser);
+register(scheduler);
 
 // Hot reload (bun --hot): disconnect previous instance before creating a new one
 const g = globalThis as Record<string, unknown>;

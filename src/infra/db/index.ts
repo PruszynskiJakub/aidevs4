@@ -1,11 +1,14 @@
-import { eq, sql, and } from "drizzle-orm";
+import { eq, sql, and, lte } from "drizzle-orm";
 import { db } from "./connection.ts";
-import { sessions, agents, items } from "./schema.ts";
+import { sessions, agents, items, scheduledJobs } from "./schema.ts";
+import type { JobStatus, JobRunStatus } from "./schema.ts";
 import type {
   DbSession,
   DbAgent,
   DbItem,
+  DbJob,
   CreateAgentOpts,
+  CreateJobOpts,
   NewItem,
   AgentStatus,
 } from "../../types/db.ts";
@@ -146,9 +149,79 @@ export function getItemByCallId(callId: string): DbItem | null {
     .get() as DbItem | undefined ?? null;
 }
 
+// ── Scheduled Jobs ─────────────────────────────────────────
+
+export function createJob(opts: CreateJobOpts): void {
+  db.insert(scheduledJobs)
+    .values({
+      id: opts.id,
+      name: opts.name,
+      message: opts.message,
+      agent: opts.agent ?? null,
+      schedule: opts.schedule ?? null,
+      runAt: opts.runAt ?? null,
+    })
+    .run();
+}
+
+export function getJob(id: string): DbJob | null {
+  return db.select().from(scheduledJobs).where(eq(scheduledJobs.id, id)).get() as DbJob | undefined ?? null;
+}
+
+export function listJobs(): DbJob[] {
+  return db.select().from(scheduledJobs).all() as DbJob[];
+}
+
+export function listActiveJobs(): DbJob[] {
+  return db.select().from(scheduledJobs).where(eq(scheduledJobs.status, "active")).all() as DbJob[];
+}
+
+export function listDueOneShots(now: string): DbJob[] {
+  return db.select().from(scheduledJobs)
+    .where(and(
+      eq(scheduledJobs.status, "active"),
+      lte(scheduledJobs.runAt, now),
+    ))
+    .all()
+    .filter((j) => j.schedule === null) as DbJob[];
+}
+
+export function updateJobStatus(id: string, status: JobStatus): void {
+  const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
+  db.update(scheduledJobs)
+    .set({ status, updatedAt: now })
+    .where(eq(scheduledJobs.id, id))
+    .run();
+}
+
+export function updateJobExecution(
+  id: string,
+  runCount: number,
+  lastRunAt: string,
+  lastStatus: JobRunStatus,
+  lastError?: string,
+): void {
+  const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
+  db.update(scheduledJobs)
+    .set({
+      runCount,
+      lastRunAt,
+      lastStatus,
+      lastError: lastError ?? null,
+      updatedAt: now,
+    })
+    .where(eq(scheduledJobs.id, id))
+    .run();
+}
+
+export function deleteJob(id: string): void {
+  db.delete(scheduledJobs).where(eq(scheduledJobs.id, id)).run();
+}
+
 /** Visible for testing — deletes all data from all tables */
 export function _clearAll(): void {
   db.delete(items).run();
   db.delete(agents).run();
   db.delete(sessions).run();
+  db.delete(scheduledJobs).run();
 }

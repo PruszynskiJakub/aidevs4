@@ -1,6 +1,9 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
+export type JobStatus = "active" | "paused" | "completed";
+export type JobRunStatus = "success" | "error";
+
 const timestamp = () =>
   text().notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`);
 
@@ -49,4 +52,23 @@ export const items = sqliteTable("items", {
 }, (table) => [
   uniqueIndex("idx_items_agent_seq").on(table.agentId, table.sequence),
   index("idx_items_call_id").on(table.callId),
+]);
+
+export const scheduledJobs = sqliteTable("scheduled_jobs", {
+  id:          text("id").primaryKey(),
+  name:        text("name").notNull(),
+  message:     text("message").notNull(),
+  agent:       text("agent"),
+  schedule:    text("schedule"),
+  runAt:       text("run_at"),
+  status:      text("status", { enum: ["active", "paused", "completed"] })
+                 .notNull().default("active"),
+  runCount:    integer("run_count").notNull().default(0),
+  lastRunAt:   text("last_run_at"),
+  lastStatus:  text("last_status"),
+  lastError:   text("last_error"),
+  createdAt:   timestamp(),
+  updatedAt:   timestamp(),
+}, (table) => [
+  index("idx_jobs_status").on(table.status),
 ]);

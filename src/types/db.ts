@@ -49,6 +49,31 @@ export interface CreateAgentOpts {
   task: string;
 }
 
+export interface DbJob {
+  id: string;
+  name: string;
+  message: string;
+  agent: string | null;
+  schedule: string | null;
+  runAt: string | null;
+  status: "active" | "paused" | "completed";
+  runCount: number;
+  lastRunAt: string | null;
+  lastStatus: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateJobOpts {
+  id: string;
+  name: string;
+  message: string;
+  agent?: string;
+  schedule?: string;
+  runAt?: string;
+}
+
 export interface NewItem {
   id: string;
   agentId: string;

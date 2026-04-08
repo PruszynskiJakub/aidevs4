@@ -28,6 +28,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/sdk-node": "^0.214.0",
     "@slack/bolt": "^4.6.0",
+    "croner": "^10.0.1",
     "csv-parse": "^6.1.0",
     "drizzle-orm": "^0.45.2",
     "grammy": "^1.41.1",
