@@ -30,9 +30,9 @@ The agent's toolbox grows with each completed task.
   │   ├── system/                     # Curated, version-controlled definitions
   │   │   ├── agents/                 # Agent definitions (.agent.md files)
   │   │   ├── skills/                 # Reusable skill definitions
-  │   │   ├── workflows/              # Workflow definitions
   │   │   ├── tasks_prompts/          # Task and prompt management
   │   │   └── mcp.json                # MCP server configuration
+  │   ├── workflows/                  # Workflow definitions
   │   ├── knowledge/                  # Agent-curated persistent knowledge base
   │   │   ├── _index.md               # Auto-maintained index
   │   │   ├── procedures/             # How-to guides, methodologies
