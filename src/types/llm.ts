@@ -13,7 +13,7 @@ export interface ImagePart {
 
 export interface ResourceRef {
   type: "resource";
-  uri: string;
+  path: string;
   description: string;
   mimeType?: string;
 }

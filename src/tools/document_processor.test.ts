@@ -228,7 +228,7 @@ describe("document_processor ask — validation errors", () => {
     ).rejects.toThrow("question exceeds max length of 2000");
   });
 
-  it("supports file:// URIs", async () => {
+  it("strips legacy file:// prefix", async () => {
     const result = await handler({
       action: "ask",
       payload: { file_paths: [`file://${TEXT_FILE}`], question: "What is this?" },

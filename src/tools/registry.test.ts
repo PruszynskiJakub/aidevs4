@@ -237,9 +237,9 @@ describe("registry", () => {
       expect(serializeContent([{ type: "text", text: "hello" }])).toBe("hello");
     });
 
-    it("serializes resource ref with description and uri", () => {
-      const result = serializeContent([{ type: "resource", uri: "file:///tmp/f.txt", description: "Full content" }]);
-      expect(result).toBe("Full content (ref: file:///tmp/f.txt)");
+    it("serializes resource ref with description and path", () => {
+      const result = serializeContent([{ type: "resource", path: "/tmp/f.txt", description: "Full content" }]);
+      expect(result).toBe("Full content (path: /tmp/f.txt)");
     });
 
     it("serializes image with placeholder", () => {
@@ -251,9 +251,9 @@ describe("registry", () => {
     it("joins multiple parts with double newline", () => {
       const result = serializeContent([
         { type: "text", text: "Summary" },
-        { type: "resource", uri: "file:///tmp/f.txt", description: "Full file" },
+        { type: "resource", path: "/tmp/f.txt", description: "Full file" },
       ]);
-      expect(result).toBe("Summary\n\nFull file (ref: file:///tmp/f.txt)");
+      expect(result).toBe("Summary\n\nFull file (path: /tmp/f.txt)");
     });
   });
 

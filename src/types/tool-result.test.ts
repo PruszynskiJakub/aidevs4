@@ -16,13 +16,13 @@ describe("error()", () => {
 });
 
 describe("resource()", () => {
-  it("creates ResourceRef with uri and description", () => {
-    const ref = resource("file:///tmp/f.txt", "Full content");
-    expect(ref).toEqual({ type: "resource", uri: "file:///tmp/f.txt", description: "Full content" });
+  it("creates ResourceRef with path and description", () => {
+    const ref = resource("/tmp/f.txt", "Full content");
+    expect(ref).toEqual({ type: "resource", path: "/tmp/f.txt", description: "Full content" });
   });
 
   it("includes optional mimeType", () => {
-    const ref = resource("file:///tmp/f.txt", "Full content", "text/plain");
-    expect(ref).toEqual({ type: "resource", uri: "file:///tmp/f.txt", description: "Full content", mimeType: "text/plain" });
+    const ref = resource("/tmp/f.txt", "Full content", "text/plain");
+    expect(ref).toEqual({ type: "resource", path: "/tmp/f.txt", description: "Full content", mimeType: "text/plain" });
   });
 });

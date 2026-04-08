@@ -130,7 +130,7 @@ export function serializeContent(parts: ContentPart[]): string {
         return `[Image: ${part.mimeType}, ${sizeKB}KB]`;
       }
       case "resource":
-        return `${part.description} (ref: ${part.uri})`;
+        return `${part.description} (path: ${part.path})`;
     }
   }).join("\n\n");
 }

@@ -64,12 +64,20 @@ function mapMcpContent(content: unknown[]): ContentPart[] {
       };
     }
     if (type === "resource") {
-      const resource = item.resource as Record<string, unknown>;
+      const res = item.resource as Record<string, unknown>;
+      const rawUri = res.uri as string;
+      let path: string;
+      if (rawUri.startsWith("file://")) {
+        path = rawUri.slice(7);
+      } else {
+        console.warn(`[mcp] Non-file URI from MCP resource, using raw: ${rawUri}`);
+        path = rawUri;
+      }
       return {
         type: "resource",
-        uri: resource.uri as string,
-        description: (resource.text as string) ?? (resource.uri as string),
-        mimeType: resource.mimeType as string | undefined,
+        path,
+        description: (res.text as string) ?? rawUri,
+        mimeType: res.mimeType as string | undefined,
       };
     }
     // Fallback: serialize unknown content types as text

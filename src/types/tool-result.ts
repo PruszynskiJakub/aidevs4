@@ -16,6 +16,6 @@ export function error(msg: string): ToolResult {
 }
 
 /** Create a ResourceRef content part. */
-export function resource(uri: string, description: string, mimeType?: string): ResourceRef {
-  return { type: "resource", uri, description, ...(mimeType !== undefined && { mimeType }) };
+export function resource(path: string, description: string, mimeType?: string): ResourceRef {
+  return { type: "resource", path, description, ...(mimeType !== undefined && { mimeType }) };
 }

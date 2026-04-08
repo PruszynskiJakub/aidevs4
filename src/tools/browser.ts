@@ -206,8 +206,8 @@ async function navigate(payload: { url: string }): Promise<ToolResult> {
         `Lines: ${lineCount}`,
       ].join("\n"),
     },
-    resource(`file://${textPath}`, `Page text: ${title}`, "text/plain"),
-    resource(`file://${structPath}`, `DOM structure: ${title}`, "text/plain"),
+    resource(textPath, `Page text: ${title}`, "text/plain"),
+    resource(structPath, `DOM structure: ${title}`, "text/plain"),
   ];
 
   const knowledgePath = join("workspace", "knowledge", "browser", `${parsed.hostname}.md`);

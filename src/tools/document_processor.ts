@@ -9,7 +9,7 @@ import { llm } from "../llm/llm.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 import { config } from "../config";
 import { IMAGE_EXTENSIONS, TEXT_EXTENSIONS, ALL_SUPPORTED_EXTENSIONS, inferMimeType } from "../utils/media-types.ts";
-import { resolveUri } from "../utils/uri.ts";
+
 
 async function buildContentPart(path: string): Promise<ContentPart> {
   const ext = extname(path).toLowerCase();
@@ -31,12 +31,13 @@ async function buildContentPart(path: string): Promise<ContentPart> {
   return { type: "text", text: `--- FILE: ${basename(path)} ---\n${content}` };
 }
 
-/** Resolve a path that may be a file:// URI or a plain path. */
-function toAbsolutePath(pathOrUri: string): string {
-  if (pathOrUri.startsWith("file://")) {
-    return resolveUri(pathOrUri);
+/** Strip legacy file:// prefix if present. */
+function cleanPath(p: string): string {
+  if (p.startsWith("file://")) {
+    console.warn(`[document_processor] Legacy file:// URI detected, stripping prefix: ${p}`);
+    return p.slice(7);
   }
-  return pathOrUri;
+  return p;
 }
 
 async function ask(payload: {
@@ -56,7 +57,7 @@ async function ask(payload: {
   }
   assertMaxLength(question, "question", 2000);
 
-  const resolvedPaths = file_paths.map(toAbsolutePath);
+  const resolvedPaths = file_paths.map(cleanPath);
   const contentParts = await Promise.all(resolvedPaths.map(buildContentPart));
   contentParts.push({ type: "text", text: question });
 
@@ -88,7 +89,7 @@ export default {
       ask: {
         description: "Ask a question about one or more documents using AI vision. Supports text (.md, .txt, .csv, .json, .xml, .html) and image (.png, .jpg, .jpeg, .gif, .webp) documents. Pass file paths from previous tool results (e.g. web__download). Returns a text answer synthesized from all provided documents.",
         schema: z.object({
-          file_paths: z.array(z.string()).describe("File paths to analyze (max 10). Use paths returned by other tools such as web__download. Supports file:// URIs."),
+          file_paths: z.array(z.string()).describe("File paths to analyze (max 10). Use paths returned by other tools such as web__download."),
           question: z.string().describe("Question to answer based on the documents. Be specific about what information you need."),
         }),
       },

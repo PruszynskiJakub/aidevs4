@@ -50,7 +50,7 @@ async function download(payload: { url: string; filename: string }): Promise<Too
 
   return {
     content: [
-      resource(`file://${path}`, `Downloaded: ${payload.filename}`, mimeType),
+      resource(path, `Downloaded: ${payload.filename}`, mimeType),
       { type: "text", text: `File saved to ${path}\nNote: Verify contents or process the file further.` },
     ],
   };
@@ -104,7 +104,7 @@ async function scrape(payload: { urls: string[] }): Promise<ToolResult> {
       summaries.push(`## ${urls[i]}\n${result.value.summary}`);
       if (result.value.fullPath) {
         const sizeKB = Math.ceil((await files.stat(result.value.fullPath)).size / 1024);
-        resourceRefs.push(resource(`file://${result.value.fullPath}`, `Full content of ${urls[i]} (${sizeKB}KB)`));
+        resourceRefs.push(resource(result.value.fullPath, `Full content of ${urls[i]} (${sizeKB}KB)`));
       }
     } else {
       const errorMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
