@@ -58,14 +58,16 @@ setConfirmationProvider({
   },
 });
 
-const { answer, sessionId: resolvedSessionId } = await executeTurn({
-  sessionId,
-  prompt,
-  assistant: assistantName,
-  model: modelOverride,
-});
+try {
+  const { answer, sessionId: resolvedSessionId } = await executeTurn({
+    sessionId,
+    prompt,
+    assistant: assistantName,
+    model: modelOverride,
+  });
 
-console.log(`\nSession: ${resolvedSessionId}`);
-if (answer) console.log(answer);
-
-await shutdownServices();
+  console.log(`\nSession: ${resolvedSessionId}`);
+  if (answer) console.log(answer);
+} finally {
+  await shutdownServices();
+}

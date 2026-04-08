@@ -300,7 +300,19 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
 
     async disconnect(): Promise<void> {
       await Promise.allSettled(
-        Array.from(servers.values(), (server) => server.client.close().catch(() => {})),
+        Array.from(servers.entries(), async ([name, server]) => {
+          try {
+            // For Streamable HTTP, terminate the server-side session first
+            // (client.close() alone does NOT send a DELETE to the server)
+            if (server.transport instanceof StreamableHTTPClientTransport) {
+              await server.transport.terminateSession();
+            }
+            await server.client.close();
+            console.log(`[mcp] Disconnected from "${name}"`);
+          } catch (err) {
+            console.warn(`[mcp] Error disconnecting from "${name}": ${errorMessage(err)}`);
+          }
+        }),
       );
       servers.clear();
       connected = false;

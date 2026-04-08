@@ -36,7 +36,15 @@ register(execute_code);
 register(delegate);
 register(browser);
 
+// Keep reference on globalThis so hot reload (bun --hot) can disconnect the
+// previous instance before creating a new one, preventing "Already connected
+// to a transport" errors on the MCP server side.
+const g = globalThis as Record<string, unknown>;
+if (g.__mcpService) {
+  (g.__mcpService as McpService).disconnect().catch(() => {});
+}
 const mcpService = createMcpService(llm);
+g.__mcpService = mcpService;
 
 export async function initMcpTools(): Promise<void> {
   await mcpService.connect();
