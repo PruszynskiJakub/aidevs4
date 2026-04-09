@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { bus } from "../infra/events.ts";
 import { createJsonlWriter } from "../infra/log/jsonl.ts";
 import { attachLoggerListener } from "../infra/log/bridge.ts";
+import { WORKSPACE_NAV_INSTRUCTIONS } from "./workspace.ts";
 
 interface SessionResources {
   log: Logger;
@@ -313,7 +314,7 @@ export async function runAgent(
         depth: state.depth ?? 0,
       });
 
-      const actSystemPrompt = resolved.prompt;
+      const actSystemPrompt = `${WORKSPACE_NAV_INSTRUCTIONS}\n\n${resolved.prompt}`;
       const memoryEnabled = resolved.memory !== false;
       let turnStartTime = 0;
 
