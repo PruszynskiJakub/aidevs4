@@ -2,9 +2,9 @@ import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
-import { files } from "../infra/file.ts";
+import { sandbox as files } from "../infra/sandbox.ts";
 import { config } from "../config/index.ts";
-import { safeParse, assertMaxLength, assertNumericBounds } from "../utils/parse.ts";
+import { safeParse, assertMaxLength, assertNumericBounds, safePath } from "../utils/parse.ts";
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -55,8 +55,8 @@ async function findNearby(payload: {
   queries_file: string;
   radius_km: number;
 }): Promise<ToolResult> {
-  assertMaxLength(payload.references_file, "references_file", 500);
-  assertMaxLength(payload.queries_file, "queries_file", 500);
+  safePath(payload.references_file, "references_file");
+  safePath(payload.queries_file, "queries_file");
   assertNumericBounds(payload.radius_km, "radius_km", 0.001, 40_075);
 
   await files.checkFileSize(payload.references_file, config.limits.maxFileSize);

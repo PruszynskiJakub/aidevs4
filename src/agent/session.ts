@@ -6,7 +6,7 @@ import type { FileProvider } from "../types/file.ts";
 import type { NewItem } from "../types/db.ts";
 import { randomSessionId } from "../utils/id.ts";
 import { getSessionId, getAgentName } from "./context.ts";
-import { files as defaultFiles } from "../infra/file.ts";
+import { sandbox as defaultFiles } from "../infra/sandbox.ts";
 import { config as defaultConfig } from "../config/index.ts";
 import * as dbOps from "../infra/db/index.ts";
 

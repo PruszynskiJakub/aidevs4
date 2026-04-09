@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 import type { ToolResult } from "../types/tool-result.ts";
 import geoDistance from "./geo_distance.ts";
 import { haversine } from "./geo_distance.ts";
-import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
+import { createSandbox, _setSandboxForTest } from "../infra/sandbox.ts";
 import { config } from "../config/index.ts";
 
 const handler = geoDistance.handler;
@@ -21,11 +21,12 @@ function getText(result: ToolResult): string {
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "geo-distance-test-"));
-  restoreFiles = _setFilesForTest(
-    createBunFileService(
-      [...config.sandbox.allowedReadPaths, tmp],
-      [...config.sandbox.allowedWritePaths, tmp],
-    ),
+  restoreFiles = _setSandboxForTest(
+    createSandbox({
+      readPaths: [...config.sandbox.allowedReadPaths, tmp],
+      writePaths: [...config.sandbox.allowedWritePaths, tmp],
+      blockedWritePaths: [],
+    }),
   );
 });
 

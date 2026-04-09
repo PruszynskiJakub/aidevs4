@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 import { createHash } from "crypto";
 import type { ToolResult } from "../types/tool-result.ts";
 import type { FileProvider } from "../types/file.ts";
-import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
+import { createSandbox, _setSandboxForTest } from "../infra/sandbox.ts";
 import read_file from "./read_file.ts";
 
 let tmpDir: string;
@@ -19,8 +19,8 @@ function getText(result: ToolResult): string {
 
 beforeAll(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "read_file_test_"));
-  const svc = createBunFileService([tmpDir], [tmpDir]);
-  restore = _setFilesForTest(svc);
+  const svc = createSandbox({ readPaths: [tmpDir], writePaths: [tmpDir], blockedWritePaths: [] });
+  restore = _setSandboxForTest(svc);
 
   // Create test files
   await Bun.write(join(tmpDir, "hello.txt"), "line1\nline2\nline3\nline4\nline5\n");

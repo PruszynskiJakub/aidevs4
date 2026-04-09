@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 import type { ToolResult } from "../types/tool-result.ts";
 import agentsHub from "./agents_hub.ts";
 import { config } from "../config/index.ts";
-import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
+import { createSandbox, _setSandboxForTest } from "../infra/sandbox.ts";
 
 const handler = agentsHub.handler;
 
@@ -21,11 +21,12 @@ function getText(result: ToolResult): string {
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "agents-hub-test-"));
-  restoreFiles = _setFilesForTest(
-    createBunFileService(
-      [...config.sandbox.allowedReadPaths, tmp],
-      [...config.sandbox.allowedWritePaths, tmp],
-    ),
+  restoreFiles = _setSandboxForTest(
+    createSandbox({
+      readPaths: [...config.sandbox.allowedReadPaths, tmp],
+      writePaths: [...config.sandbox.allowedWritePaths, tmp],
+      blockedWritePaths: [],
+    }),
   );
 });
 

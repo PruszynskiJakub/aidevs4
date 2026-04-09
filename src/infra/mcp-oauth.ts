@@ -1,5 +1,6 @@
 import { join } from "path";
 import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
+import { config } from "../config/index.ts";
 import { createServer, type Server } from "node:http";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
@@ -9,7 +10,7 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js";
 
-const DATA_DIR = join(import.meta.dir, "../../data/mcp-oauth");
+const DATA_DIR = config.paths.mcpOauthDir;
 
 function stateDir(serverName: string): string {
   const dir = join(DATA_DIR, serverName);

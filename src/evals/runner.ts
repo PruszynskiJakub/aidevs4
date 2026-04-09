@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
 import { resolve, basename } from "node:path";
+import * as fs from "../infra/fs.ts";
 import { initServices, shutdownServices } from "../infra/bootstrap.ts";
 import { setConfirmationProvider } from "../agent/confirmation.ts";
 import { runEvalCase } from "./harness.ts";
@@ -8,7 +8,7 @@ import type { EvalCase, Evaluator, EvalCaseResult, EvalRunResult, ScoringMetric 
 
 // ── Config ───────────────────────────────────────────────────
 
-const DATASETS_DIR = resolve(import.meta.dir, "datasets");
+const DATASETS_DIR = resolve(import.meta.dir, "datasets"); // evals-local, not workspace
 
 const EVALUATOR_MAP: Record<string, Evaluator> = {
   "tool-selection": toolSelectionEvaluator,
@@ -47,7 +47,7 @@ function parseArgs(argv: string[]) {
 
 async function loadDataset(name: string): Promise<EvalCase[]> {
   const path = resolve(DATASETS_DIR, `${name}.json`);
-  const raw = await readFile(path, "utf-8");
+  const raw = await fs.readText(path);
   const parsed = JSON.parse(raw);
 
   if (!Array.isArray(parsed)) {

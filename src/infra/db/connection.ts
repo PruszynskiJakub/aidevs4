@@ -5,6 +5,8 @@ import { dirname } from "path";
 import { config } from "../../config/index.ts";
 import * as schema from "./schema.ts";
 
+// Sync mkdir at module load — DB must exist before SQLite opens.
+// Uses raw fs intentionally: this is infra-level init, not sandboxed.
 mkdirSync(dirname(config.database.url), { recursive: true });
 
 const sqlite = new Database(config.database.url);

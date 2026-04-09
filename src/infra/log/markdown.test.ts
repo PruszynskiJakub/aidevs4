@@ -4,10 +4,10 @@ import { join, basename, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { MarkdownLogger, formatJson } from "./markdown.ts";
 import { randomSessionId } from "../../utils/id.ts";
-import { createBunFileService } from "../file.ts";
+import { createSandbox } from "../sandbox.ts";
 
 function makeLogger(dir: string, sessionId?: string) {
-  const fs = createBunFileService([], [dir]);
+  const fs = createSandbox({ writePaths: [dir], blockedWritePaths: [] });
   return new MarkdownLogger({ logsDir: dir, sessionId, fs });
 }
 

@@ -1,28 +1,26 @@
 import { join } from "node:path";
 import { config } from "../config/index.ts";
-import { files } from "../infra/file.ts";
-
-const W = config.paths.workspaceDir;
+import { sandbox as files } from "../infra/sandbox.ts";
 
 /** Resolved workspace paths (excluding system/) for programmatic use. */
 export const workspace = {
-  root: W,
+  root: config.paths.workspaceDir,
   knowledge: {
-    root: join(W, "knowledge"),
-    index: join(W, "knowledge", "_index.md"),
-    procedures: join(W, "knowledge", "procedures"),
-    reference: join(W, "knowledge", "reference"),
-    insights: join(W, "knowledge", "insights"),
-    entities: join(W, "knowledge", "entities"),
-    datasets: join(W, "knowledge", "datasets"),
+    root: config.paths.knowledgeDir,
+    index: join(config.paths.knowledgeDir, "_index.md"),
+    procedures: join(config.paths.knowledgeDir, "procedures"),
+    reference: join(config.paths.knowledgeDir, "reference"),
+    insights: join(config.paths.knowledgeDir, "insights"),
+    entities: join(config.paths.knowledgeDir, "entities"),
+    datasets: join(config.paths.knowledgeDir, "datasets"),
   },
-  scratch: join(W, "scratch"),
-  workflows: join(W, "workflows"),
-  sessions: join(W, "sessions"),
+  scratch: config.paths.scratchDir,
+  workflows: config.paths.workflowsDir,
+  sessions: config.paths.sessionsDir,
   browser: {
-    root: join(W, "browser"),
-    session: join(W, "browser", "session.json"),
-    pages: join(W, "browser", "pages"),
+    root: config.paths.browserDir,
+    session: config.browser.sessionPath,
+    pages: config.browser.pagesDir,
   },
 } as const;
 

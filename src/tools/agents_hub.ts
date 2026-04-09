@@ -2,16 +2,16 @@ import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
-import { files } from "../infra/file.ts";
+import { sandbox as files, resolveInput } from "../infra/sandbox.ts";
 import { config } from "../config/index.ts";
-import { safeParse, validateKeys, assertMaxLength } from "../utils/parse.ts";
+import { safeParse, validateKeys, assertMaxLength, safePath } from "../utils/parse.ts";
 import { hubPost, stringify } from "../utils/hub-fetch.ts";
 
 async function verify(payload: { task: string; answer: string }): Promise<ToolResult> {
   assertMaxLength(payload.task, "task", 100);
   assertMaxLength(payload.answer, "answer", 100_000);
 
-  const answer = await files.resolveInput(payload.answer, "answer");
+  const answer = await resolveInput(payload.answer, "answer");
   const response = await hubPost(
     config.hub.verifyUrl,
     { apikey: config.hub.apiKey, task: payload.task, answer },
@@ -29,7 +29,7 @@ async function apiRequest(payload: {
   assertMaxLength(payload.path, "path", 200);
   assertMaxLength(payload.body, "body", 100_000);
 
-  const resolved = await files.resolveInput(payload.body, "body");
+  const resolved = await resolveInput(payload.body, "body");
   if (typeof resolved !== "object" || resolved === null || Array.isArray(resolved)) {
     throw new Error("body must resolve to a JSON object");
   }
@@ -52,9 +52,9 @@ async function apiBatch(payload: {
   output_file: string;
 }): Promise<ToolResult> {
   assertMaxLength(payload.path, "path", 200);
-  assertMaxLength(payload.data_file, "data_file", 500);
+  safePath(payload.data_file, "data_file");
   assertMaxLength(payload.field_map_json, "field_map_json", 100_000);
-  assertMaxLength(payload.output_file, "output_file", 500);
+  safePath(payload.output_file, "output_file");
 
   const fieldMap: Record<string, string> = safeParse(payload.field_map_json, "field_map_json");
   validateKeys(fieldMap);
@@ -107,9 +107,9 @@ async function verifyBatch(payload: {
 }): Promise<ToolResult> {
   assertMaxLength(payload.task, "task", 100);
   assertMaxLength(payload.answers, "answers", 100_000);
-  assertMaxLength(payload.output_file, "output_file", 500);
+  safePath(payload.output_file, "output_file");
 
-  const answers = await files.resolveInput(payload.answers, "answers");
+  const answers = await resolveInput(payload.answers, "answers");
 
   if (!Array.isArray(answers)) {
     throw new Error("answers must resolve to a JSON array of answer objects");

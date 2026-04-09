@@ -1,8 +1,7 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { dirname, join } from "path";
-import { rename } from "fs/promises";
 import { config } from "../config/index.ts";
-import { files } from "./file.ts";
+import * as fs from "./fs.ts";
 import { safeParse } from "../utils/parse.ts";
 import { requireSessionId } from "../agent/context.ts";
 import type { BrowserFeedbackTracker, BrowserInterventions, BrowserSession, BrowserPool } from "../types/browser.ts";
@@ -30,7 +29,7 @@ function createBrowserSession(): BrowserSession {
     const contextOptions: Record<string, unknown> = { userAgent };
 
     try {
-      const sessionData = await files.readText(sessionPath);
+      const sessionData = await fs.readText(sessionPath);
       contextOptions.storageState = safeParse(sessionData, "browser session");
     } catch {
       // Missing or corrupted session file — start fresh
@@ -53,10 +52,10 @@ function createBrowserSession(): BrowserSession {
       try {
         const state = await contextInstance.storageState();
         const dir = dirname(config.browser.sessionPath);
-        await files.mkdir(dir);
+        await fs.fsMkdir(dir);
         const tmpPath = join(dir, `.session-${Date.now()}.tmp`);
-        await files.write(tmpPath, JSON.stringify(state, null, 2));
-        await rename(tmpPath, config.browser.sessionPath);
+        await fs.write(tmpPath, JSON.stringify(state, null, 2));
+        await fs.fsRename(tmpPath, config.browser.sessionPath);
       } catch {
         // Best-effort session save
       }

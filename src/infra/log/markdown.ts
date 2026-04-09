@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import type { FileProvider } from "../../types/file.ts";
 import type { Logger } from "../../types/logger.ts";
-import { createBunFileService } from "../file.ts";
+import { createSandbox } from "../sandbox.ts";
 import { config } from "../../config/index.ts";
 import { randomSessionId } from "../../utils/id.ts";
 
@@ -50,7 +50,7 @@ export class MarkdownLogger implements Logger {
     const sessionDir = join(sessionsDir, ts.folder, sid);
     // Use the exact session directory as write path so sandbox narrowing
     // doesn't block child sessions called from a parent's async context.
-    this.fs = options?.fs ?? createBunFileService([], [sessionDir]);
+    this.fs = options?.fs ?? createSandbox({ writePaths: [sessionDir], blockedWritePaths: [] });
     this.sessionId = sid;
     const dir = join(sessionDir, "log");
     this.sessionDir = dir;

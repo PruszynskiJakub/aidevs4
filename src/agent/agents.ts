@@ -2,10 +2,11 @@ import { resolve } from "path";
 import matter from "gray-matter";
 import type { AgentConfig } from "../types/assistant.ts";
 import type { LLMTool } from "../types/llm.ts";
-import { files } from "../infra/file.ts";
+import * as fs from "../infra/fs.ts";
+import { config } from "../config/index.ts";
 import { getTools, getToolsByName } from "../tools/registry.ts";
 
-const AGENTS_DIR = resolve(import.meta.dir, "../../workspace/system/agents");
+const AGENTS_DIR = config.paths.agentsDir;
 
 export type { ResolvedAgent, AgentSummary } from "../types/agent.ts";
 import type { ResolvedAgent, AgentSummary } from "../types/agent.ts";
@@ -51,7 +52,7 @@ function validate(data: Record<string, unknown>, body: string, filename: string)
 
 async function loadOne(name: string): Promise<AgentConfig> {
   const filePath = resolve(AGENTS_DIR, `${name}.agent.md`);
-  const raw = await files.readText(filePath);
+  const raw = await fs.readText(filePath);
   const { data, content } = matter(raw);
   return validate(data as Record<string, unknown>, content, `${name}.agent.md`);
 }
@@ -96,8 +97,7 @@ export function createAgentsService() {
 
     async get(name: string): Promise<AgentConfig> {
       const filePath = resolve(AGENTS_DIR, `${name}.agent.md`);
-      const file = Bun.file(filePath);
-      if (!(await file.exists())) {
+      if (!(await fs.exists(filePath))) {
         throw new Error(`Unknown agent: "${name}". File not found: ${name}.agent.md`);
       }
       return loadOne(name);

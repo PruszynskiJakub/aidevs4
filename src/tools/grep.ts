@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
-import { files, FileSizeLimitError } from "../infra/file.ts";
+import { sandbox as files, FileSizeLimitError } from "../infra/sandbox.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
 
 const MAX_TOTAL_LINES = 200;

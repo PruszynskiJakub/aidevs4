@@ -4,9 +4,9 @@ import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import type { ContentPart } from "../types/llm.ts";
-import { files } from "../infra/file.ts";
+import { sandbox as files } from "../infra/sandbox.ts";
 import { llm } from "../llm/llm.ts";
-import { assertMaxLength } from "../utils/parse.ts";
+import { assertMaxLength, safePath } from "../utils/parse.ts";
 import { config } from "../config";
 import { IMAGE_EXTENSIONS, TEXT_EXTENSIONS, ALL_SUPPORTED_EXTENSIONS, inferMimeType } from "../utils/media-types.ts";
 
@@ -58,6 +58,9 @@ async function ask(payload: {
   assertMaxLength(question, "question", 2000);
 
   const resolvedPaths = file_paths.map(cleanPath);
+  for (const p of resolvedPaths) {
+    safePath(p, "file_paths");
+  }
   const contentParts = await Promise.all(resolvedPaths.map(buildContentPart));
   contentParts.push({ type: "text", text: question });
 

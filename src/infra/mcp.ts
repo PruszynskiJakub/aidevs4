@@ -17,7 +17,7 @@ import { createOAuthProvider, waitForOAuthCallback } from "./mcp-oauth.ts";
 import { estimateTokens } from "../utils/tokens.ts";
 import { getSessionId } from "../agent/context.ts";
 import { sessionService } from "../agent/session.ts";
-import { files } from "./file.ts";
+import { sandbox } from "./sandbox.ts";
 
 interface ConnectedServer {
   client: Client;
@@ -111,7 +111,7 @@ async function handleStructuredContent(
   }
 
   const path = await sessionService.outputPath(`${serverName}-${toolName}.json`);
-  await files.write(path, json);
+  await sandbox.write(path, json);
 
   const sizeKB = Math.ceil(json.length / 1024);
   return [resource(path, `Full structured response from ${serverName}/${toolName} (${sizeKB}KB)`, "application/json")];

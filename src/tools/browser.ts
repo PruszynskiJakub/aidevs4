@@ -5,7 +5,7 @@ import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import type { ContentPart } from "../types/llm.ts";
 import { text, resource } from "../types/tool-result.ts";
-import { files } from "../infra/file.ts";
+import { sandbox as files } from "../infra/sandbox.ts";
 import { browserPool, type BrowserSession } from "../infra/browser.ts";
 import { sessionService } from "../agent/session.ts";
 import { config } from "../config/index.ts";

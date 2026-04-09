@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
-import { files } from "../infra/file.ts";
+import { sandbox as files } from "../infra/sandbox.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
 
 async function read_file(args: Record<string, unknown>): Promise<ToolResult> {

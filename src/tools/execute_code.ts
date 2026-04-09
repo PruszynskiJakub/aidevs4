@@ -1,5 +1,5 @@
 import { join, resolve } from "path";
-import { mkdir, unlink } from "fs/promises";
+import * as fs from "../infra/fs.ts";
 import { z } from "zod";
 import { config } from "../config/index.ts";
 import type { ToolDefinition } from "../types/tool.ts";
@@ -84,7 +84,7 @@ async function executeCode(args: Record<string, unknown>): Promise<ToolResult> {
   const sessionDir = getSessionDir();
   const projectRoot = resolve(config.paths.projectRoot);
 
-  await mkdir(sessionDir, { recursive: true });
+  await fs.fsMkdir(sessionDir);
 
   // Start bridge server — sandboxed code accesses files only through this
   let bridge: BridgeHandle | null = null;
@@ -102,7 +102,7 @@ async function executeCode(args: Record<string, unknown>): Promise<ToolResult> {
     // Write to temp file in session dir
     const tmpName = `_exec_${crypto.randomUUID().slice(0, 8)}.ts`;
     const tmpFile = join(sessionDir, tmpName);
-    await Bun.write(tmpFile, fullCode);
+    await fs.write(tmpFile, fullCode);
 
     try {
       const deno = getDeno();
@@ -178,7 +178,7 @@ async function executeCode(args: Record<string, unknown>): Promise<ToolResult> {
       return text(output);
     } finally {
       try {
-        await unlink(tmpFile);
+        await fs.fsUnlink(tmpFile);
       } catch {
         // temp file cleanup is best-effort
       }

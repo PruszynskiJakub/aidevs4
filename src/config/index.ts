@@ -1,5 +1,9 @@
 import { join } from "path";
-import { PROJECT_ROOT, WORKSPACE_DIR, SESSIONS_DIR } from "./paths.ts";
+import {
+  PROJECT_ROOT, WORKSPACE_DIR, SESSIONS_DIR,
+  SYSTEM_DIR, KNOWLEDGE_DIR, SCRATCH_DIR, WORKFLOWS_DIR, BROWSER_DIR,
+  AGENTS_DIR, PROMPTS_DIR, DATA_DIR, MCP_OAUTH_DIR, MCP_CONFIG_PATH,
+} from "./paths.ts";
 import { env } from "./env.ts";
 
 function deepFreeze<T extends object>(obj: T): T {
@@ -21,10 +25,21 @@ export const config = deepFreeze({
     projectRoot: PROJECT_ROOT,
     workspaceDir: WORKSPACE_DIR,
     sessionsDir: SESSIONS_DIR,
+    systemDir: SYSTEM_DIR,
+    knowledgeDir: KNOWLEDGE_DIR,
+    scratchDir: SCRATCH_DIR,
+    workflowsDir: WORKFLOWS_DIR,
+    browserDir: BROWSER_DIR,
+    agentsDir: AGENTS_DIR,
+    promptsDir: PROMPTS_DIR,
+    dataDir: DATA_DIR,
+    mcpOauthDir: MCP_OAUTH_DIR,
+    mcpConfigPath: MCP_CONFIG_PATH,
   },
   sandbox: {
     allowedReadPaths: [PROJECT_ROOT] as readonly string[],
-    allowedWritePaths: [SESSIONS_DIR, join(WORKSPACE_DIR, "shared"), join(WORKSPACE_DIR, "browser")] as readonly string[],
+    allowedWritePaths: [WORKSPACE_DIR] as readonly string[],
+    blockedWritePaths: [SYSTEM_DIR] as readonly string[],
     webAllowedHosts: [".ag3nts.org"] as readonly string[],
   },
   models: {

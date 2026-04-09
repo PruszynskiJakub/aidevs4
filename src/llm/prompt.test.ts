@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { createPromptService } from "./prompt.ts";
-import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
+import { createSandbox, _setSandboxForTest } from "../infra/sandbox.ts";
 import { config } from "../config/index.ts";
 
 let tmp: string;
@@ -12,11 +12,12 @@ let service: ReturnType<typeof createPromptService>;
 
 beforeAll(async () => {
   tmp = await mkdtemp(join(tmpdir(), "prompt-service-test-"));
-  restoreFiles = _setFilesForTest(
-    createBunFileService(
-      [...config.sandbox.allowedReadPaths, tmp],
-      [...config.sandbox.allowedWritePaths, tmp],
-    ),
+  restoreFiles = _setSandboxForTest(
+    createSandbox({
+      readPaths: [...config.sandbox.allowedReadPaths, tmp],
+      writePaths: [...config.sandbox.allowedWritePaths, tmp],
+      blockedWritePaths: [],
+    }),
   );
   service = createPromptService(tmp);
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { _setBrowserPoolForTest, type BrowserPool, type BrowserSession } from "../infra/browser.ts";
 import { createBrowserFeedbackTracker } from "../infra/browser-feedback.ts";
 import { createBrowserInterventions } from "../infra/browser-interventions.ts";
-import { _setFilesForTest, type FileProvider } from "../infra/file.ts";
+import { _setSandboxForTest, type FileProvider } from "../infra/sandbox.ts";
 import browserTool from "./browser.ts";
 
 // ── Mock helpers ────────────────────────────────────────────────
@@ -101,7 +101,7 @@ describe("browser tool", () => {
     const page = createMockPage();
     const session = createMockSession(page);
     restorePool = _setBrowserPoolForTest(createMockPool(session));
-    restoreFiles = _setFilesForTest(createMockFiles());
+    restoreFiles = _setSandboxForTest(createMockFiles());
   });
 
   afterEach(() => {
@@ -167,7 +167,7 @@ describe("browser tool", () => {
     it("saves artifacts only to pagesDir (not session output)", async () => {
       const mockFiles = createMockFiles();
       restoreFiles();
-      restoreFiles = _setFilesForTest(mockFiles);
+      restoreFiles = _setSandboxForTest(mockFiles);
 
       await browserTool.handler({
         action: "navigate",
@@ -190,7 +190,7 @@ describe("browser tool", () => {
       restorePool();
       restoreFiles();
       restorePool = _setBrowserPoolForTest(createMockPool(session));
-      restoreFiles = _setFilesForTest(mockFiles);
+      restoreFiles = _setSandboxForTest(mockFiles);
 
       await browserTool.handler({
         action: "navigate",
@@ -208,7 +208,7 @@ describe("browser tool", () => {
     it("includes instruction file pointer when available", async () => {
       const mockFiles = createMockFiles();
       restoreFiles();
-      restoreFiles = _setFilesForTest(mockFiles);
+      restoreFiles = _setSandboxForTest(mockFiles);
       const knowledgePath = `${process.cwd()}/workspace/knowledge/browser/example.com.md`;
       (mockFiles as any)._storage.set(knowledgePath, "# Instructions for example.com");
 
@@ -415,7 +415,7 @@ describe("browser tool", () => {
     it("saves screenshot file to session output", async () => {
       const mockFiles = createMockFiles();
       restoreFiles();
-      restoreFiles = _setFilesForTest(mockFiles);
+      restoreFiles = _setSandboxForTest(mockFiles);
 
       await browserTool.handler({
         action: "take_screenshot",

@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { createSessionService, sessionService } from "./session.ts";
 import { inferCategory } from "../utils/media-types.ts";
-import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
+import { createSandbox, _setSandboxForTest } from "../infra/sandbox.ts";
 import { config } from "../config/index.ts";
 import { runWithContext } from "./context.ts";
 import type { AgentState } from "../types/agent-state.ts";
@@ -157,11 +157,12 @@ describe("outputPath", () => {
 
   beforeAll(async () => {
     tmp = await mkdtemp(join(tmpdir(), "output-test-"));
-    const customFiles = createBunFileService(
-      [...config.sandbox.allowedReadPaths, tmp],
-      [...config.sandbox.allowedWritePaths, tmp],
-    );
-    restoreFiles = _setFilesForTest(customFiles);
+    const customFiles = createSandbox({
+      readPaths: [...config.sandbox.allowedReadPaths, tmp],
+      writePaths: [...config.sandbox.allowedWritePaths, tmp],
+      blockedWritePaths: [],
+    });
+    restoreFiles = _setSandboxForTest(customFiles);
     svc = createSessionService(customFiles, tmp);
   });
 
@@ -236,11 +237,12 @@ describe("toSessionPath", () => {
 
   beforeAll(async () => {
     tmp = await mkdtemp(join(tmpdir(), "session-path-test-"));
-    const customFiles = createBunFileService(
-      [...config.sandbox.allowedReadPaths, tmp],
-      [...config.sandbox.allowedWritePaths, tmp],
-    );
-    restoreFiles = _setFilesForTest(customFiles);
+    const customFiles = createSandbox({
+      readPaths: [...config.sandbox.allowedReadPaths, tmp],
+      writePaths: [...config.sandbox.allowedWritePaths, tmp],
+      blockedWritePaths: [],
+    });
+    restoreFiles = _setSandboxForTest(customFiles);
     svc = createSessionService(customFiles, tmp);
   });
 
@@ -275,11 +277,12 @@ describe("resolveSessionPath", () => {
 
   beforeAll(async () => {
     tmp = await mkdtemp(join(tmpdir(), "resolve-path-test-"));
-    const customFiles = createBunFileService(
-      [...config.sandbox.allowedReadPaths, tmp],
-      [...config.sandbox.allowedWritePaths, tmp],
-    );
-    restoreFiles = _setFilesForTest(customFiles);
+    const customFiles = createSandbox({
+      readPaths: [...config.sandbox.allowedReadPaths, tmp],
+      writePaths: [...config.sandbox.allowedWritePaths, tmp],
+      blockedWritePaths: [],
+    });
+    restoreFiles = _setSandboxForTest(customFiles);
     svc = createSessionService(customFiles, tmp);
   });
 

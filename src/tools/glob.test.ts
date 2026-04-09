@@ -3,7 +3,7 @@ import { join } from "path";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import type { ToolResult } from "../types/tool-result.ts";
-import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
+import { createSandbox, _setSandboxForTest } from "../infra/sandbox.ts";
 import glob from "./glob.ts";
 
 let tmpDir: string;
@@ -17,8 +17,8 @@ function getText(result: ToolResult): string {
 
 beforeAll(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "glob_test_"));
-  const svc = createBunFileService([tmpDir], [tmpDir]);
-  restore = _setFilesForTest(svc);
+  const svc = createSandbox({ readPaths: [tmpDir], writePaths: [tmpDir], blockedWritePaths: [] });
+  restore = _setSandboxForTest(svc);
 
   // Create test files
   await Bun.write(join(tmpDir, "a.txt"), "a");

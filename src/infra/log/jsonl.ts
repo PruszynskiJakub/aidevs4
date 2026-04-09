@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { appendFile, mkdir } from "node:fs/promises";
+import * as fs from "../fs.ts";
 import type { BusEvent, WildcardListener } from "../../types/events.ts";
 import type { JsonlWriter } from "../../types/logger.ts";
 import { config } from "../../config/index.ts";
@@ -48,10 +48,10 @@ export function createJsonlWriter(
     chain = chain
       .then(async () => {
         if (!ensuredDirs.has(dir)) {
-          await mkdir(dir, { recursive: true });
+          await fs.fsMkdir(dir);
           ensuredDirs.add(dir);
         }
-        await appendFile(filePath, line + "\n", "utf-8");
+        await fs.append(filePath, line + "\n");
       })
       .catch((err) => {
         console.error("[jsonl] write error:", err);

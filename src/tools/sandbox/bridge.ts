@@ -1,5 +1,5 @@
 import { resolve, isAbsolute } from "path";
-import { createBunFileService } from "../../infra/file.ts";
+import { createSandbox } from "../../infra/sandbox.ts";
 
 interface BridgeConfig {
   readPaths: string[];
@@ -12,7 +12,7 @@ export type { BridgeHandle } from "../../types/sandbox.ts";
 import type { BridgeHandle } from "../../types/sandbox.ts";
 
 export async function startBridge(cfg: BridgeConfig): Promise<BridgeHandle> {
-  const fs = createBunFileService(cfg.readPaths, cfg.writePaths);
+  const fs = createSandbox({ readPaths: cfg.readPaths, writePaths: cfg.writePaths, blockedWritePaths: [] });
   const baseCwd = cfg.cwd;
 
   const server = Bun.serve({

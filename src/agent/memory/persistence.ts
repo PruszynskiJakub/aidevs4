@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { MemoryState } from "../../types/memory.ts";
-import { files } from "../../infra/file.ts";
+import { sandbox as files } from "../../infra/sandbox.ts";
 import { config } from "../../config/index.ts";
 import { safeParse } from "../../utils/parse.ts";
 
