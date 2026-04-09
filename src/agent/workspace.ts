@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { config } from "../config/index.ts";
+import { files } from "../infra/file.ts";
 
 const W = config.paths.workspaceDir;
 
@@ -25,12 +26,13 @@ export const workspace = {
   },
 } as const;
 
+// ── Static navigation instructions ──────────────────────────────
+
 /**
  * Universal workspace navigation instructions injected into every agent's system prompt.
  * Teaches the LLM how to use the workspace filesystem efficiently.
  */
-export const WORKSPACE_NAV_INSTRUCTIONS = `
-<workspace-navigation>
+const NAV_INSTRUCTIONS = `
 ## Workspace layout
 
 You have a persistent workspace at \`workspace/\`. All paths you pass to read_file, write_file, edit_file, glob, and grep are **absolute** (the file service resolves them from project root).
@@ -65,8 +67,8 @@ workspace/
 
 The knowledge base is your long-term memory across sessions. Use it to persist facts, procedures, and reference data that will be valuable in future tasks.
 
-1. **Always read \`workspace/knowledge/_index.md\` first** when looking for stored knowledge. It lists every entry with a one-line description.
-2. **Update the index** when you add, rename, or remove a knowledge file.
+1. **Always check the workspace index below** before using tools to search for knowledge. It lists every entry already available to you.
+2. **Update the index** (\`workspace/knowledge/_index.md\`) when you add, rename, or remove a knowledge file.
 3. **Place files in the right category:**
    - \`procedures/\` — repeatable processes ("how to solve task X")
    - \`reference/\` — lookup data, API specs, inventories
@@ -91,5 +93,66 @@ The knowledge base is your long-term memory across sessions. Use it to persist f
 4. **Write to your session output** for generated artifacts. Use the session output path provided by the system.
 5. **Write to knowledge/** for information that should persist across sessions.
 6. **Write to scratch/** for throwaway work within the current task.
-</workspace-navigation>
 `.trim();
+
+// ── Dynamic workspace context (read from disk at runtime) ───────
+
+async function readFileSafe(path: string): Promise<string | null> {
+  try {
+    return await files.readText(path);
+  } catch {
+    return null;
+  }
+}
+
+async function loadWorkflows(): Promise<string | null> {
+  const dir = workspace.workflows;
+  try {
+    const entries = await Array.fromAsync(
+      new Bun.Glob("**/*.md").scan({ cwd: dir }),
+    );
+    if (entries.length === 0) return null;
+
+    const parts: string[] = [];
+    for (const entry of entries.sort()) {
+      const content = await readFileSafe(join(dir, entry));
+      if (content?.trim()) {
+        parts.push(`### ${entry}\n\n${content.trim()}`);
+      }
+    }
+    return parts.length > 0 ? parts.join("\n\n---\n\n") : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build the full workspace context block injected into the system prompt.
+ * Reads live content from disk:
+ * - knowledge/_index.md  → so the agent knows what knowledge is available
+ * - workspace/workflows/  → loaded workflow definitions
+ *
+ * Called once per agent run (not per turn).
+ */
+export async function buildWorkspaceContext(): Promise<string> {
+  const [knowledgeIndex, workflows] = await Promise.all([
+    readFileSafe(workspace.knowledge.index),
+    loadWorkflows(),
+  ]);
+
+  const sections: string[] = [`<workspace-navigation>`, NAV_INSTRUCTIONS];
+
+  if (knowledgeIndex?.trim()) {
+    sections.push(
+      `## Workspace Index\n\n${knowledgeIndex.trim()}`,
+    );
+  }
+
+  if (workflows) {
+    sections.push(`## Available Workflows\n\n${workflows}`);
+  }
+
+  sections.push(`</workspace-navigation>`);
+
+  return sections.join("\n\n");
+}
