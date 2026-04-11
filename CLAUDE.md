@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+IMPORTANT: Update this file with every major change to this module. When implementing new features, modifying architecture, or changing key interfaces, update the relevant sections to keep guidance accurate for future agents.
+
 ## Project Overview
 
 AI Devs 4 course project — an evolving agentic system for solving tasks from
