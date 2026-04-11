@@ -70,7 +70,7 @@ function resolveTools(agentName: string, toolNames: string[]): LLMTool[] {
   return resolved;
 }
 
-export function createAgentsService() {
+export function makeAgentsService() {
   let cachedAgents: AgentSummary[] | null = null;
 
   return {
@@ -118,4 +118,4 @@ export function createAgentsService() {
   };
 }
 
-export const agentsService = createAgentsService();
+export const agentsService = makeAgentsService();

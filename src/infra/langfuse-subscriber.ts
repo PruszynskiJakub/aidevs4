@@ -86,14 +86,14 @@ interface SubscriberState {
   ) => void;
 }
 
-function withAgentCtx<T>(state: SubscriberState, agentId: string, fn: () => T): T | undefined {
-  const entry = state.agentMap.get(agentId);
+function withAgentCtx<T>(state: SubscriberState, runId: string, fn: () => T): T | undefined {
+  const entry = state.agentMap.get(runId);
   if (!entry) return undefined;
   return otelContext.with(entry.ctx, fn);
 }
 
-function parentFor(state: SubscriberState, agentId: string): Observation | undefined {
-  return state.turnMap.get(agentId) ?? state.agentMap.get(agentId)?.obs;
+function parentFor(state: SubscriberState, runId: string): Observation | undefined {
+  return state.turnMap.get(runId) ?? state.agentMap.get(runId)?.obs;
 }
 
 function clearAll(state: SubscriberState): void {
@@ -112,9 +112,9 @@ function attachSessionHandlers(bus: EventBus, state: SubscriberState): (() => vo
   const unsubs: (() => void)[] = [];
 
   unsubs.push(
-    bus.on("session.opened", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
+    bus.on("run.started", (e) => {
+      const runId = e.runId;
+      if (!runId) return;
 
       const depth = e.depth ?? 0;
       const input = e.data.userInput;
@@ -125,12 +125,12 @@ function attachSessionHandlers(bus: EventBus, state: SubscriberState): (() => vo
           () => {
             const obs = state.startObservation(e.data.assistant, { input }, { asType: "agent" });
             obs.setTraceIO({ input });
-            state.agentMap.set(agentId, { obs, ctx: otelContext.active() });
+            state.agentMap.set(runId, { obs, ctx: otelContext.active() });
             flushModeration(state, obs);
           },
         );
       } else {
-        const parentId = e.parentAgentId;
+        const parentId = e.parentRunId;
         if (!parentId) return;
         withAgentCtx(state, parentId, () => {
           const parentObs = state.agentMap.get(parentId)!.obs;
@@ -139,25 +139,25 @@ function attachSessionHandlers(bus: EventBus, state: SubscriberState): (() => vo
             { input },
             { asType: "agent" },
           );
-          state.agentMap.set(agentId, { obs, ctx: otelContext.active() });
+          state.agentMap.set(runId, { obs, ctx: otelContext.active() });
         });
       }
     }),
   );
 
   unsubs.push(
-    bus.on("session.completed", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      endAgentObs(state, agentId, e.data.reason, e.data.iterations, e.data.tokens);
+    bus.on("run.completed", (e) => {
+      const runId = e.runId;
+      if (!runId) return;
+      endAgentObs(state, runId, e.data.reason, e.data.iterations, e.data.tokens);
     }),
   );
 
   unsubs.push(
-    bus.on("session.failed", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      endAgentObs(state, agentId, "error", e.data.iterations, e.data.tokens, e.data.error);
+    bus.on("run.failed", (e) => {
+      const runId = e.runId;
+      if (!runId) return;
+      endAgentObs(state, runId, "error", e.data.iterations, e.data.tokens, e.data.error);
     }),
   );
 
@@ -168,38 +168,38 @@ function attachTurnHandlers(bus: EventBus, state: SubscriberState): (() => void)
   const unsubs: (() => void)[] = [];
 
   unsubs.push(
-    bus.on("turn.started", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
+    bus.on("cycle.started", (e) => {
+      const runId = e.runId;
+      if (!runId) return;
       const now = Date.now();
-      withAgentCtx(state, agentId, () => {
-        const agentObs = state.agentMap.get(agentId)!.obs;
+      withAgentCtx(state, runId, () => {
+        const agentObs = state.agentMap.get(runId)!.obs;
         const turn = agentObs.startObservation(
-          `turn-${e.data.iteration}`,
+          `cycle-${e.data.iteration}`,
           {
             input: { iteration: e.data.iteration, messageCount: e.data.messageCount },
             startTime: toDate(now),
           },
         );
-        state.turnMap.set(agentId, turn);
-        state.turnStartMap.set(agentId, now);
+        state.turnMap.set(runId, turn);
+        state.turnStartMap.set(runId, now);
       });
     }),
   );
 
   unsubs.push(
-    bus.on("turn.completed", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      const turn = state.turnMap.get(agentId);
+    bus.on("cycle.completed", (e) => {
+      const runId = e.runId;
+      if (!runId) return;
+      const turn = state.turnMap.get(runId);
       if (!turn) return;
       turn.update({
         output: { outcome: e.data.outcome, durationMs: e.data.durationMs },
         endTime: toDate(Date.now()),
       });
       turn.end();
-      state.turnMap.delete(agentId);
-      state.turnStartMap.delete(agentId);
+      state.turnMap.delete(runId);
+      state.turnStartMap.delete(runId);
     }),
   );
 
@@ -209,10 +209,10 @@ function attachTurnHandlers(bus: EventBus, state: SubscriberState): (() => void)
 function attachGenerationHandlers(bus: EventBus, state: SubscriberState): (() => void)[] {
   return [
     bus.on("generation.completed", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      withAgentCtx(state, agentId, () => {
-        const parent = parentFor(state, agentId);
+      const runId = e.runId;
+      if (!runId) return;
+      withAgentCtx(state, runId, () => {
+        const parent = parentFor(state, runId);
         if (!parent) return;
 
         const output = e.data.output;
@@ -239,10 +239,10 @@ function attachToolHandlers(bus: EventBus, state: SubscriberState): (() => void)
 
   unsubs.push(
     bus.on("tool.called", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      withAgentCtx(state, agentId, () => {
-        const parent = parentFor(state, agentId);
+      const runId = e.runId;
+      if (!runId) return;
+      withAgentCtx(state, runId, () => {
+        const parent = parentFor(state, runId);
         if (!parent) return;
         const toolObs = parent.startObservation(
           e.data.name,
@@ -285,13 +285,13 @@ function attachToolHandlers(bus: EventBus, state: SubscriberState): (() => void)
 function attachAgentAnswerHandlers(bus: EventBus, state: SubscriberState): (() => void)[] {
   return [
     bus.on("agent.answered", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      const entry = state.agentMap.get(agentId);
+      const runId = e.runId;
+      if (!runId) return;
+      const entry = state.agentMap.get(runId);
       if (!entry) return;
 
       const answerText = truncate(e.data.text ?? "", TRUNCATE_ANSWER);
-      state.agentAnswerMap.set(agentId, answerText);
+      state.agentAnswerMap.set(runId, answerText);
 
       otelContext.with(entry.ctx, () => {
         entry.obs.update({ output: answerText });
@@ -309,26 +309,26 @@ function attachMemoryHandlers(bus: EventBus, state: SubscriberState): (() => voi
   // observation lifecycle
   unsubs.push(
     bus.on("memory.observation.started", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      withAgentCtx(state, agentId, () => {
-        const parent = parentFor(state, agentId);
+      const runId = e.runId;
+      if (!runId) return;
+      withAgentCtx(state, runId, () => {
+        const parent = parentFor(state, runId);
         if (!parent) return;
         const span = parent.startObservation("memory-observation", {
           input: { tokensBefore: e.data.tokensBefore },
           startTime: toDate(Date.now()),
         });
-        state.memoryMap.set(`${agentId}:observation`, span);
+        state.memoryMap.set(`${runId}:observation`, span);
       });
     }),
   );
 
   unsubs.push(
     bus.on("memory.observation.completed", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      withAgentCtx(state, agentId, () => {
-        const span = state.memoryMap.get(`${agentId}:observation`);
+      const runId = e.runId;
+      if (!runId) return;
+      withAgentCtx(state, runId, () => {
+        const span = state.memoryMap.get(`${runId}:observation`);
         if (!span) return;
         nestGeneration(span, e.data.generation);
         span.update({
@@ -336,46 +336,46 @@ function attachMemoryHandlers(bus: EventBus, state: SubscriberState): (() => voi
           endTime: toDate(Date.now()),
         });
         span.end();
-        state.memoryMap.delete(`${agentId}:observation`);
+        state.memoryMap.delete(`${runId}:observation`);
       });
     }),
   );
 
   unsubs.push(
     bus.on("memory.observation.failed", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      const span = state.memoryMap.get(`${agentId}:observation`);
+      const runId = e.runId;
+      if (!runId) return;
+      const span = state.memoryMap.get(`${runId}:observation`);
       if (!span) return;
       span.update({ level: "ERROR", statusMessage: e.data.error });
       span.end();
-      state.memoryMap.delete(`${agentId}:observation`);
+      state.memoryMap.delete(`${runId}:observation`);
     }),
   );
 
   // reflection lifecycle
   unsubs.push(
     bus.on("memory.reflection.started", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      withAgentCtx(state, agentId, () => {
-        const parent = parentFor(state, agentId);
+      const runId = e.runId;
+      if (!runId) return;
+      withAgentCtx(state, runId, () => {
+        const parent = parentFor(state, runId);
         if (!parent) return;
         const span = parent.startObservation(`memory-reflection-L${e.data.level}`, {
           input: { level: e.data.level, tokensBefore: e.data.tokensBefore },
           startTime: toDate(Date.now()),
         });
-        state.memoryMap.set(`${agentId}:reflection`, span);
+        state.memoryMap.set(`${runId}:reflection`, span);
       });
     }),
   );
 
   unsubs.push(
     bus.on("memory.reflection.completed", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      withAgentCtx(state, agentId, () => {
-        const span = state.memoryMap.get(`${agentId}:reflection`);
+      const runId = e.runId;
+      if (!runId) return;
+      withAgentCtx(state, runId, () => {
+        const span = state.memoryMap.get(`${runId}:reflection`);
         if (!span) return;
         for (const gen of e.data.generations) {
           nestGeneration(span, gen);
@@ -385,20 +385,20 @@ function attachMemoryHandlers(bus: EventBus, state: SubscriberState): (() => voi
           endTime: toDate(Date.now()),
         });
         span.end();
-        state.memoryMap.delete(`${agentId}:reflection`);
+        state.memoryMap.delete(`${runId}:reflection`);
       });
     }),
   );
 
   unsubs.push(
     bus.on("memory.reflection.failed", (e) => {
-      const agentId = e.agentId;
-      if (!agentId) return;
-      const span = state.memoryMap.get(`${agentId}:reflection`);
+      const runId = e.runId;
+      if (!runId) return;
+      const span = state.memoryMap.get(`${runId}:reflection`);
       if (!span) return;
       span.update({ level: "ERROR", statusMessage: e.data.error });
       span.end();
-      state.memoryMap.delete(`${agentId}:reflection`);
+      state.memoryMap.delete(`${runId}:reflection`);
     }),
   );
 
@@ -446,23 +446,23 @@ function flushModeration(state: SubscriberState, agentObs: Observation): void {
 
 function endAgentObs(
   state: SubscriberState,
-  agentId: string,
+  runId: string,
   reason: string,
   iterations: number,
   tokens: { promptTokens: number; completionTokens: number },
   errorMsg?: string,
 ): void {
-  const entry = state.agentMap.get(agentId);
+  const entry = state.agentMap.get(runId);
   if (!entry) return;
 
-  const turn = state.turnMap.get(agentId);
+  const turn = state.turnMap.get(runId);
   if (turn) {
     turn.update({ output: { outcome: reason } });
     turn.end();
-    state.turnMap.delete(agentId);
+    state.turnMap.delete(runId);
   }
 
-  const answer = state.agentAnswerMap.get(agentId);
+  const answer = state.agentAnswerMap.get(runId);
 
   otelContext.with(entry.ctx, () => {
     if (errorMsg) {
@@ -480,10 +480,10 @@ function endAgentObs(
     entry.obs.end();
   });
 
-  state.agentMap.delete(agentId);
-  state.agentAnswerMap.delete(agentId);
-  state.memoryMap.delete(`${agentId}:observation`);
-  state.memoryMap.delete(`${agentId}:reflection`);
+  state.agentMap.delete(runId);
+  state.agentAnswerMap.delete(runId);
+  state.memoryMap.delete(`${runId}:observation`);
+  state.memoryMap.delete(`${runId}:reflection`);
 }
 
 // ── Main entry point ──────────────────────────────────────────

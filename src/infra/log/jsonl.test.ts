@@ -27,8 +27,9 @@ describe("JsonlWriter", () => {
   it("writes one JSON line per event", async () => {
     const { bus, writer } = await setup();
 
-    bus.emit("session.opened", { assistant: "default", model: "gpt-4.1" });
-    bus.emit("turn.started", {
+    bus.emit("run.started", { assistant: "default", model: "gpt-4.1" });
+    bus.emit("cycle.started", {
+      cycleIndex: 0,
       iteration: 0,
       maxIterations: 40,
       model: "gpt-4.1",
@@ -45,13 +46,13 @@ describe("JsonlWriter", () => {
     expect(lines).toHaveLength(2);
 
     const first = JSON.parse(lines[0]);
-    expect(first.type).toBe("session.opened");
+    expect(first.type).toBe("run.started");
     expect(first.data.assistant).toBe("default");
     expect(first.id).toBeString();
     expect(first.ts).toBeNumber();
 
     const second = JSON.parse(lines[1]);
-    expect(second.type).toBe("turn.started");
+    expect(second.type).toBe("cycle.started");
     expect(second.data.iteration).toBe(0);
 
     writer.dispose();
@@ -61,7 +62,8 @@ describe("JsonlWriter", () => {
     const { bus, writer } = await setup();
 
     for (let i = 0; i < 10; i++) {
-      bus.emit("turn.started", {
+      bus.emit("cycle.started", {
+        cycleIndex: i,
         iteration: i,
         maxIterations: 40,
         model: "m",
@@ -89,7 +91,7 @@ describe("JsonlWriter", () => {
   it("omits sid when sessionId is undefined", async () => {
     const { bus, writer } = await setup();
 
-    bus.emit("session.opened", { assistant: "a", model: "m" });
+    bus.emit("run.started", { assistant: "a", model: "m" });
     await writer.flush();
 
     const content = await readFile(

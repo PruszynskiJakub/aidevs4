@@ -1,26 +1,35 @@
-export type AgentStatus = "pending" | "running" | "completed" | "failed";
+export type RunStatus =
+  | "pending"
+  | "running"
+  | "waiting"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "exhausted";
 export type ItemType = "message" | "function_call" | "function_call_output";
 
 export interface DbSession {
   id: string;
-  rootAgentId: string | null;
+  rootRunId: string | null;
   assistant: string | null;
   title: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface DbAgent {
+export interface DbRun {
   id: string;
   sessionId: string;
   parentId: string | null;
   sourceCallId: string | null;
   template: string;
   task: string;
-  status: AgentStatus;
+  status: RunStatus;
   result: string | null;
   error: string | null;
-  turnCount: number;
+  waitingOn: string | null;
+  exitKind: string | null;
+  cycleCount: number;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
@@ -28,7 +37,7 @@ export interface DbAgent {
 
 export interface DbItem {
   id: string;
-  agentId: string;
+  runId: string;
   sequence: number;
   type: ItemType;
   role: string | null;
@@ -40,7 +49,7 @@ export interface DbItem {
   createdAt: string;
 }
 
-export interface CreateAgentOpts {
+export interface CreateRunOpts {
   id: string;
   sessionId: string;
   parentId?: string;
@@ -76,7 +85,7 @@ export interface CreateJobOpts {
 
 export interface NewItem {
   id: string;
-  agentId: string;
+  runId: string;
   sequence: number;
   type: ItemType;
   role?: string;

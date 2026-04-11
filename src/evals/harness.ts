@@ -1,4 +1,4 @@
-import { executeTurn } from "../agent/orchestrator.ts";
+import { executeRun } from "../agent/orchestrator.ts";
 import { bus } from "../infra/events.ts";
 import type { BusEvent } from "../types/events.ts";
 import type { AgentOutput } from "./types.ts";
@@ -11,35 +11,35 @@ export async function runEvalCase(message: string): Promise<AgentOutput> {
   const toolNames: string[] = [];
   let iterations = 0;
   let totalTokens = { input: 0, output: 0, total: 0 };
-  let capturedAgentId: string | undefined;
+  let capturedRunId: string | undefined;
 
-  // We capture the agentId from the first tool or generation event,
-  // then filter subsequent events to that agent only.
+  // We capture the runId from the first tool or generation event,
+  // then filter subsequent events to that run only.
   const unsubs: Array<() => void> = [];
 
-  const matchAgent = (event: BusEvent): boolean => {
-    if (!capturedAgentId) {
-      capturedAgentId = event.agentId;
+  const matchRun = (event: BusEvent): boolean => {
+    if (!capturedRunId) {
+      capturedRunId = event.runId;
       return true;
     }
-    return event.agentId === capturedAgentId;
+    return event.runId === capturedRunId;
   };
 
   unsubs.push(
     bus.on("tool.succeeded", (event) => {
-      if (matchAgent(event)) toolNames.push(event.data.name);
+      if (matchRun(event)) toolNames.push(event.data.name);
     }),
   );
 
   unsubs.push(
     bus.on("tool.failed", (event) => {
-      if (matchAgent(event)) toolNames.push(event.data.name);
+      if (matchRun(event)) toolNames.push(event.data.name);
     }),
   );
 
   unsubs.push(
     bus.on("generation.completed", (event) => {
-      if (matchAgent(event)) {
+      if (matchRun(event)) {
         totalTokens.input += event.data.usage.input;
         totalTokens.output += event.data.usage.output;
         totalTokens.total += event.data.usage.total;
@@ -48,15 +48,16 @@ export async function runEvalCase(message: string): Promise<AgentOutput> {
   );
 
   unsubs.push(
-    bus.on("turn.completed", (event) => {
-      if (matchAgent(event)) iterations = event.data.iteration;
+    bus.on("cycle.completed", (event) => {
+      if (matchRun(event)) iterations = event.data.iteration;
     }),
   );
 
   const start = performance.now();
 
   try {
-    const { answer } = await executeTurn({ prompt: message });
+    const { exit } = await executeRun({ prompt: message });
+    const answer = exit.kind === "completed" ? exit.result : "";
 
     return {
       response: answer,

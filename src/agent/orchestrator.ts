@@ -7,27 +7,29 @@ import { bus } from "../infra/events.ts";
 import { randomUUID } from "node:crypto";
 import { randomSessionId } from "../utils/id.ts";
 import type { LLMMessage } from "../types/llm.ts";
-import type { AgentState } from "../types/agent-state.ts";
+import type { RunState } from "../types/run-state.ts";
 import type { Session } from "../types/session.ts";
+import type { RunExit } from "./run-exit.ts";
 import { emptyMemoryState } from "../types/memory.ts";
 import { loadState } from "./memory/persistence.ts";
 import * as dbOps from "../infra/db/index.ts";
 
-interface ExecuteTurnOpts {
+interface ExecuteRunOpts {
   sessionId?: string;
   prompt: string;
   assistant?: string;
   model?: string;
-  parentAgentId?: string;
-  parentRootAgentId?: string;
+  parentRunId?: string;
+  parentRootRunId?: string;
   parentTraceId?: string;
   parentDepth?: number;
   sourceCallId?: string;
 }
 
-interface ExecuteTurnResult {
-  answer: string;
+export interface ExecuteRunResult {
+  exit: RunExit;
   sessionId: string;
+  runId: string;
 }
 
 function pickAssistantName(
@@ -46,7 +48,7 @@ function pickAssistantName(
   return requestedAssistant ?? "default";
 }
 
-export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnResult> {
+export async function executeRun(opts: ExecuteRunOpts): Promise<ExecuteRunResult> {
   const sessionId = opts.sessionId ?? randomSessionId();
   const session = sessionService.getOrCreate(sessionId);
   const assistantName = pickAssistantName(session, sessionId, opts.assistant);
@@ -77,41 +79,41 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
     sessionService.setAssistant(sessionId, assistantName);
   }
 
-  const agentId = randomUUID();
+  const runId = randomUUID();
   const traceId = opts.parentTraceId ?? randomUUID();
-  const depth = opts.parentAgentId ? (opts.parentDepth ?? 0) + 1 : 0;
+  const depth = opts.parentRunId ? (opts.parentDepth ?? 0) + 1 : 0;
 
-  // Persist agent row
-  dbOps.createAgent({
-    id: agentId,
+  // Persist run row
+  dbOps.createRun({
+    id: runId,
     sessionId,
-    parentId: opts.parentAgentId,
+    parentId: opts.parentRunId,
     sourceCallId: opts.sourceCallId,
     template: assistantName,
     task: opts.prompt,
   });
 
-  // Set root agent for the session if this is the root agent
-  if (!opts.parentAgentId) {
-    dbOps.setRootAgent(sessionId, agentId);
+  // Set root run for the session if this is the root run
+  if (!opts.parentRunId) {
+    dbOps.setRootRun(sessionId, runId);
   }
 
-  dbOps.updateAgentStatus(agentId, "running");
+  dbOps.updateRunStatus(runId, { status: "running" });
 
   // Append user message to DB
-  sessionService.appendMessage(sessionId, agentId, { role: "user", content: opts.prompt });
+  sessionService.appendMessage(sessionId, runId, { role: "user", content: opts.prompt });
 
-  // Load full conversation for this agent
-  const messages: LLMMessage[] = sessionService.getMessages(sessionId, agentId);
+  // Load full conversation for this run
+  const messages: LLMMessage[] = sessionService.getMessages(sessionId, runId);
 
   const persisted = await loadState(sessionId);
 
-  const state: AgentState = {
+  const state: RunState = {
     sessionId,
     agentName: assistantName,
-    agentId,
-    rootAgentId: opts.parentRootAgentId ?? agentId,
-    parentAgentId: opts.parentAgentId,
+    runId,
+    rootRunId: opts.parentRootRunId ?? runId,
+    parentRunId: opts.parentRunId,
     traceId,
     depth,
     messages,
@@ -123,18 +125,74 @@ export async function executeTurn(opts: ExecuteTurnOpts): Promise<ExecuteTurnRes
     memory: persisted ?? emptyMemoryState(),
   };
 
+  return runAndPersist(state);
+}
+
+/**
+ * Run the loop and convert its result into a persisted `RunExit`.
+ * Shared by `executeRun` and `resumeRun` so both entry points apply
+ * the same terminal-exit persistence rules.
+ */
+export async function runAndPersist(state: RunState): Promise<ExecuteRunResult> {
+  const runId = state.runId!;
+  const sessionId = state.sessionId;
+
   try {
-    const result = await runAgent(state);
+    const { exit, messages } = await runAgent(state);
 
-    // Persist the turn messages produced by the agent loop
-    sessionService.appendTurn(sessionId, agentId, result.messages);
+    // Persist any new messages produced by the loop
+    sessionService.appendRun(sessionId, runId, messages);
 
-    dbOps.updateAgentStatus(agentId, "completed", result.answer);
+    // Apply terminal/waiting persistence
+    switch (exit.kind) {
+      case "completed":
+        dbOps.updateRunStatus(runId, {
+          status: "completed",
+          result: exit.result,
+          exitKind: "completed",
+        });
+        break;
+      case "failed":
+        dbOps.updateRunStatus(runId, {
+          status: "failed",
+          error: exit.error.message,
+          exitKind: "failed",
+        });
+        break;
+      case "cancelled":
+        dbOps.updateRunStatus(runId, {
+          status: "cancelled",
+          error: exit.reason,
+          exitKind: "cancelled",
+        });
+        break;
+      case "exhausted":
+        dbOps.updateRunStatus(runId, {
+          status: "exhausted",
+          exitKind: "exhausted",
+        });
+        break;
+      case "waiting":
+        dbOps.updateRunStatus(runId, {
+          status: "waiting",
+          waitingOn: JSON.stringify(exit.waitingOn),
+        });
+        bus.emit("run.waiting", { waitingOn: exit.waitingOn });
+        break;
+    }
 
-    return { answer: result.answer, sessionId };
+    return { exit, sessionId, runId };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    dbOps.updateAgentStatus(agentId, "failed", undefined, errorMsg);
-    throw err;
+    dbOps.updateRunStatus(runId, {
+      status: "failed",
+      error: errorMsg,
+      exitKind: "failed",
+    });
+    const exit: RunExit = {
+      kind: "failed",
+      error: { message: errorMsg, cause: err },
+    };
+    return { exit, sessionId, runId };
   }
 }

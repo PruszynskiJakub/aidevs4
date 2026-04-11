@@ -30,11 +30,11 @@ describe("sessions", () => {
     expect(after > before).toBe(true);
   });
 
-  it("setRootAgent updates the session", () => {
+  it("setRootRun updates the session", () => {
     dbOps.createSession("s-root");
-    dbOps.setRootAgent("s-root", "agent-1");
+    dbOps.setRootRun("s-root", "run-1");
     const session = dbOps.getSession("s-root");
-    expect(session!.rootAgentId).toBe("agent-1");
+    expect(session!.rootRunId).toBe("run-1");
   });
 
   it("setAssistant updates the session", () => {
@@ -45,26 +45,26 @@ describe("sessions", () => {
   });
 });
 
-describe("agents", () => {
-  it("creates and retrieves an agent", () => {
+describe("runs", () => {
+  it("creates and retrieves a run", () => {
     dbOps.createSession("s1");
-    dbOps.createAgent({
-      id: "a1",
+    dbOps.createRun({
+      id: "r1",
       sessionId: "s1",
       template: "default",
       task: "test task",
     });
-    const agent = dbOps.getAgent("a1");
-    expect(agent).not.toBeNull();
-    expect(agent!.sessionId).toBe("s1");
-    expect(agent!.template).toBe("default");
-    expect(agent!.status).toBe("pending");
+    const run = dbOps.getRun("r1");
+    expect(run).not.toBeNull();
+    expect(run!.sessionId).toBe("s1");
+    expect(run!.template).toBe("default");
+    expect(run!.status).toBe("pending");
   });
 
   it("persists parent-child hierarchy", () => {
     dbOps.createSession("s-hier");
-    dbOps.createAgent({ id: "parent", sessionId: "s-hier", template: "default", task: "parent task" });
-    dbOps.createAgent({
+    dbOps.createRun({ id: "parent", sessionId: "s-hier", template: "default", task: "parent task" });
+    dbOps.createRun({
       id: "child",
       sessionId: "s-hier",
       parentId: "parent",
@@ -73,103 +73,115 @@ describe("agents", () => {
       task: "child task",
     });
 
-    const child = dbOps.getAgent("child")!;
+    const child = dbOps.getRun("child")!;
     expect(child.parentId).toBe("parent");
     expect(child.sourceCallId).toBe("call-123");
 
-    const agents = dbOps.listAgentsBySession("s-hier");
-    expect(agents).toHaveLength(2);
+    const runs = dbOps.listRunsBySession("s-hier");
+    expect(runs).toHaveLength(2);
   });
 
-  it("updateAgentStatus transitions correctly", () => {
+  it("updateRunStatus transitions correctly", () => {
     dbOps.createSession("s-status");
-    dbOps.createAgent({ id: "a-status", sessionId: "s-status", template: "default", task: "t" });
+    dbOps.createRun({ id: "r-status", sessionId: "s-status", template: "default", task: "t" });
 
-    dbOps.updateAgentStatus("a-status", "running");
-    expect(dbOps.getAgent("a-status")!.status).toBe("running");
-    expect(dbOps.getAgent("a-status")!.startedAt).toBeTruthy();
+    dbOps.updateRunStatus("r-status", { status: "running" });
+    expect(dbOps.getRun("r-status")!.status).toBe("running");
+    expect(dbOps.getRun("r-status")!.startedAt).toBeTruthy();
 
-    dbOps.updateAgentStatus("a-status", "completed", "done");
-    const completed = dbOps.getAgent("a-status")!;
+    dbOps.updateRunStatus("r-status", { status: "completed", result: "done", exitKind: "completed" });
+    const completed = dbOps.getRun("r-status")!;
     expect(completed.status).toBe("completed");
     expect(completed.result).toBe("done");
+    expect(completed.exitKind).toBe("completed");
     expect(completed.completedAt).toBeTruthy();
   });
 
-  it("updateAgentStatus records error on failure", () => {
+  it("updateRunStatus records error on failure", () => {
     dbOps.createSession("s-fail");
-    dbOps.createAgent({ id: "a-fail", sessionId: "s-fail", template: "default", task: "t" });
-    dbOps.updateAgentStatus("a-fail", "failed", undefined, "boom");
-    const agent = dbOps.getAgent("a-fail")!;
-    expect(agent.status).toBe("failed");
-    expect(agent.error).toBe("boom");
+    dbOps.createRun({ id: "r-fail", sessionId: "s-fail", template: "default", task: "t" });
+    dbOps.updateRunStatus("r-fail", { status: "failed", error: "boom", exitKind: "failed" });
+    const run = dbOps.getRun("r-fail")!;
+    expect(run.status).toBe("failed");
+    expect(run.error).toBe("boom");
+    expect(run.exitKind).toBe("failed");
   });
 
-  it("incrementTurnCount increments correctly", () => {
-    dbOps.createSession("s-turn");
-    dbOps.createAgent({ id: "a-turn", sessionId: "s-turn", template: "default", task: "t" });
-    expect(dbOps.getAgent("a-turn")!.turnCount).toBe(0);
-    dbOps.incrementTurnCount("a-turn");
-    dbOps.incrementTurnCount("a-turn");
-    expect(dbOps.getAgent("a-turn")!.turnCount).toBe(2);
+  it("updateRunStatus handles waiting state", () => {
+    dbOps.createSession("s-wait");
+    dbOps.createRun({ id: "r-wait", sessionId: "s-wait", template: "default", task: "t" });
+    const waiting = JSON.stringify({ kind: "user_approval", confirmationId: "c1", prompt: "ok?" });
+    dbOps.updateRunStatus("r-wait", { status: "waiting", waitingOn: waiting });
+    const run = dbOps.getRun("r-wait")!;
+    expect(run.status).toBe("waiting");
+    expect(run.waitingOn).toBe(waiting);
+  });
+
+  it("incrementCycleCount increments correctly", () => {
+    dbOps.createSession("s-cyc");
+    dbOps.createRun({ id: "r-cyc", sessionId: "s-cyc", template: "default", task: "t" });
+    expect(dbOps.getRun("r-cyc")!.cycleCount).toBe(0);
+    dbOps.incrementCycleCount("r-cyc");
+    dbOps.incrementCycleCount("r-cyc");
+    expect(dbOps.getRun("r-cyc")!.cycleCount).toBe(2);
   });
 });
 
 describe("items", () => {
   const sessionId = "s-items";
-  const agentId = "a-items";
+  const runId = "r-items";
 
   beforeEach(() => {
     dbOps.createSession(sessionId);
-    dbOps.createAgent({ id: agentId, sessionId, template: "default", task: "t" });
+    dbOps.createRun({ id: runId, sessionId, template: "default", task: "t" });
   });
 
-  it("nextSequence starts at 0 for new agent", () => {
-    expect(dbOps.nextSequence(agentId)).toBe(0);
+  it("nextSequence starts at 0 for new run", () => {
+    expect(dbOps.nextSequence(runId)).toBe(0);
   });
 
-  it("appendItem and listItemsByAgent", () => {
+  it("appendItem and listItemsByRun", () => {
     dbOps.appendItem({
       id: randomUUID(),
-      agentId,
+      runId,
       sequence: 0,
       type: "message",
       role: "user",
       content: "hello",
     });
-    const items = dbOps.listItemsByAgent(agentId);
+    const items = dbOps.listItemsByRun(runId);
     expect(items).toHaveLength(1);
     expect(items[0].content).toBe("hello");
   });
 
   it("appendItems wraps in transaction", () => {
     dbOps.appendItems([
-      { id: randomUUID(), agentId, sequence: 0, type: "message", role: "user", content: "a" },
-      { id: randomUUID(), agentId, sequence: 1, type: "message", role: "assistant", content: "b" },
-      { id: randomUUID(), agentId, sequence: 2, type: "function_call", callId: "c1", name: "tool1", arguments: "{}" },
+      { id: randomUUID(), runId, sequence: 0, type: "message", role: "user", content: "a" },
+      { id: randomUUID(), runId, sequence: 1, type: "message", role: "assistant", content: "b" },
+      { id: randomUUID(), runId, sequence: 2, type: "function_call", callId: "c1", name: "tool1", arguments: "{}" },
     ]);
-    expect(dbOps.listItemsByAgent(agentId)).toHaveLength(3);
+    expect(dbOps.listItemsByRun(runId)).toHaveLength(3);
   });
 
   it("sequence ordering is preserved", () => {
     for (let i = 0; i < 5; i++) {
       dbOps.appendItem({
         id: randomUUID(),
-        agentId,
+        runId,
         sequence: i,
         type: "message",
         role: "user",
         content: `msg-${i}`,
       });
     }
-    const items = dbOps.listItemsByAgent(agentId);
+    const items = dbOps.listItemsByRun(runId);
     expect(items.map((it) => it.sequence)).toEqual([0, 1, 2, 3, 4]);
   });
 
   it("getItemByCallId returns correct item", () => {
     dbOps.appendItem({
       id: randomUUID(),
-      agentId,
+      runId,
       sequence: 0,
       type: "function_call",
       callId: "call-xyz",
@@ -181,12 +193,12 @@ describe("items", () => {
     expect(item!.name).toBe("bash");
   });
 
-  it("listItemsBySession joins through agents", () => {
-    const agent2 = "a-items-2";
-    dbOps.createAgent({ id: agent2, sessionId, template: "default", task: "t2" });
+  it("listItemsBySession joins through runs", () => {
+    const run2 = "r-items-2";
+    dbOps.createRun({ id: run2, sessionId, template: "default", task: "t2" });
 
-    dbOps.appendItem({ id: randomUUID(), agentId, sequence: 0, type: "message", role: "user", content: "a" });
-    dbOps.appendItem({ id: randomUUID(), agentId: agent2, sequence: 0, type: "message", role: "user", content: "b" });
+    dbOps.appendItem({ id: randomUUID(), runId, sequence: 0, type: "message", role: "user", content: "a" });
+    dbOps.appendItem({ id: randomUUID(), runId: run2, sequence: 0, type: "message", role: "user", content: "b" });
 
     const all = dbOps.listItemsBySession(sessionId);
     expect(all).toHaveLength(2);
@@ -194,7 +206,7 @@ describe("items", () => {
 });
 
 describe("message ↔ item round-trip", () => {
-  const agentId = "a-roundtrip";
+  const runId = "r-roundtrip";
 
   it("round-trips simple messages", () => {
     const messages: LLMMessage[] = [
@@ -203,7 +215,7 @@ describe("message ↔ item round-trip", () => {
       { role: "user", content: "do something" },
     ];
 
-    const items = messagesToItems(agentId, messages, 0);
+    const items = messagesToItems(runId, messages, 0);
     const restored = itemsToMessages(items);
     expect(restored).toEqual(messages);
   });
@@ -223,7 +235,7 @@ describe("message ↔ item round-trip", () => {
       { role: "tool", toolCallId: "tc2", content: "/tmp contents" },
     ];
 
-    const items = messagesToItems(agentId, messages, 0);
+    const items = messagesToItems(runId, messages, 0);
     const restored = itemsToMessages(items);
     expect(restored).toEqual(messages);
   });
@@ -239,7 +251,7 @@ describe("message ↔ item round-trip", () => {
       },
     ];
 
-    const items = messagesToItems(agentId, messages, 0);
+    const items = messagesToItems(runId, messages, 0);
     const restored = itemsToMessages(items);
     expect(restored).toEqual(messages);
   });
@@ -250,7 +262,7 @@ describe("message ↔ item round-trip", () => {
       { role: "user", content: "hi" },
     ];
 
-    const items = messagesToItems(agentId, messages, 0);
+    const items = messagesToItems(runId, messages, 0);
     expect(items).toHaveLength(1);
     expect(items[0].role).toBe("user");
   });
@@ -260,7 +272,7 @@ describe("message ↔ item round-trip", () => {
       { role: "assistant", content: null },
     ];
 
-    const items = messagesToItems(agentId, messages, 0);
+    const items = messagesToItems(runId, messages, 0);
     const restored = itemsToMessages(items);
     expect(restored).toEqual(messages);
   });

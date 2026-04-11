@@ -21,27 +21,36 @@ export type MemoryGeneration = {
  * don't recognise an event type simply ignore it.
  */
 export interface EventMap {
-  // ── Session ──────────────────────────────────────────────
-  "session.opened": { assistant: string; model: string; userInput?: string };
-  "session.completed": {
+  // ── Run lifecycle ────────────────────────────────────────
+  "run.started": { assistant: string; model: string; userInput?: string };
+  "run.completed": {
     reason: "answer" | "max_iterations";
     iterations: number;
     tokens: TokenPair;
   };
-  "session.failed": {
+  "run.failed": {
     iterations: number;
     tokens: TokenPair;
     error: string;
   };
+  "run.waiting": {
+    waitingOn: { kind: string; [k: string]: unknown };
+  };
+  "run.resumed": {
+    runId: string;
+    resolution: { kind: string; [k: string]: unknown };
+  };
 
-  // ── Turn ─────────────────────────────────────────────────
-  "turn.started": {
+  // ── Cycle ────────────────────────────────────────────────
+  "cycle.started": {
+    cycleIndex: number;
     iteration: number;
     maxIterations: number;
     model: string;
     messageCount: number;
   };
-  "turn.completed": {
+  "cycle.completed": {
+    cycleIndex: number;
     iteration: number;
     outcome: "continue" | "answer" | "max_iterations";
     durationMs: number;
@@ -125,7 +134,7 @@ export interface EventMap {
     agentName: string;
     model: string;
     task: string;
-    parentAgentId?: string;
+    parentRunId?: string;
     depth: number;
   };
   "agent.completed": {
@@ -156,9 +165,9 @@ export interface BusEvent<T = unknown> {
   ts: number;
   sessionId?: string;
   correlationId?: string;
-  agentId?: string;
-  rootAgentId?: string;
-  parentAgentId?: string;
+  runId?: string;
+  rootRunId?: string;
+  parentRunId?: string;
   traceId?: string;
   depth?: number;
   data: T;

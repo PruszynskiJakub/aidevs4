@@ -1,242 +1,217 @@
 import type { App } from "@slack/bolt";
-import type {
-  ConfirmationProvider,
-  ConfirmationRequest,
-} from "./agent/confirmation.ts";
+import type { ConfirmationRequest } from "./agent/confirmation.ts";
 import type { Decision } from "./types/tool.ts";
-import { requireSessionId } from "./agent/context.ts";
+import type { ExecuteRunResult } from "./agent/orchestrator.ts";
+import type { LLMMessage, LLMAssistantMessage } from "./types/llm.ts";
+import { resumeRun } from "./agent/resume-run.ts";
+import { sessionService } from "./agent/session.ts";
 import { log } from "./infra/log/logger.ts";
+import { safeParse } from "./utils/parse.ts";
+import * as dbOps from "./infra/db/index.ts";
 
-const DEFAULT_TIMEOUT_MS = 120_000;
 const ARGS_DISPLAY_LIMIT = 200;
 
-interface ThreadContext {
-  channel: string;
-  threadTs: string;
+/**
+ * Button action_id encodes: runId, confirmationId, toolCallId, and decision.
+ * Slack action_ids have a 255-char limit; runId (uuid) + confirmationId (uuid)
+ * + toolCallId (~50) is well under that budget.
+ */
+const ACTION_PREFIX_APPROVE = "cnf_app:";
+const ACTION_PREFIX_DENY = "cnf_deny:";
+
+function encodeAction(
+  prefix: string,
+  runId: string,
+  confirmationId: string,
+  toolCallId: string,
+): string {
+  return `${prefix}${runId}|${confirmationId}|${toolCallId}`;
 }
 
-interface PendingBatch {
-  resolve: (decisions: Map<string, Decision>) => void;
-  timeout: ReturnType<typeof setTimeout>;
-  decisions: Map<string, Decision>;
-  toolCallIds: string[];
-  messageTs: string | null;
-  channel: string;
-  threadTs: string;
+function decodeAction(actionId: string): {
+  decision: Decision;
+  runId: string;
+  confirmationId: string;
+  toolCallId: string;
+} | null {
+  let decision: Decision;
+  let rest: string;
+  if (actionId.startsWith(ACTION_PREFIX_APPROVE)) {
+    decision = "approve";
+    rest = actionId.slice(ACTION_PREFIX_APPROVE.length);
+  } else if (actionId.startsWith(ACTION_PREFIX_DENY)) {
+    decision = "deny";
+    rest = actionId.slice(ACTION_PREFIX_DENY.length);
+  } else {
+    return null;
+  }
+  const [runId, confirmationId, toolCallId] = rest.split("|");
+  if (!runId || !confirmationId || !toolCallId) return null;
+  return { decision, runId, confirmationId, toolCallId };
 }
 
-export class SlackConfirmationProvider implements ConfirmationProvider {
-  private threadContexts = new Map<string, ThreadContext>();
-  private pendingBatches = new Map<string, PendingBatch>();
-  private toolCallToBatch = new Map<string, string>();
-
-  constructor(
-    private boltApp: App,
-    private timeoutMs = DEFAULT_TIMEOUT_MS,
-  ) {
-    this.registerActionHandlers();
+/**
+ * Extract pending tool calls from the persisted transcript of a run.
+ * Pending = toolCalls on the latest assistant message without matching
+ * function_call_output items.
+ */
+export function getPendingConfirmationRequests(
+  sessionId: string,
+  runId: string,
+): ConfirmationRequest[] {
+  const messages = sessionService.getMessages(sessionId, runId);
+  const answered = new Set<string>();
+  for (const m of messages) {
+    if (m.role === "tool" && m.toolCallId) answered.add(m.toolCallId);
   }
 
-  setThreadContext(sessionId: string, ctx: ThreadContext): void {
-    this.threadContexts.set(sessionId, ctx);
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i] as LLMMessage;
+    if (m.role !== "assistant") continue;
+    const asst = m as LLMAssistantMessage;
+    if (!asst.toolCalls?.length) continue;
+    const pending = asst.toolCalls.filter((tc) => !answered.has(tc.id));
+    if (pending.length === 0) return [];
+    return pending.map((tc) => ({
+      toolCallId: tc.id,
+      toolName: tc.function.name,
+      args: safeParse<Record<string, unknown>>(tc.function.arguments, tc.function.name),
+    }));
   }
-
-  clearThreadContext(sessionId: string): void {
-    this.threadContexts.delete(sessionId);
-  }
-
-  async confirm(requests: ConfirmationRequest[]): Promise<Map<string, Decision>> {
-    const sessionId = requireSessionId();
-    const ctx = this.threadContexts.get(sessionId);
-
-    if (!ctx) {
-      log.error(`[slack-confirm] No thread context for session ${sessionId}, auto-denying`);
-      return new Map(requests.map((r) => [r.toolCallId, "deny" as const]));
-    }
-
-    return new Promise<Map<string, Decision>>((resolve) => {
-      const toolCallIds = requests.map((r) => r.toolCallId);
-      const batch: PendingBatch = {
-        resolve,
-        timeout: setTimeout(() => this.handleTimeout(sessionId), this.timeoutMs),
-        decisions: new Map(),
-        toolCallIds,
-        messageTs: null,
-        channel: ctx.channel,
-        threadTs: ctx.threadTs,
-      };
-
-      this.pendingBatches.set(sessionId, batch);
-      for (const toolCallId of toolCallIds) {
-        this.toolCallToBatch.set(toolCallId, sessionId);
-      }
-
-      this.postConfirmationMessage(batch, requests).catch((err) => {
-        log.error(`[slack-confirm] Failed to post confirmation message: ${err}`);
-        this.resolveBatch(sessionId, new Map(toolCallIds.map((id) => [id, "deny" as const])));
-      });
-    });
-  }
-
-  private async postConfirmationMessage(
-    batch: PendingBatch,
-    requests: ConfirmationRequest[],
-  ): Promise<void> {
-    const blocks: Record<string, unknown>[] = [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: ":warning:  *Action requires approval*",
-        },
-      },
-      { type: "divider" },
-    ];
-
-    for (const req of requests) {
-      const argsStr = truncateArgs(req.args);
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*\`${req.toolName}\`*\n${argsStr}`,
-        },
-      });
-      blocks.push({
-        type: "actions",
-        elements: [
-          {
-            type: "button",
-            text: { type: "plain_text", text: "Approve" },
-            style: "primary",
-            action_id: `confirm_approve_${req.toolCallId}`,
-            value: req.toolCallId,
-          },
-          {
-            type: "button",
-            text: { type: "plain_text", text: "Deny" },
-            style: "danger",
-            action_id: `confirm_deny_${req.toolCallId}`,
-            value: req.toolCallId,
-          },
-        ],
-      });
-    }
-
-    const res = await this.boltApp.client.chat.postMessage({
-      channel: batch.channel,
-      thread_ts: batch.threadTs,
-      text: "Action requires approval",
-      blocks,
-    });
-
-    batch.messageTs = res.ts ?? null;
-  }
-
-  private registerActionHandlers(): void {
-    this.boltApp.action(/^confirm_approve_/, async ({ action, ack }) => {
-      await ack();
-      if (action.type !== "button") return;
-      const toolCallId = action.action_id.replace("confirm_approve_", "");
-      this.recordDecision(toolCallId, "approve");
-    });
-
-    this.boltApp.action(/^confirm_deny_/, async ({ action, ack }) => {
-      await ack();
-      if (action.type !== "button") return;
-      const toolCallId = action.action_id.replace("confirm_deny_", "");
-      this.recordDecision(toolCallId, "deny");
-    });
-  }
-
-  private recordDecision(toolCallId: string, decision: Decision): void {
-    const sessionId = this.toolCallToBatch.get(toolCallId);
-    if (!sessionId) return;
-
-    const batch = this.pendingBatches.get(sessionId);
-    if (!batch) return;
-
-    // Idempotent — ignore duplicate clicks
-    if (batch.decisions.has(toolCallId)) return;
-
-    batch.decisions.set(toolCallId, decision);
-
-    if (batch.decisions.size >= batch.toolCallIds.length) {
-      this.resolveBatch(sessionId, batch.decisions);
-    }
-  }
-
-  private handleTimeout(sessionId: string): void {
-    const batch = this.pendingBatches.get(sessionId);
-    if (!batch) return;
-
-    // Auto-deny all undecided calls
-    for (const toolCallId of batch.toolCallIds) {
-      if (!batch.decisions.has(toolCallId)) {
-        batch.decisions.set(toolCallId, "deny");
-      }
-    }
-
-    this.resolveBatch(sessionId, batch.decisions, true);
-  }
-
-  private resolveBatch(
-    sessionId: string,
-    decisions: Map<string, Decision>,
-    timedOut = false,
-  ): void {
-    const batch = this.pendingBatches.get(sessionId);
-    if (!batch) return;
-
-    clearTimeout(batch.timeout);
-    this.pendingBatches.delete(sessionId);
-    for (const toolCallId of batch.toolCallIds) {
-      this.toolCallToBatch.delete(toolCallId);
-    }
-
-    this.updateMessageAfterResolution(batch, decisions, timedOut).catch((err) => {
-      log.error(`[slack-confirm] Failed to update confirmation message: ${err}`);
-    });
-
-    batch.resolve(decisions);
-  }
-
-  private async updateMessageAfterResolution(
-    batch: PendingBatch,
-    decisions: Map<string, Decision>,
-    timedOut: boolean,
-  ): Promise<void> {
-    if (!batch.messageTs) return;
-
-    const lines = batch.toolCallIds.map((toolCallId) => {
-      const decision = decisions.get(toolCallId) ?? "deny";
-      if (timedOut && decision === "deny") {
-        return `:hourglass:  \`${toolCallId}\` — _Timed out_`;
-      }
-      return decision === "approve"
-        ? `:white_check_mark:  \`${toolCallId}\` — *Approved*`
-        : `:no_entry_sign:  \`${toolCallId}\` — *Denied*`;
-    });
-
-    await this.boltApp.client.chat.update({
-      channel: batch.channel,
-      ts: batch.messageTs,
-      text: timedOut ? "Action timed out" : "Action resolved",
-      blocks: [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: lines.join("\n"),
-          },
-        },
-      ],
-    });
-  }
+  return [];
 }
 
 function truncateArgs(args: Record<string, unknown>): string {
   const str = JSON.stringify(args, null, 2);
   if (str.length <= ARGS_DISPLAY_LIMIT) return `\`\`\`${str}\`\`\``;
   return `\`\`\`${str.slice(0, ARGS_DISPLAY_LIMIT)}…\`\`\``;
+}
+
+export async function postConfirmationMessage(
+  boltApp: App,
+  channel: string,
+  threadTs: string,
+  runId: string,
+  confirmationId: string,
+  requests: ConfirmationRequest[],
+): Promise<void> {
+  const blocks: Record<string, unknown>[] = [
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: ":warning:  *Action requires approval*" },
+    },
+    { type: "divider" },
+  ];
+
+  for (const req of requests) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*\`${req.toolName}\`*\n${truncateArgs(req.args)}`,
+      },
+    });
+    blocks.push({
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Approve" },
+          style: "primary",
+          action_id: encodeAction(ACTION_PREFIX_APPROVE, runId, confirmationId, req.toolCallId),
+          value: req.toolCallId,
+        },
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Deny" },
+          style: "danger",
+          action_id: encodeAction(ACTION_PREFIX_DENY, runId, confirmationId, req.toolCallId),
+          value: req.toolCallId,
+        },
+      ],
+    });
+  }
+
+  await boltApp.client.chat.postMessage({
+    channel,
+    thread_ts: threadTs,
+    text: "Action requires approval",
+    blocks,
+  });
+}
+
+interface RegisterOpts {
+  onResumed: (result: ExecuteRunResult, channel: string, threadTs: string) => Promise<void>;
+  resolveThread: (runId: string) => { channel: string; threadTs: string } | undefined;
+}
+
+/**
+ * Register action handlers that collect decisions per run and, once
+ * all pending tool calls have been answered, call `resumeRun`. Works
+ * across process restarts because every click carries full state
+ * (runId, confirmationId, toolCallId, decision) and the run is
+ * loaded fresh from the DB each time.
+ */
+export function registerConfirmationActions(app: App, opts: RegisterOpts): void {
+  // In-process accumulator for multi-tool batches. After restart, a
+  // user who already clicked N of M buttons will need to click the
+  // remaining ones to complete the resolution — each click recovers
+  // state from the DB.
+  const partialDecisions = new Map<string, Map<string, Decision>>();
+
+  async function handleClick(actionId: string): Promise<void> {
+    const decoded = decodeAction(actionId);
+    if (!decoded) return;
+
+    const { decision, runId, confirmationId, toolCallId } = decoded;
+
+    const run = dbOps.getRun(runId);
+    if (!run) {
+      log.error(`[slack-confirm] unknown run ${runId}`);
+      return;
+    }
+    if (run.status !== "waiting") {
+      log.info(`[slack-confirm] run ${runId} no longer waiting (status=${run.status})`);
+      return;
+    }
+
+    const pending = getPendingConfirmationRequests(run.sessionId, runId);
+    if (pending.length === 0) return;
+
+    const key = `${runId}:${confirmationId}`;
+    let decisions = partialDecisions.get(key);
+    if (!decisions) {
+      decisions = new Map();
+      partialDecisions.set(key, decisions);
+    }
+    decisions.set(toolCallId, decision);
+
+    if (decisions.size < pending.length) return;
+
+    partialDecisions.delete(key);
+
+    try {
+      const result = await resumeRun(runId, {
+        kind: "user_approval",
+        confirmationId,
+        decisions: Object.fromEntries(decisions),
+      });
+      const thread = opts.resolveThread(runId);
+      if (thread) await opts.onResumed(result, thread.channel, thread.threadTs);
+    } catch (err) {
+      log.error(`[slack-confirm] resumeRun failed: ${err}`);
+    }
+  }
+
+  app.action(/^cnf_app:/, async ({ action, ack }) => {
+    await ack();
+    if (action.type !== "button") return;
+    await handleClick(action.action_id);
+  });
+
+  app.action(/^cnf_deny:/, async ({ action, ack }) => {
+    await ack();
+    if (action.type !== "button") return;
+    await handleClick(action.action_id);
+  });
 }

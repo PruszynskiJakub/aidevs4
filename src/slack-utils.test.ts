@@ -162,7 +162,7 @@ describe("StatusTracker", () => {
   test("returns null for unrelated events", () => {
     const tracker = new StatusTracker();
     expect(tracker.update(makeEvent("generation.started", {}))).toBeNull();
-    expect(tracker.update(makeEvent("session.opened", {}))).toBeNull();
+    expect(tracker.update(makeEvent("run.started", {}))).toBeNull();
   });
 
   test("lists all completed tools in history", () => {

@@ -1,6 +1,6 @@
 import type { LLMProvider, LLMMessage, LLMChatResponse, LLMToolCall } from "../types/llm.ts";
 import type { Logger } from "../types/logger.ts";
-import type { AgentState } from "../types/agent-state.ts";
+import type { RunState } from "../types/run-state.ts";
 import { llm as defaultLLM } from "../llm/llm.ts";
 import { config } from "../config/index.ts";
 import { dispatch } from "../tools/registry.ts";
@@ -17,6 +17,9 @@ import { bus } from "../infra/events.ts";
 import { createJsonlWriter } from "../infra/log/jsonl.ts";
 import { attachLoggerListener } from "../infra/log/bridge.ts";
 import { buildWorkspaceContext } from "./workspace.ts";
+import { WaitRequested } from "./wait-descriptor.ts";
+import type { RunExit } from "./run-exit.ts";
+import * as dbOps from "../infra/db/index.ts";
 
 interface SessionResources {
   log: Logger;
@@ -114,6 +117,7 @@ async function dispatchTools(
   const dispatchTime = Date.now();
 
   // ── Confirmation gate ──────────────────────────────────────
+  // May throw WaitRequested to pause the run.
   const { approved, denied } = await confirmBatch(functionCalls);
 
   for (const { call } of denied) {
@@ -222,8 +226,10 @@ async function dispatchTools(
   }
 }
 
-export type { AgentResult } from "../types/agent.ts";
-import type { AgentResult } from "../types/agent.ts";
+export interface LoopResult {
+  exit: RunExit;
+  messages: LLMMessage[];
+}
 
 interface MemoryContext {
   systemPrompt: string;
@@ -231,9 +237,9 @@ interface MemoryContext {
   contextLength: number;
 }
 
-async function buildTurnContext(
+async function buildCycleContext(
   actSystemPrompt: string,
-  state: AgentState,
+  state: RunState,
   memoryEnabled: boolean,
   provider: LLMProvider,
 ): Promise<MemoryContext> {
@@ -264,7 +270,7 @@ async function buildTurnContext(
   };
 }
 
-function createMemorySaver(state: AgentState) {
+function createMemorySaver(state: RunState) {
   let lastSavedJson = "";
   return async function saveMemoryIfChanged(): Promise<void> {
     const json = JSON.stringify(state.memory);
@@ -279,9 +285,9 @@ function getErrorMessage(err: unknown): string {
 }
 
 export async function runAgent(
-  state: AgentState,
+  state: RunState,
   provider: LLMProvider = defaultLLM,
-): Promise<AgentResult> {
+): Promise<LoopResult> {
   const userPrompt = state.messages.find((m) => m.role === "user")?.content ?? "";
   const { log, md, detachLogger, detachJsonl, flushJsonl } = setupSession(userPrompt, state.sessionId);
 
@@ -289,7 +295,7 @@ export async function runAgent(
 
   return runWithContext(state, log, async () => {
     const saveMemoryIfChanged = createMemorySaver(state);
-    const agentStartTime = performance.now();
+    const runStartTime = performance.now();
 
     try {
       const resolved = await agentsService.resolve(state.assistant);
@@ -300,7 +306,7 @@ export async function runAgent(
 
       state.tools = resolved.tools;
 
-      bus.emit("session.opened", {
+      bus.emit("run.started", {
         assistant: state.assistant,
         model: state.model,
         userInput: typeof userPrompt === "string" ? userPrompt : undefined,
@@ -310,31 +316,34 @@ export async function runAgent(
         agentName: state.agentName ?? state.assistant,
         model: state.model,
         task: typeof userPrompt === "string" ? userPrompt : "(structured)",
-        parentAgentId: state.parentAgentId,
+        parentRunId: state.parentRunId,
         depth: state.depth ?? 0,
       });
 
       const workspaceContext = await buildWorkspaceContext();
       const actSystemPrompt = `${workspaceContext}\n\n${resolved.prompt}`;
       const memoryEnabled = resolved.memory !== false;
-      let turnStartTime = 0;
+      let cycleStartTime = 0;
 
       for (let i = 0; i < config.limits.maxIterations; i++) {
         state.iteration = i;
-        turnStartTime = performance.now();
+        cycleStartTime = performance.now();
 
-        bus.emit("turn.started", {
+        if (state.runId) dbOps.incrementCycleCount(state.runId);
+
+        bus.emit("cycle.started", {
+          cycleIndex: i,
           iteration: i + 1,
           maxIterations: config.limits.maxIterations,
           model: state.model,
           messageCount: state.messages.length,
         });
 
-        const turnCtx = await buildTurnContext(actSystemPrompt, state, memoryEnabled, provider);
-        const response = await executeActPhase(turnCtx.systemPrompt, provider);
+        const cycleCtx = await buildCycleContext(actSystemPrompt, state, memoryEnabled, provider);
+        const response = await executeActPhase(cycleCtx.systemPrompt, provider);
 
-        const newMessages = state.messages.slice(turnCtx.contextLength);
-        state.messages = turnCtx.messagesSnapshot.concat(newMessages);
+        const newMessages = state.messages.slice(cycleCtx.contextLength);
+        state.messages = cycleCtx.messagesSnapshot.concat(newMessages);
 
         await saveMemoryIfChanged();
 
@@ -344,36 +353,61 @@ export async function runAgent(
             await saveMemoryIfChanged();
           }
 
-          bus.emit("turn.completed", {
+          bus.emit("cycle.completed", {
+            cycleIndex: i,
             iteration: i + 1,
             outcome: "answer",
-            durationMs: performance.now() - turnStartTime,
+            durationMs: performance.now() - cycleStartTime,
             tokens: { ...state.tokens },
           });
           bus.emit("agent.answered", { text: response.content });
           bus.emit("agent.completed", {
             agentName: state.agentName ?? state.assistant,
-            durationMs: performance.now() - agentStartTime,
+            durationMs: performance.now() - runStartTime,
             iterations: i + 1,
             tokens: { ...state.tokens },
             result: response.content,
           });
-          bus.emit("session.completed", {
+          bus.emit("run.completed", {
             reason: "answer",
             iterations: i + 1,
             tokens: { ...state.tokens },
           });
 
-          return { answer: response.content ?? "", messages: state.messages.slice(inputLength) };
+          return {
+            exit: { kind: "completed", result: response.content ?? "" },
+            messages: state.messages.slice(inputLength),
+          };
         }
 
         const functionCalls = response.toolCalls.filter(tc => tc.type === "function");
-        await dispatchTools(functionCalls);
 
-        bus.emit("turn.completed", {
+        try {
+          await dispatchTools(functionCalls);
+        } catch (err) {
+          if (err instanceof WaitRequested) {
+            // Persist the messages produced so far before pausing so the
+            // resumed run can rebuild full transcript.
+            bus.emit("cycle.completed", {
+              cycleIndex: i,
+              iteration: i + 1,
+              outcome: "continue",
+              durationMs: performance.now() - cycleStartTime,
+              tokens: { ...state.tokens },
+            });
+            return {
+              exit: { kind: "waiting", waitingOn: err.waitingOn },
+              messages: state.messages.slice(inputLength),
+            };
+          }
+          throw err;
+        }
+
+        bus.emit("cycle.completed", {
+          cycleIndex: i,
           iteration: i + 1,
           outcome: "continue",
-          durationMs: performance.now() - turnStartTime,
+          durationMs: performance.now() - cycleStartTime,
           tokens: { ...state.tokens },
         });
       }
@@ -383,35 +417,46 @@ export async function runAgent(
         await saveMemoryIfChanged();
       }
 
-      bus.emit("turn.completed", {
+      bus.emit("cycle.completed", {
+        cycleIndex: config.limits.maxIterations - 1,
         iteration: config.limits.maxIterations,
         outcome: "max_iterations",
-        durationMs: performance.now() - turnStartTime,
+        durationMs: performance.now() - cycleStartTime,
         tokens: { ...state.tokens },
       });
       bus.emit("agent.completed", {
         agentName: state.agentName ?? state.assistant,
-        durationMs: performance.now() - agentStartTime,
+        durationMs: performance.now() - runStartTime,
         iterations: config.limits.maxIterations,
         tokens: { ...state.tokens },
         result: null,
       });
-      bus.emit("session.completed", {
+      bus.emit("run.completed", {
         reason: "max_iterations",
         iterations: config.limits.maxIterations,
         tokens: { ...state.tokens },
       });
 
-      return { answer: "", messages: state.messages.slice(inputLength) };
+      return {
+        exit: { kind: "exhausted", cycleCount: config.limits.maxIterations },
+        messages: state.messages.slice(inputLength),
+      };
     } catch (err) {
+      if (err instanceof WaitRequested) {
+        // Defensive: should already be caught inside the dispatch block.
+        return {
+          exit: { kind: "waiting", waitingOn: err.waitingOn },
+          messages: state.messages.slice(inputLength),
+        };
+      }
       const errorMsg = getErrorMessage(err);
       bus.emit("agent.failed", {
         agentName: state.agentName ?? state.assistant,
-        durationMs: performance.now() - agentStartTime,
+        durationMs: performance.now() - runStartTime,
         iterations: state.iteration + 1,
         error: errorMsg,
       });
-      bus.emit("session.failed", {
+      bus.emit("run.failed", {
         iterations: state.iteration + 1,
         tokens: { ...state.tokens },
         error: errorMsg,

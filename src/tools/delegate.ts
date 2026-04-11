@@ -2,9 +2,9 @@ import { z } from "zod";
 import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
-import { getSessionId, getLogger, getAgentId, getRootAgentId, getTraceId, getDepth } from "../agent/context.ts";
+import { getSessionId, getLogger, getRunId, getRootRunId, getTraceId, getDepth } from "../agent/context.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { executeTurn } from "../agent/orchestrator.ts";
+import { executeRun } from "../agent/orchestrator.ts";
 import { agentsService } from "../agent/agents.ts";
 
 const MAX_PROMPT_LENGTH = 10_000;
@@ -22,11 +22,11 @@ async function delegate(args: Record<string, unknown>, ctx?: ToolCallContext): P
 
   let result;
   try {
-    result = await executeTurn({
+    result = await executeRun({
       prompt,
       assistant: agent,
-      parentAgentId: getAgentId(),
-      parentRootAgentId: getRootAgentId(),
+      parentRunId: getRunId(),
+      parentRootRunId: getRootRunId(),
       parentTraceId: getTraceId(),
       parentDepth: getDepth(),
       sourceCallId: ctx?.toolCallId,
@@ -40,7 +40,13 @@ async function delegate(args: Record<string, unknown>, ctx?: ToolCallContext): P
     logger.info(`[delegate] child session ${result.sessionId} (agent: ${agent})`);
   }
 
-  return text(result.answer);
+  if (result.exit.kind !== "completed") {
+    throw new Error(
+      `Delegation to agent "${agent}" did not complete (kind=${result.exit.kind})`,
+    );
+  }
+
+  return text(result.exit.result);
 }
 
 const agents = await agentsService.listAgents();

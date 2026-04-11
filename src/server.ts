@@ -1,14 +1,12 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { sessionService } from "./agent/session.ts";
-import { executeTurn } from "./agent/orchestrator.ts";
+import { executeRun, type ExecuteRunResult } from "./agent/orchestrator.ts";
+import { resumeRun } from "./agent/resume-run.ts";
 import { log } from "./infra/log/logger.ts";
 import { config } from "./config/index.ts";
 import { bus } from "./infra/events.ts";
 import { initServices, installSignalHandlers } from "./infra/bootstrap.ts";
-import { setConfirmationProvider } from "./agent/confirmation.ts";
-import type { Decision } from "./types/tool.ts";
-import { requireState } from "./agent/context.ts";
 
 interface ChatRequest {
   sessionId: string;
@@ -74,63 +72,6 @@ app.use("/chat", async (c, next) => {
   await next();
 });
 
-// ── Confirmation gate (HTTP) ─────────────────────────────────
-
-const pendingConfirmations = new Map<string, {
-  resolve: (decisions: Map<string, Decision>) => void;
-  timeout: Timer;
-}>();
-
-function resolvePending(
-  sessionId: string,
-  decisions: Map<string, Decision>,
-): void {
-  const pending = pendingConfirmations.get(sessionId);
-  if (!pending) return;
-  clearTimeout(pending.timeout);
-  pendingConfirmations.delete(sessionId);
-  pending.resolve(decisions);
-}
-
-setConfirmationProvider({
-  async confirm(requests) {
-    const { sessionId } = requireState();
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        const denied = new Map(requests.map((r) => [r.toolCallId, "deny" as const]));
-        resolvePending(sessionId, denied);
-      }, 120_000);
-
-      pendingConfirmations.set(sessionId, { resolve, timeout });
-    });
-  },
-});
-
-app.post("/chat/:sessionId/confirm", async (c) => {
-  const { sessionId } = c.req.param();
-  const pending = pendingConfirmations.get(sessionId);
-  if (!pending) {
-    return c.json({ error: "No pending confirmation for this session" }, 404);
-  }
-
-  const body = await c.req.json();
-  const raw = Object.entries((body as Record<string, unknown>).decisions ?? {});
-  const decisions = new Map<string, Decision>(
-    raw.map(([id, v]) => [id, v === "approve" ? "approve" : "deny"]),
-  );
-  resolvePending(sessionId, decisions);
-
-  return c.json({ status: "ok" });
-});
-
-for (const evt of ["session.completed", "session.failed"] as const) {
-  bus.on(evt, (e) => {
-    if (e.sessionId && pendingConfirmations.has(e.sessionId)) {
-      resolvePending(e.sessionId, new Map());
-    }
-  });
-}
-
 app.post("/api/negotiations/search", async (c) => {
   const body = await c.req.json().catch(() => null);
   const params = (body as Record<string, unknown> | null)?.params;
@@ -139,11 +80,12 @@ app.post("/api/negotiations/search", async (c) => {
   }
 
   try {
-    const { answer } = await executeTurn({
+    const { exit } = await executeRun({
       prompt: params,
       assistant: "negotiations",
     });
 
+    const answer = exit.kind === "completed" ? exit.result : "";
     const encoded = new TextEncoder().encode(answer);
     const output = new TextDecoder().decode(encoded.slice(0, 500));
     return c.json({ output });
@@ -153,6 +95,22 @@ app.post("/api/negotiations/search", async (c) => {
     return c.json({ output: "Error: search failed" }, 500);
   }
 });
+
+function exitToPayload(result: ExecuteRunResult): Record<string, unknown> {
+  const { exit, runId, sessionId } = result;
+  switch (exit.kind) {
+    case "completed":
+      return { kind: "completed", runId, sessionId, answer: exit.result };
+    case "failed":
+      return { kind: "failed", runId, sessionId, error: exit.error.message };
+    case "cancelled":
+      return { kind: "cancelled", runId, sessionId, reason: exit.reason };
+    case "exhausted":
+      return { kind: "exhausted", runId, sessionId, cycleCount: exit.cycleCount };
+    case "waiting":
+      return { kind: "waiting", runId, sessionId, waitingOn: exit.waitingOn };
+  }
+}
 
 app.post("/chat", async (c) => {
   const body = await c.req.json().catch(() => null);
@@ -194,8 +152,8 @@ app.post("/chat", async (c) => {
       stream.onAbort(() => { closed = true; });
 
       try {
-        const { answer } = await sessionService.enqueue(sessionId, () =>
-          executeTurn({
+        const result = await sessionService.enqueue(sessionId, () =>
+          executeRun({
             sessionId,
             prompt: msg,
             assistant: requestedAssistant,
@@ -204,7 +162,7 @@ app.post("/chat", async (c) => {
         if (!closed) {
           await stream.writeSSE({
             event: "done",
-            data: JSON.stringify({ answer }),
+            data: JSON.stringify(exitToPayload(result)),
           });
         }
       } catch (err) {
@@ -223,14 +181,18 @@ app.post("/chat", async (c) => {
   }
 
   try {
-    const { answer } = await sessionService.enqueue(sessionId, () =>
-      executeTurn({
+    const result = await sessionService.enqueue(sessionId, () =>
+      executeRun({
         sessionId,
         prompt: msg,
         assistant: requestedAssistant,
       }),
     );
-    return c.json({ msg: answer });
+    const payload = exitToPayload(result);
+    if (result.exit.kind === "completed") {
+      return c.json({ msg: result.exit.result, ...payload });
+    }
+    return c.json(payload);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isClientError = message.includes("Unknown agent");
@@ -240,6 +202,43 @@ app.post("/chat", async (c) => {
     log.error(`/chat error [${sessionId}]: ${message}`);
     return c.json({ error: message }, 500);
   }
+});
+
+/**
+ * POST /resume — supplies a WaitResolution for a waiting run and
+ * streams the subsequent exit via SSE.
+ */
+app.post("/resume", async (c) => {
+  const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+  const runId = typeof body?.runId === "string" ? body.runId : undefined;
+  const resolution = body?.resolution as Record<string, unknown> | undefined;
+
+  if (!runId || !resolution || typeof resolution.kind !== "string") {
+    return c.json({ error: "Body must contain { runId, resolution: { kind, ... } }" }, 400);
+  }
+
+  return streamSSE(c, async (stream) => {
+    let closed = false;
+    stream.onAbort(() => { closed = true; });
+
+    try {
+      const result = await resumeRun(runId, resolution as any);
+      if (!closed) {
+        await stream.writeSSE({
+          event: "done",
+          data: JSON.stringify(exitToPayload(result)),
+        });
+      }
+    } catch (err) {
+      if (!closed) {
+        const message = err instanceof Error ? err.message : String(err);
+        await stream.writeSSE({
+          event: "error",
+          data: JSON.stringify({ error: message }),
+        });
+      }
+    }
+  });
 });
 
 await initServices();

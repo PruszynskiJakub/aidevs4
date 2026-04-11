@@ -6,12 +6,12 @@ export interface TokenUsage {
   completionTokens: number;
 }
 
-export interface AgentState {
+export interface RunState {
   sessionId: string;
   agentName?: string;
-  agentId?: string;
-  rootAgentId?: string;
-  parentAgentId?: string;
+  runId?: string;
+  rootRunId?: string;
+  parentRunId?: string;
   traceId?: string;
   depth?: number;
   messages: LLMMessage[];

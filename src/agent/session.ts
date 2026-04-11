@@ -16,7 +16,7 @@ function dateFolderNow(): string {
 
 // ── Message ↔ Item conversion ───────────────────────────────
 
-function messagesToItems(agentId: string, messages: LLMMessage[], startSeq: number): NewItem[] {
+function messagesToItems(runId: string, messages: LLMMessage[], startSeq: number): NewItem[] {
   const result: NewItem[] = [];
   let seq = startSeq;
 
@@ -29,7 +29,7 @@ function messagesToItems(agentId: string, messages: LLMMessage[], startSeq: numb
         : JSON.stringify(msg.content);
       result.push({
         id: randomUUID(),
-        agentId,
+        runId,
         sequence: seq++,
         type: "message",
         role: "user",
@@ -39,7 +39,7 @@ function messagesToItems(agentId: string, messages: LLMMessage[], startSeq: numb
       const assistantMsg = msg as LLMAssistantMessage;
       result.push({
         id: randomUUID(),
-        agentId,
+        runId,
         sequence: seq++,
         type: "message",
         role: "assistant",
@@ -49,7 +49,7 @@ function messagesToItems(agentId: string, messages: LLMMessage[], startSeq: numb
         for (const tc of assistantMsg.toolCalls) {
           result.push({
             id: randomUUID(),
-            agentId,
+            runId,
             sequence: seq++,
             type: "function_call",
             callId: tc.id,
@@ -61,7 +61,7 @@ function messagesToItems(agentId: string, messages: LLMMessage[], startSeq: numb
     } else if (msg.role === "tool") {
       result.push({
         id: randomUUID(),
-        agentId,
+        runId,
         sequence: seq++,
         type: "function_call_output",
         callId: msg.toolCallId,
@@ -164,28 +164,28 @@ function createSessionService(
       dbOps.setAssistant(id, assistant);
     },
 
-    appendMessage(id: string, agentId: string, message: LLMMessage): void {
+    appendMessage(id: string, runId: string, message: LLMMessage): void {
       if (message.role === "system") return;
-      const seq = dbOps.nextSequence(agentId);
-      const newItems = messagesToItems(agentId, [message], seq);
+      const seq = dbOps.nextSequence(runId);
+      const newItems = messagesToItems(runId, [message], seq);
       for (const item of newItems) {
         dbOps.appendItem(item);
       }
       dbOps.touchSession(id);
     },
 
-    appendTurn(id: string, agentId: string, messages: LLMMessage[]): void {
+    appendRun(id: string, runId: string, messages: LLMMessage[]): void {
       const nonSystem = messages.filter((m) => m.role !== "system");
       if (nonSystem.length === 0) return;
-      const seq = dbOps.nextSequence(agentId);
-      const newItems = messagesToItems(agentId, nonSystem, seq);
+      const seq = dbOps.nextSequence(runId);
+      const newItems = messagesToItems(runId, nonSystem, seq);
       dbOps.appendItems(newItems);
       dbOps.touchSession(id);
     },
 
-    getMessages(id: string, agentId?: string): LLMMessage[] {
-      const dbItems = agentId
-        ? dbOps.listItemsByAgent(agentId)
+    getMessages(id: string, runId?: string): LLMMessage[] {
+      const dbItems = runId
+        ? dbOps.listItemsByRun(runId)
         : dbOps.listItemsBySession(id);
       return itemsToMessages(dbItems);
     },

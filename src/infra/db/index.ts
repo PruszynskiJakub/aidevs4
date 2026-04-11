@@ -1,16 +1,16 @@
 import { eq, sql, and, lte } from "drizzle-orm";
 import { db } from "./connection.ts";
-import { sessions, agents, items, scheduledJobs } from "./schema.ts";
+import { sessions, runs, items, scheduledJobs } from "./schema.ts";
 import type { JobStatus, JobRunStatus } from "./schema.ts";
 import type {
   DbSession,
-  DbAgent,
+  DbRun,
   DbItem,
   DbJob,
-  CreateAgentOpts,
+  CreateRunOpts,
   CreateJobOpts,
   NewItem,
-  AgentStatus,
+  RunStatus,
 } from "../../types/db.ts";
 
 export { db, sqlite } from "./connection.ts";
@@ -32,9 +32,9 @@ export function touchSession(id: string): void {
     .run();
 }
 
-export function setRootAgent(sessionId: string, agentId: string): void {
+export function setRootRun(sessionId: string, runId: string): void {
   db.update(sessions)
-    .set({ rootAgentId: agentId })
+    .set({ rootRunId: runId })
     .where(eq(sessions.id, sessionId))
     .run();
 }
@@ -46,10 +46,10 @@ export function setAssistant(sessionId: string, assistant: string): void {
     .run();
 }
 
-// ── Agents ──────────────────────────────────────────────────
+// ── Runs ────────────────────────────────────────────────────
 
-export function createAgent(opts: CreateAgentOpts): void {
-  db.insert(agents)
+export function createRun(opts: CreateRunOpts): void {
+  db.insert(runs)
     .values({
       id: opts.id,
       sessionId: opts.sessionId,
@@ -61,49 +61,59 @@ export function createAgent(opts: CreateAgentOpts): void {
     .run();
 }
 
-export function getAgent(id: string): DbAgent | null {
-  return db.select().from(agents).where(eq(agents.id, id)).get() as DbAgent | undefined ?? null;
+export function getRun(id: string): DbRun | null {
+  return db.select().from(runs).where(eq(runs.id, id)).get() as DbRun | undefined ?? null;
 }
 
-export function updateAgentStatus(
-  id: string,
-  status: AgentStatus,
-  result?: string,
-  error?: string,
-): void {
-  const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
-  const updates: Record<string, unknown> = { status };
+export interface UpdateRunStatusOpts {
+  status: RunStatus;
+  result?: string;
+  error?: string;
+  exitKind?: string | null;
+  waitingOn?: string | null;
+}
 
-  if (status === "running") {
+export function updateRunStatus(id: string, opts: UpdateRunStatusOpts): void {
+  const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
+  const updates: Record<string, unknown> = { status: opts.status };
+
+  if (opts.status === "running") {
     updates.startedAt = now;
   }
-  if (status === "completed" || status === "failed") {
+  if (
+    opts.status === "completed" ||
+    opts.status === "failed" ||
+    opts.status === "cancelled" ||
+    opts.status === "exhausted"
+  ) {
     updates.completedAt = now;
   }
-  if (result !== undefined) updates.result = result;
-  if (error !== undefined) updates.error = error;
+  if (opts.result !== undefined) updates.result = opts.result;
+  if (opts.error !== undefined) updates.error = opts.error;
+  if (opts.exitKind !== undefined) updates.exitKind = opts.exitKind;
+  if (opts.waitingOn !== undefined) updates.waitingOn = opts.waitingOn;
 
-  db.update(agents).set(updates).where(eq(agents.id, id)).run();
+  db.update(runs).set(updates).where(eq(runs.id, id)).run();
 }
 
-export function incrementTurnCount(id: string): void {
-  db.update(agents)
-    .set({ turnCount: sql`${agents.turnCount} + 1` })
-    .where(eq(agents.id, id))
+export function incrementCycleCount(id: string): void {
+  db.update(runs)
+    .set({ cycleCount: sql`${runs.cycleCount} + 1` })
+    .where(eq(runs.id, id))
     .run();
 }
 
-export function listAgentsBySession(sessionId: string): DbAgent[] {
-  return db.select().from(agents).where(eq(agents.sessionId, sessionId)).all() as DbAgent[];
+export function listRunsBySession(sessionId: string): DbRun[] {
+  return db.select().from(runs).where(eq(runs.sessionId, sessionId)).all() as DbRun[];
 }
 
 // ── Items ───────────────────────────────────────────────────
 
-export function nextSequence(agentId: string): number {
+export function nextSequence(runId: string): number {
   const row = db
     .select({ maxSeq: sql<number>`coalesce(max(${items.sequence}), -1)` })
     .from(items)
-    .where(eq(items.agentId, agentId))
+    .where(eq(items.runId, runId))
     .get();
   return (row?.maxSeq ?? -1) + 1;
 }
@@ -121,11 +131,11 @@ export function appendItems(batch: NewItem[]): void {
   });
 }
 
-export function listItemsByAgent(agentId: string): DbItem[] {
+export function listItemsByRun(runId: string): DbItem[] {
   return db
     .select()
     .from(items)
-    .where(eq(items.agentId, agentId))
+    .where(eq(items.runId, runId))
     .orderBy(items.sequence)
     .all() as DbItem[];
 }
@@ -134,8 +144,8 @@ export function listItemsBySession(sessionId: string): DbItem[] {
   return db
     .select({ item: items })
     .from(items)
-    .innerJoin(agents, eq(items.agentId, agents.id))
-    .where(eq(agents.sessionId, sessionId))
+    .innerJoin(runs, eq(items.runId, runs.id))
+    .where(eq(runs.sessionId, sessionId))
     .orderBy(sql`${items}.rowid`)
     .all()
     .map((r) => r.item) as DbItem[];
@@ -221,7 +231,7 @@ export function deleteJob(id: string): void {
 /** Visible for testing — deletes all data from all tables */
 export function _clearAll(): void {
   db.delete(items).run();
-  db.delete(agents).run();
+  db.delete(runs).run();
   db.delete(sessions).run();
   db.delete(scheduledJobs).run();
 }

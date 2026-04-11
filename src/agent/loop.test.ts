@@ -1,6 +1,6 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import type { LLMProvider, LLMChatResponse, LLMMessage, ChatCompletionParams } from "../types/llm.ts";
-import type { AgentState } from "../types/agent-state.ts";
+import type { RunState } from "../types/run-state.ts";
 import { emptyMemoryState } from "../types/memory.ts";
 
 // Use real prompt/assistant services. Tests check loop behavior, not model names.
@@ -34,7 +34,7 @@ function makeLLMProvider(responses: LLMChatResponse[]): LLMProvider {
   };
 }
 
-function makeState(prompt: string, overrides?: Partial<AgentState>): AgentState {
+function makeState(prompt: string, overrides?: Partial<RunState>): RunState {
   return {
     sessionId: "test",
     messages: [{ role: "user", content: prompt }],
@@ -294,7 +294,10 @@ describe("agent parallel tool calling", () => {
     ]);
 
     const result = await runAgent(makeState("test"), provider);
-    expect(result.answer).toBe("Hello!");
+    expect(result.exit.kind).toBe("completed");
+    if (result.exit.kind === "completed") {
+      expect(result.exit.result).toBe("Hello!");
+    }
   });
 });
 

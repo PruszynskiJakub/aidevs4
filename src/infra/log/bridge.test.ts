@@ -44,8 +44,9 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args[0]).toContain("solver");
   });
 
-  it("turn.started → log.step()", () => {
-    bus.emit("turn.started", {
+  it("cycle.started → log.step()", () => {
+    bus.emit("cycle.started", {
+      cycleIndex: 2,
       iteration: 3,
       maxIterations: 40,
       model: "gpt-4.1",
@@ -171,8 +172,8 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args).toEqual([2, 40000, 20000]);
   });
 
-  it("session.completed max_iterations → log.maxIter()", () => {
-    bus.emit("session.completed", {
+  it("run.completed max_iterations → log.maxIter()", () => {
+    bus.emit("run.completed", {
       reason: "max_iterations",
       iterations: 40,
       tokens: { promptTokens: 0, completionTokens: 0 },
@@ -183,8 +184,8 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args[0]).toBe(40);
   });
 
-  it("session.failed → log.error()", () => {
-    bus.emit("session.failed", {
+  it("run.failed → log.error()", () => {
+    bus.emit("run.failed", {
       iterations: 3,
       tokens: { promptTokens: 0, completionTokens: 0 },
       error: "something went wrong",
@@ -192,13 +193,14 @@ describe("attachLoggerListener (Bus→Logger)", () => {
 
     const call = calls.find((c) => c.method === "error");
     expect(call).toBeDefined();
-    expect(call!.args[0]).toBe("Session failed: something went wrong");
+    expect(call!.args[0]).toBe("Run failed: something went wrong");
   });
 
   it("detach() stops all event delivery", () => {
     detach();
 
-    bus.emit("turn.started", {
+    bus.emit("cycle.started", {
+      cycleIndex: 0,
       iteration: 1,
       maxIterations: 40,
       model: "m",

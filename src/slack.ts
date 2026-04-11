@@ -1,17 +1,22 @@
 import { App } from "@slack/bolt";
-import { executeTurn } from "./agent/orchestrator.ts";
+import { randomUUID } from "node:crypto";
+import { executeRun, type ExecuteRunResult } from "./agent/orchestrator.ts";
 import { bus } from "./infra/events.ts";
 import { log } from "./infra/log/logger.ts";
 import { initServices, installSignalHandlers } from "./infra/bootstrap.ts";
 import type { BusEvent } from "./types/events.ts";
+import type { RunExit } from "./agent/run-exit.ts";
 import {
   deriveSessionId,
   toSlackMarkdown,
   splitMessage,
   StatusTracker,
 } from "./slack-utils.ts";
-import { setConfirmationProvider } from "./agent/confirmation.ts";
-import { SlackConfirmationProvider } from "./slack-confirmation.ts";
+import {
+  getPendingConfirmationRequests,
+  postConfirmationMessage,
+  registerConfirmationActions,
+} from "./slack-confirmation.ts";
 
 // ── Config ─────────────────────────────────────────────────
 
@@ -85,7 +90,6 @@ function createStatusUpdater(
         flush();
         timer = setTimeout(() => { timer = null; }, THROTTLE_MS);
       } else {
-        // Will be picked up after throttle window
         clearTimeout(timer);
         timer = setTimeout(() => {
           timer = null;
@@ -108,11 +112,66 @@ const app = new App({
   socketMode: true,
 });
 
-const slackConfirmation = new SlackConfirmationProvider(app);
-setConfirmationProvider(slackConfirmation);
+/**
+ * Thread location per run. Populated when we kick off a run so that,
+ * after a button click, we know where to post the final answer. Lost
+ * on process restart — users who clicked after a restart will see the
+ * answer posted to the thread where they clicked, because slack-bolt
+ * preserves channel/thread on the action payload. See the action
+ * handler in registerConfirmationActions for the fallback flow.
+ */
+const runThread = new Map<string, { channel: string; threadTs: string }>();
+
+registerConfirmationActions(app, {
+  resolveThread(runId) {
+    return runThread.get(runId);
+  },
+  async onResumed(result, channel, threadTs) {
+    await handleResult(result, channel, threadTs);
+  },
+});
 
 /** Track in-flight requests to deduplicate Slack retries. */
 const inFlight = new Set<string>();
+
+async function handleResult(
+  result: ExecuteRunResult,
+  channel: string,
+  threadTs: string,
+): Promise<void> {
+  const { exit, runId } = result;
+
+  if (exit.kind === "waiting") {
+    runThread.set(runId, { channel, threadTs });
+    const pending = getPendingConfirmationRequests(result.sessionId, runId);
+    const confirmationId =
+      exit.waitingOn.kind === "user_approval" ? exit.waitingOn.confirmationId : randomUUID();
+    await postConfirmationMessage(app, channel, threadTs, runId, confirmationId, pending);
+    return;
+  }
+
+  const text = exitToText(exit);
+  if (!text) return;
+  const slackText = toSlackMarkdown(text);
+  for (const chunk of splitMessage(slackText)) {
+    await app.client.chat.postMessage({ channel, thread_ts: threadTs, text: chunk });
+  }
+}
+
+function exitToText(exit: RunExit): string {
+  switch (exit.kind) {
+    case "completed":
+      return exit.result;
+    case "failed":
+      return `Error: ${exit.error.message.slice(0, 500)}`;
+    case "cancelled":
+      return `Cancelled: ${exit.reason}`;
+    case "exhausted":
+      return `Run exhausted after ${exit.cycleCount} cycles.`;
+    case "waiting":
+      return "";
+  }
+}
 
 async function handleMessage(
   channelId: string,
@@ -130,7 +189,6 @@ async function handleMessage(
   inFlight.add(dedupeKey);
 
   const sessionId = deriveSessionId(teamId, channelId, threadTs, messageTs);
-  slackConfirmation.setThreadContext(sessionId, { channel: channelId, threadTs: replyThread });
 
   try {
     await app.client.reactions.add({
@@ -142,7 +200,6 @@ async function handleMessage(
     // Non-critical
   }
 
-  // Subscribe to event bus BEFORE calling executeTurn
   const status = createStatusUpdater(app, channelId, replyThread);
 
   const unsubscribe = bus.onAny((event: BusEvent) => {
@@ -151,22 +208,8 @@ async function handleMessage(
   });
 
   try {
-    const { answer } = await executeTurn({
-      sessionId,
-      prompt: text,
-    });
-
-    if (answer) {
-      const slackText = toSlackMarkdown(answer);
-      const chunks = splitMessage(slackText);
-      for (const chunk of chunks) {
-        await app.client.chat.postMessage({
-          channel: channelId,
-          thread_ts: replyThread,
-          text: chunk,
-        });
-      }
-    }
+    const result = await executeRun({ sessionId, prompt: text });
+    await handleResult(result, channelId, replyThread);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     log.error(`[slack] agent error [${sessionId}]: ${message}`);
@@ -178,7 +221,6 @@ async function handleMessage(
   } finally {
     unsubscribe();
     status.destroy();
-    slackConfirmation.clearThreadContext(sessionId);
     inFlight.delete(dedupeKey);
 
     try {

@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from "async_hooks";
-import type { AgentState } from "../types/agent-state.ts";
+import type { RunState } from "../types/run-state.ts";
 import type { Logger } from "../types/logger.ts"; // used by RunContext
 
 interface RunContext {
-  state: AgentState;
+  state: RunState;
   log: Logger;
 }
 
@@ -12,20 +12,20 @@ const asyncLocalStorage = new AsyncLocalStorage<RunContext>();
 // ── Primary API ───────────────────────────────────────────────
 
 export function runWithContext<T>(
-  state: AgentState,
+  state: RunState,
   log: Logger,
   fn: () => Promise<T>,
 ): Promise<T> {
   return asyncLocalStorage.run({ state, log }, fn);
 }
 
-export function getState(): AgentState | undefined {
+export function getState(): RunState | undefined {
   return asyncLocalStorage.getStore()?.state;
 }
 
-export function requireState(): AgentState {
+export function requireState(): RunState {
   const state = getState();
-  if (!state) throw new Error("No active agent state context");
+  if (!state) throw new Error("No active run state context");
   return state;
 }
 
@@ -59,16 +59,16 @@ export function getAgentName(): string {
 
 // ── Tracing identity accessors ──────────────────────────────
 
-export function getAgentId(): string | undefined {
-  return asyncLocalStorage.getStore()?.state.agentId;
+export function getRunId(): string | undefined {
+  return asyncLocalStorage.getStore()?.state.runId;
 }
 
-export function getRootAgentId(): string | undefined {
-  return asyncLocalStorage.getStore()?.state.rootAgentId;
+export function getRootRunId(): string | undefined {
+  return asyncLocalStorage.getStore()?.state.rootRunId;
 }
 
-export function getParentAgentId(): string | undefined {
-  return asyncLocalStorage.getStore()?.state.parentAgentId;
+export function getParentRunId(): string | undefined {
+  return asyncLocalStorage.getStore()?.state.parentRunId;
 }
 
 export function getTraceId(): string | undefined {

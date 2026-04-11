@@ -1,4 +1,4 @@
-import type { LLMTool, LLMMessage } from "./llm.ts";
+import type { LLMTool } from "./llm.ts";
 
 export interface ResolvedAgent {
   prompt: string;
@@ -10,9 +10,4 @@ export interface ResolvedAgent {
 export interface AgentSummary {
   name: string;
   description: string;
-}
-
-export interface AgentResult {
-  answer: string;
-  messages: LLMMessage[];
 }

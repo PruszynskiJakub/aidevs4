@@ -1,6 +1,6 @@
 import { llm as defaultLLM } from "../llm/llm.ts";
 import { promptService } from "../llm/prompt.ts";
-import { files } from "./file.ts";
+import { sandbox as files } from "./sandbox.ts";
 import { sessionService } from "../agent/session.ts";
 import { estimateTokens } from "../utils/tokens.ts";
 import type { CondenseOpts, CondenseResult } from "../types/condense.ts";

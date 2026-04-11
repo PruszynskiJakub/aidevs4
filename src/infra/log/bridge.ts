@@ -25,14 +25,14 @@ export function attachLoggerListener(
   }
 
   unsubs.push(
-    bus.on("session.opened", (e) => {
+    bus.on("run.started", (e) => {
       if (!mine(e.sessionId)) return;
       log.info(`Assistant: ${e.data.assistant} (${e.data.model})`);
     }),
   );
 
   unsubs.push(
-    bus.on("session.completed", (e) => {
+    bus.on("run.completed", (e) => {
       if (!mine(e.sessionId)) return;
       if (e.data.reason === "max_iterations") {
         log.maxIter(e.data.iterations);
@@ -42,9 +42,9 @@ export function attachLoggerListener(
   );
 
   unsubs.push(
-    bus.on("session.failed", (e) => {
+    bus.on("run.failed", (e) => {
       if (!mine(e.sessionId)) return;
-      log.error(`Session failed: ${e.data.error}`);
+      log.error(`Run failed: ${e.data.error}`);
     }),
   );
 
@@ -56,7 +56,7 @@ export function attachLoggerListener(
   );
 
   unsubs.push(
-    bus.on("turn.started", (e) => {
+    bus.on("cycle.started", (e) => {
       if (!mine(e.sessionId)) return;
       log.step(
         e.data.iteration,

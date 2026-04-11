@@ -7,14 +7,14 @@ import { inferCategory } from "../utils/media-types.ts";
 import { createSandbox, _setSandboxForTest } from "../infra/sandbox.ts";
 import { config } from "../config/index.ts";
 import { runWithContext } from "./context.ts";
-import type { AgentState } from "../types/agent-state.ts";
+import type { RunState } from "../types/run-state.ts";
 import type { Logger } from "../types/logger.ts";
 import { emptyMemoryState } from "../types/memory.ts";
 import * as dbOps from "../infra/db/index.ts";
 
 const noopLog = new Proxy({} as Logger, { get: () => () => {} });
 
-function makeState(sessionId: string): AgentState {
+function makeState(sessionId: string): RunState {
   return {
     sessionId,
     messages: [],
@@ -31,11 +31,11 @@ function withSession<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
   return runWithContext(makeState(sessionId), noopLog, fn);
 }
 
-/** Create a session + agent pair for testing message operations */
-function setupSessionAgent(sessionId: string, agentId: string): void {
+/** Create a session + run pair for testing message operations */
+function setupSessionRun(sessionId: string, runId: string): void {
   dbOps.createSession(sessionId);
-  dbOps.createAgent({
-    id: agentId,
+  dbOps.createRun({
+    id: runId,
     sessionId,
     template: "default",
     task: "test",
@@ -62,14 +62,14 @@ describe("sessionService", () => {
 
   it("appends messages and updates timestamp", async () => {
     const sid = "s-append-1";
-    const agentId = "a-append-1";
-    setupSessionAgent(sid, agentId);
+    const runId = "r-append-1";
+    setupSessionRun(sid, runId);
 
     const before = sessionService.getOrCreate(sid).updatedAt;
     await new Promise((r) => setTimeout(r, 5));
 
-    sessionService.appendMessage(sid, agentId, { role: "user", content: "hi" });
-    const msgs = sessionService.getMessages(sid, agentId);
+    sessionService.appendMessage(sid, runId, { role: "user", content: "hi" });
+    const msgs = sessionService.getMessages(sid, runId);
     expect(msgs).toHaveLength(1);
     expect(msgs[0]).toEqual({ role: "user", content: "hi" });
 
@@ -79,12 +79,12 @@ describe("sessionService", () => {
 
   it("getMessages returns session messages", () => {
     const sid = "s-getmsgs-1";
-    const agentId = "a-getmsgs-1";
-    setupSessionAgent(sid, agentId);
+    const runId = "r-getmsgs-1";
+    setupSessionRun(sid, runId);
 
-    sessionService.appendMessage(sid, agentId, { role: "user", content: "a" });
-    sessionService.appendMessage(sid, agentId, { role: "user", content: "b" });
-    const msgs = sessionService.getMessages(sid, agentId);
+    sessionService.appendMessage(sid, runId, { role: "user", content: "a" });
+    sessionService.appendMessage(sid, runId, { role: "user", content: "b" });
+    const msgs = sessionService.getMessages(sid, runId);
     expect(msgs).toHaveLength(2);
   });
 

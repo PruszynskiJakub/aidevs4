@@ -2,7 +2,7 @@ import { Cron } from "croner";
 import { randomUUID } from "node:crypto";
 import { randomSessionId } from "../utils/id.ts";
 import { sessionService } from "../agent/session.ts";
-import { executeTurn } from "../agent/orchestrator.ts";
+import { executeRun } from "../agent/orchestrator.ts";
 import * as dbOps from "./db/index.ts";
 import type { DbJob } from "../types/db.ts";
 
@@ -53,7 +53,7 @@ async function executeJob(job: DbJob): Promise<void> {
   const now = new Date().toISOString();
   try {
     await sessionService.enqueue(sessionId, () =>
-      executeTurn({ sessionId, prompt: job.message, assistant: job.agent ?? undefined }),
+      executeRun({ sessionId, prompt: job.message, assistant: job.agent ?? undefined }),
     );
     dbOps.updateJobExecution(job.id, job.runCount + 1, now, "success");
   } catch (err) {

@@ -8,13 +8,13 @@ import {
   getSessionId,
   requireSessionId,
 } from "./context.ts";
-import type { AgentState } from "../types/agent-state.ts";
+import type { RunState } from "../types/run-state.ts";
 import type { Logger } from "../types/logger.ts";
 import { emptyMemoryState } from "../types/memory.ts";
 
 const noopLogger = new Proxy({} as Logger, { get: () => () => {} });
 
-function makeState(sessionId: string): AgentState {
+function makeState(sessionId: string): RunState {
   return {
     sessionId,
     messages: [],
@@ -82,7 +82,7 @@ describe("runWithContext", () => {
 
 describe("requireState / requireLogger outside context", () => {
   it("requireState throws", () => {
-    expect(() => requireState()).toThrow("No active agent state context");
+    expect(() => requireState()).toThrow("No active run state context");
   });
 
   it("requireLogger throws", () => {
