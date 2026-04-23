@@ -65,6 +65,9 @@ export interface LLMToolCall {
     name: string;
     arguments: string;
   };
+  /** Opaque provider-specific data (e.g. Gemini thoughtSignature) that must
+   *  be preserved when replaying the conversation back to the same provider. */
+  providerMetadata?: Record<string, unknown>;
 }
 
 export interface LLMChatResponse {

@@ -55,6 +55,9 @@ function messagesToItems(runId: string, messages: LLMMessage[], startSeq: number
             callId: tc.id,
             name: tc.function.name,
             arguments: tc.function.arguments,
+            // Store providerMetadata (e.g. Gemini thoughtSignature) in the
+            // otherwise unused content column for function_call items.
+            content: tc.providerMetadata ? JSON.stringify(tc.providerMetadata) : undefined,
           });
         }
       }
@@ -99,6 +102,10 @@ function itemsToMessages(dbItems: { type: string; role: string | null; content: 
       let j = i + 1;
       while (j < dbItems.length && dbItems[j].type === "function_call") {
         const fc = dbItems[j];
+        let providerMetadata: Record<string, unknown> | undefined;
+        if (fc.content) {
+          try { providerMetadata = JSON.parse(fc.content); } catch { /* ignore */ }
+        }
         toolCalls.push({
           id: fc.callId!,
           type: "function",
@@ -106,6 +113,7 @@ function itemsToMessages(dbItems: { type: string; role: string | null; content: 
             name: fc.name!,
             arguments: fc.arguments!,
           },
+          ...(providerMetadata && { providerMetadata }),
         });
         j++;
       }

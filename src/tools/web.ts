@@ -134,7 +134,7 @@ async function web(args: Record<string, unknown>): Promise<ToolResult> {
 
 export default {
   name: "web",
-  confirmIf: (call) => call.action === "scrape",
+  confirmIf: undefined,
   schema: {
     name: "web",
     description: "Interact with the web: download data files from allowlisted hosts or scrape readable text from any web page. For HTML pages, prefer scrape — it returns clean text. Use download only for non-HTML files (JSON, CSV, images, ZIP, etc.).",

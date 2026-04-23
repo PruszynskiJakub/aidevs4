@@ -66,13 +66,19 @@ function toGeminiContents(
           for (const tc of msg.toolCalls) {
             let args: Record<string, unknown> = {};
             try { args = JSON.parse(tc.function.arguments); } catch { /* empty */ }
-            parts.push({
+            const part: Part & { thoughtSignature?: string } = {
               functionCall: {
                 id: tc.id,
                 name: tc.function.name,
                 args,
               },
-            });
+            };
+            // Re-attach thoughtSignature for Gemini thinking models
+            const sig = tc.providerMetadata?.thoughtSignature;
+            if (sig) {
+              part.thoughtSignature = sig as string;
+            }
+            parts.push(part as Part);
           }
         }
         if (parts.length > 0) {
@@ -118,14 +124,23 @@ function extractToolCalls(parts: Part[]): LLMToolCall[] {
     .filter((p): p is Part & { functionCall: NonNullable<Part["functionCall"]> } =>
       p.functionCall != null,
     )
-    .map((p, idx) => ({
-      id: p.functionCall.id ?? `gemini-tc-${idx}`,
-      type: "function" as const,
-      function: {
-        name: p.functionCall.name ?? "",
-        arguments: JSON.stringify(p.functionCall.args ?? {}),
-      },
-    }));
+    .map((p, idx) => {
+      const tc: LLMToolCall = {
+        id: p.functionCall.id ?? `gemini-tc-${idx}`,
+        type: "function" as const,
+        function: {
+          name: p.functionCall.name ?? "",
+          arguments: JSON.stringify(p.functionCall.args ?? {}),
+        },
+      };
+      // Gemini thinking models attach a thoughtSignature to function call parts.
+      // It must be replayed verbatim when the conversation is sent back.
+      const sig = (p as Record<string, unknown>).thoughtSignature;
+      if (sig) {
+        tc.providerMetadata = { thoughtSignature: sig };
+      }
+      return tc;
+    });
 }
 
 export function createGeminiProvider(apiKey: string): LLMProvider {
@@ -140,17 +155,24 @@ export function createGeminiProvider(apiKey: string): LLMProvider {
     async chatCompletion(params: ChatCompletionParams): Promise<LLMChatResponse> {
       const { systemInstruction, contents } = toGeminiContents(params.messages);
 
-      const response = await ai.models.generateContent({
-        model: params.model,
-        contents,
-        config: {
-          ...(systemInstruction && { systemInstruction }),
-          ...(params.temperature !== undefined && { temperature: params.temperature }),
-          ...(params.maxTokens !== undefined && { maxOutputTokens: params.maxTokens }),
-          ...(params.tools?.length && { tools: toGeminiTools(params.tools) }),
-          abortSignal: AbortSignal.timeout(config.limits.geminiTimeout),
-        },
-      });
+      let response;
+      try {
+        response = await ai.models.generateContent({
+          model: params.model,
+          contents,
+          config: {
+            ...(systemInstruction && { systemInstruction }),
+            ...(params.temperature !== undefined && { temperature: params.temperature }),
+            ...(params.maxTokens !== undefined && { maxOutputTokens: params.maxTokens }),
+            ...(params.tools?.length && { tools: toGeminiTools(params.tools) }),
+            abortSignal: AbortSignal.timeout(config.limits.geminiTimeout),
+          },
+        });
+      } catch (err) {
+        const roles = contents.map((c) => c.role).join(",");
+        console.error(`[gemini] ${(err as Error).message} | roles=[${roles}] parts=${contents.reduce((n, c) => n + (c.parts?.length ?? 0), 0)}`);
+        throw err;
+      }
 
       const candidate = response.candidates?.[0];
       const parts = candidate?.content?.parts ?? [];

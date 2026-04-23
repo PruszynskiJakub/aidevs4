@@ -32,6 +32,9 @@ export function isFatalLLMError(err: unknown): boolean {
     // Gemini RESOURCE_EXHAUSTED (quota)
     if (msg.includes("RESOURCE_EXHAUSTED")) return true;
 
+    // Gemini 400 Bad Request — malformed input, will never succeed on retry
+    if (status === 400) return true;
+
     // Gemini auth/permission errors
     if (status === 401 || status === 403) {
       // 403 with RESOURCE_EXHAUSTED is quota (caught above),
