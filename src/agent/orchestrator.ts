@@ -186,12 +186,20 @@ export async function runAndPersist(state: RunState): Promise<ExecuteRunResult> 
 
         // If waiting on a child run, start the child asynchronously
         if (exit.waitingOn.kind === "child_run") {
-          startChildRun(exit.waitingOn.childRunId).catch((err) => {
+          const childRunId = exit.waitingOn.childRunId;
+          startChildRun(childRunId).catch((err) => {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            console.error(`[orchestrator] Child run ${childRunId} failed to start: ${errMsg}`);
             resumeRun(runId, {
               kind: "child_run",
-              childRunId: exit.waitingOn.childRunId,
-              result: `Child run failed to start: ${err instanceof Error ? err.message : String(err)}`,
-            }).catch(console.error);
+              childRunId,
+              result: `Child run failed to start: ${errMsg}`,
+            }).catch((resumeErr) => {
+              console.error(
+                `[orchestrator] Failed to resume parent ${runId} after child start failure:`,
+                resumeErr,
+              );
+            });
           });
         }
         break;

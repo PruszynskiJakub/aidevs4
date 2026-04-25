@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex, check } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 export type JobStatus = "active" | "paused" | "completed";
@@ -41,6 +41,7 @@ export const runs = sqliteTable("runs", {
   waitingOn:     text("waiting_on"),
   exitKind:      text("exit_kind"),
   cycleCount:    integer("cycle_count").notNull().default(0),
+  version:       integer("version").notNull().default(1),
   createdAt:     timestamp(),
   startedAt:     text("started_at"),
   completedAt:   text("completed_at"),
@@ -48,6 +49,10 @@ export const runs = sqliteTable("runs", {
   index("idx_runs_session").on(table.sessionId),
   index("idx_runs_parent").on(table.parentId),
   index("idx_runs_root").on(table.rootRunId),
+  check(
+    "runs_root_run_rule",
+    sql`(${table.parentId} is null and ${table.rootRunId} = ${table.id}) or (${table.parentId} is not null and ${table.rootRunId} is not null)`,
+  ),
 ]);
 
 export const items = sqliteTable("items", {

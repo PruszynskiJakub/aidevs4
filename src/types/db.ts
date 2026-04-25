@@ -31,6 +31,7 @@ export interface DbRun {
   waitingOn: string | null;
   exitKind: string | null;
   cycleCount: number;
+  version: number;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;

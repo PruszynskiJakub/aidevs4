@@ -68,15 +68,25 @@ export function getRun(id: string): DbRun | null {
 
 export interface UpdateRunStatusOpts {
   status: RunStatus;
+  expectedVersion?: number;
   result?: string;
   error?: string;
   exitKind?: string | null;
   waitingOn?: string | null;
 }
 
-export function updateRunStatus(id: string, opts: UpdateRunStatusOpts): void {
+/**
+ * Update run status with optional optimistic locking.
+ * When `expectedVersion` is provided, the update only succeeds if the
+ * current version matches — prevents concurrent mutations.
+ * Returns true if the update was applied, false on version conflict.
+ */
+export function updateRunStatus(id: string, opts: UpdateRunStatusOpts): boolean {
   const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
-  const updates: Record<string, unknown> = { status: opts.status };
+  const updates: Record<string, unknown> = {
+    status: opts.status,
+    version: sql`${runs.version} + 1`,
+  };
 
   if (opts.status === "running") {
     updates.startedAt = now;
@@ -94,7 +104,12 @@ export function updateRunStatus(id: string, opts: UpdateRunStatusOpts): void {
   if (opts.exitKind !== undefined) updates.exitKind = opts.exitKind;
   if (opts.waitingOn !== undefined) updates.waitingOn = opts.waitingOn;
 
-  db.update(runs).set(updates).where(eq(runs.id, id)).run();
+  const where = opts.expectedVersion !== undefined
+    ? and(eq(runs.id, id), eq(runs.version, opts.expectedVersion))
+    : eq(runs.id, id);
+
+  const result = db.update(runs).set(updates).where(where!).run();
+  return result.changes > 0;
 }
 
 export function incrementCycleCount(id: string): void {

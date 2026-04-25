@@ -105,11 +105,21 @@ export async function resumeRun(
   // Persist synthetic tool-result messages
   sessionService.appendRun(run.sessionId, runId, newMessages);
 
-  // Clear waitingOn, transition back to running
-  dbOps.updateRunStatus(runId, {
+  // Clear waitingOn, transition back to running (with optimistic lock)
+  const updated = dbOps.updateRunStatus(runId, {
     status: "running",
     waitingOn: null,
+    expectedVersion: run.version,
   });
+  if (!updated) {
+    // Another process already resumed this run — idempotent return
+    const current = dbOps.getRun(runId);
+    return {
+      exit: dbRunToExit(current ?? run),
+      sessionId: run.sessionId,
+      runId,
+    };
+  }
 
   bus.emit("run.resumed", {
     runId,
