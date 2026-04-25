@@ -20,6 +20,7 @@ export const runs = sqliteTable("runs", {
   id:            text("id").primaryKey(),
   sessionId:     text("session_id").notNull().references(() => sessions.id),
   parentId:      text("parent_id").references((): any => runs.id),
+  rootRunId:     text("root_run_id").references((): any => runs.id),
   sourceCallId:  text("source_call_id"),
   template:      text("template").notNull(),
   task:          text("task").notNull(),
@@ -46,6 +47,7 @@ export const runs = sqliteTable("runs", {
 }, (table) => [
   index("idx_runs_session").on(table.sessionId),
   index("idx_runs_parent").on(table.parentId),
+  index("idx_runs_root").on(table.rootRunId),
 ]);
 
 export const items = sqliteTable("items", {

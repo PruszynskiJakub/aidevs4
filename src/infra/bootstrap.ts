@@ -5,6 +5,7 @@ import { attachLangfuseSubscriber } from "./langfuse-subscriber.ts";
 import { initMcpTools, shutdownMcp } from "../tools/index.ts";
 import { sqlite } from "./db/connection.ts";
 import { scheduler } from "./scheduler.ts";
+import { registerContinuationSubscriber, reconcileOrphanedWaits } from "../agent/run-continuation.ts";
 
 export async function initServices(): Promise<void> {
   // DB connection is initialized on import of connection.ts (above).
@@ -13,8 +14,10 @@ export async function initServices(): Promise<void> {
   console.log(`[boot] env=${config.env} db=${config.database.url} langfuse=${isTracingEnabled() ? "on" : "off"}`);
   initTracing();
   attachLangfuseSubscriber(bus);
+  registerContinuationSubscriber();
   await initMcpTools();
   scheduler.loadAll();
+  await reconcileOrphanedWaits();
 }
 
 export async function shutdownServices(): Promise<void> {

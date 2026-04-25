@@ -54,6 +54,7 @@ export function createRun(opts: CreateRunOpts): void {
       id: opts.id,
       sessionId: opts.sessionId,
       parentId: opts.parentId ?? null,
+      rootRunId: opts.rootRunId ?? null,
       sourceCallId: opts.sourceCallId ?? null,
       template: opts.template,
       task: opts.task,
@@ -105,6 +106,54 @@ export function incrementCycleCount(id: string): void {
 
 export function listRunsBySession(sessionId: string): DbRun[] {
   return db.select().from(runs).where(eq(runs.sessionId, sessionId)).all() as DbRun[];
+}
+
+/**
+ * Find the parent run that is waiting on a specific child run.
+ * Returns null if no parent is waiting (e.g. root run or already resumed).
+ */
+export function findRunWaitingOnChild(childRunId: string): DbRun | null {
+  return db
+    .select()
+    .from(runs)
+    .where(
+      and(
+        eq(runs.status, "waiting"),
+        sql`json_extract(${runs.waitingOn}, '$.kind') = 'child_run'`,
+        sql`json_extract(${runs.waitingOn}, '$.childRunId') = ${childRunId}`,
+      ),
+    )
+    .limit(1)
+    .get() as DbRun | undefined ?? null;
+}
+
+/**
+ * Find parent runs in `waiting` status whose child run is already terminal.
+ * Used by the startup reconciliation sweep to handle crash-gap scenarios.
+ */
+export function findOrphanedWaitingRuns(): DbRun[] {
+  return db
+    .select({ parent: runs })
+    .from(runs)
+    .where(
+      and(
+        eq(runs.status, "waiting"),
+        sql`json_extract(${runs.waitingOn}, '$.kind') = 'child_run'`,
+      ),
+    )
+    .all()
+    .filter((row) => {
+      const waitingOn = JSON.parse(row.parent.waitingOn!);
+      const child = getRun(waitingOn.childRunId);
+      if (!child) return true; // child missing — treat as orphaned
+      return (
+        child.status === "completed" ||
+        child.status === "failed" ||
+        child.status === "cancelled" ||
+        child.status === "exhausted"
+      );
+    })
+    .map((row) => row.parent) as DbRun[];
 }
 
 // ── Items ───────────────────────────────────────────────────

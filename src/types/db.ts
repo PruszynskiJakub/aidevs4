@@ -21,6 +21,7 @@ export interface DbRun {
   id: string;
   sessionId: string;
   parentId: string | null;
+  rootRunId: string | null;
   sourceCallId: string | null;
   template: string;
   task: string;
@@ -53,6 +54,7 @@ export interface CreateRunOpts {
   id: string;
   sessionId: string;
   parentId?: string;
+  rootRunId?: string;
   sourceCallId?: string;
   template: string;
   task: string;

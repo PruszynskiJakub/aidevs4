@@ -2,7 +2,9 @@ import type { LLMMessage, LLMAssistantMessage } from "../types/llm.ts";
 import type { RunState } from "../types/run-state.ts";
 import type { WaitDescriptor, WaitResolution } from "./wait-descriptor.ts";
 import type { ExecuteRunResult } from "./orchestrator.ts";
+import type { RunExit } from "./run-exit.ts";
 import type { Decision } from "../types/tool.ts";
+import type { DbRun } from "../types/db.ts";
 import { bus } from "../infra/events.ts";
 import { sessionService } from "./session.ts";
 import { agentsService } from "./agents.ts";
@@ -30,7 +32,12 @@ export async function resumeRun(
     throw new Error(`Unknown run: ${runId}`);
   }
   if (run.status !== "waiting") {
-    throw new Error(`Run ${runId} is not waiting (status=${run.status})`);
+    // Already resumed (idempotent) — return current state as no-op
+    return {
+      exit: dbRunToExit(run),
+      sessionId: run.sessionId,
+      runId,
+    };
   }
   if (!run.waitingOn) {
     throw new Error(`Run ${runId} has no waitingOn descriptor`);
@@ -121,7 +128,7 @@ export async function resumeRun(
     sessionId: run.sessionId,
     agentName: assistantName,
     runId,
-    rootRunId: runId, // best-effort; not used for tracing during resume
+    rootRunId: run.rootRunId ?? runId,
     parentRunId: run.parentId ?? undefined,
     traceId: randomUUID(),
     depth: parentDepth,
@@ -163,4 +170,22 @@ function normalizeDecisions(
   raw: Record<string, "approve" | "deny">,
 ): Map<string, Decision> {
   return new Map(Object.entries(raw));
+}
+
+/** Convert a DB run row to a RunExit for idempotent resume returns. */
+function dbRunToExit(run: DbRun): RunExit {
+  switch (run.status) {
+    case "completed":
+      return { kind: "completed", result: run.result ?? "" };
+    case "failed":
+      return { kind: "failed", error: { message: run.error ?? "unknown" } };
+    case "cancelled":
+      return { kind: "cancelled", reason: run.error ?? "unknown" };
+    case "exhausted":
+      return { kind: "exhausted", cycleCount: run.cycleCount };
+    case "waiting":
+      return { kind: "waiting", waitingOn: JSON.parse(run.waitingOn!) };
+    default:
+      return { kind: "failed", error: { message: `Unexpected status: ${run.status}` } };
+  }
 }

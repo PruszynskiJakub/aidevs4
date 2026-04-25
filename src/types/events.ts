@@ -40,6 +40,17 @@ export interface EventMap {
     runId: string;
     resolution: { kind: string; [k: string]: unknown };
   };
+  "run.delegated": {
+    parentRunId: string;
+    childRunId: string;
+    childAgent: string;
+    task: string;
+  };
+  "run.child_terminal": {
+    parentRunId: string;
+    childRunId: string;
+    childStatus: string;
+  };
 
   // ── Cycle ────────────────────────────────────────────────
   "cycle.started": {

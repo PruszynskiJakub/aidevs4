@@ -1,10 +1,11 @@
 import { z } from "zod";
 import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
-import { text } from "../types/tool-result.ts";
-import { getSessionId, getLogger, getRunId, getRootRunId, getTraceId, getDepth } from "../agent/context.ts";
+import { getRunId, getRootRunId, getTraceId, getDepth, getLogger } from "../agent/context.ts";
 import { assertMaxLength } from "../utils/parse.ts";
-import { executeRun } from "../agent/orchestrator.ts";
+import { createChildRun } from "../agent/orchestrator.ts";
+import { WaitRequested } from "../agent/wait-descriptor.ts";
+import { bus } from "../infra/events.ts";
 import { agentsService } from "../agent/agents.ts";
 
 const MAX_PROMPT_LENGTH = 10_000;
@@ -17,36 +18,39 @@ async function delegate(args: Record<string, unknown>, ctx?: ToolCallContext): P
     throw new Error("prompt must not be empty");
   }
 
-  const parentSessionId = getSessionId();
+  const parentRunId = getRunId();
+  if (!parentRunId) throw new Error("delegate requires an active run context");
+
+  const rootRunId = getRootRunId() ?? parentRunId;
   const logger = getLogger();
 
-  let result;
-  try {
-    result = await executeRun({
-      prompt,
-      assistant: agent,
-      parentRunId: getRunId(),
-      parentRootRunId: getRootRunId(),
-      parentTraceId: getTraceId(),
-      parentDepth: getDepth(),
-      sourceCallId: ctx?.toolCallId,
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`Delegation to agent "${agent}" failed: ${msg}`);
-  }
+  const child = await createChildRun({
+    prompt,
+    assistant: agent,
+    parentRunId,
+    rootRunId,
+    parentTraceId: getTraceId(),
+    parentDepth: getDepth(),
+    sourceCallId: ctx?.toolCallId,
+  });
 
   if (logger) {
-    logger.info(`[delegate] child session ${result.sessionId} (agent: ${agent})`);
+    logger.info(`[delegate] created child run ${child.runId} (agent: ${agent})`);
   }
 
-  if (result.exit.kind !== "completed") {
-    throw new Error(
-      `Delegation to agent "${agent}" did not complete (kind=${result.exit.kind})`,
-    );
-  }
+  bus.emit("run.delegated", {
+    parentRunId,
+    childRunId: child.runId,
+    childAgent: agent,
+    task: prompt,
+  });
 
-  return text(result.exit.result);
+  // Park the parent — the continuation subscriber will resume it
+  // when the child reaches a terminal state.
+  throw new WaitRequested({
+    kind: "child_run",
+    childRunId: child.runId,
+  });
 }
 
 const agents = await agentsService.listAgents();
