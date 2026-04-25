@@ -1,4 +1,4 @@
-import type { BusEvent } from "./types/events.ts";
+import type { AgentEvent } from "./types/events.ts";
 
 export const SLACK_MESSAGE_LIMIT = 4000;
 
@@ -68,26 +68,18 @@ export class StatusTracker {
   private history: { name: string; ok: boolean }[] = [];
 
   /** Process an event. Returns updated status string, or null if no change. */
-  update(event: BusEvent): string | null {
-    const { type, data } = event;
-    const d = data as Record<string, unknown>;
-    const name = d.name as string | undefined;
-
-    switch (type) {
+  update(event: AgentEvent): string | null {
+    switch (event.type) {
       case "tool.called":
-        if (name) this.active.add(name);
+        this.active.add(event.name);
         return this.render();
       case "tool.succeeded":
-        if (name) {
-          this.active.delete(name);
-          this.history.push({ name, ok: true });
-        }
+        this.active.delete(event.name);
+        this.history.push({ name: event.name, ok: true });
         return this.render();
       case "tool.failed":
-        if (name) {
-          this.active.delete(name);
-          this.history.push({ name, ok: false });
-        }
+        this.active.delete(event.name);
+        this.history.push({ name: event.name, ok: false });
         return this.render();
       default:
         return null;

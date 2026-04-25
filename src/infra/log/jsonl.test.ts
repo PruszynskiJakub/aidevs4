@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createJsonlWriter } from "./jsonl.ts";
 import { createEventBus } from "../events.ts";
-import type { BusEvent } from "../../types/events.ts";
+import type { AgentEvent } from "../../types/events.ts";
 
 describe("JsonlWriter", () => {
   let tmpDir: string;
@@ -15,7 +15,7 @@ describe("JsonlWriter", () => {
 
   async function setup() {
     tmpDir = await mkdtemp(join(tmpdir(), "jsonl-test-"));
-    const pathFn = (event: BusEvent) =>
+    const pathFn = (event: AgentEvent) =>
       join(tmpDir, event.sessionId ?? "_global", "events.jsonl");
 
     const writer = createJsonlWriter(pathFn);
@@ -107,7 +107,7 @@ describe("JsonlWriter", () => {
   it("each line is valid JSON", async () => {
     const { bus, writer } = await setup();
 
-    bus.emit("tool.called", { toolCallId: "c1", name: "web_search", args: "{}", batchIndex: 0, batchSize: 1 });
+    bus.emit("tool.called", { toolCallId: "c1", name: "web_search", args: "{}", batchIndex: 0, batchSize: 1, startTime: Date.now() });
     bus.emit("tool.succeeded", {
       toolCallId: "c1",
       name: "web_search",

@@ -323,7 +323,6 @@ export async function runAgent(
         agentName: state.agentName ?? state.assistant,
         model: state.model,
         task: typeof userPrompt === "string" ? userPrompt : "(structured)",
-        parentRunId: state.parentRunId,
         depth: state.depth ?? 0,
       });
 

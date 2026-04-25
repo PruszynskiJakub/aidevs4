@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type {
-  EventMap,
+  AgentEvent,
   EventType,
-  BusEvent,
+  EventInput,
   Listener,
   WildcardListener,
   EventBus,
@@ -15,8 +15,8 @@ function createEventBus(): EventBus {
   const exact = new Map<EventType, Set<Listener<any>>>();
   const wildcards = new Set<WildcardListener>();
 
-  function emit<K extends EventType>(type: K, data: EventMap[K]): void {
-    const event: BusEvent<EventMap[K]> = {
+  function emit<T extends EventType>(type: T, data: EventInput<T>): void {
+    const event = {
       id: randomUUID(),
       type,
       ts: Date.now(),
@@ -26,8 +26,8 @@ function createEventBus(): EventBus {
       parentRunId: getParentRunId(),
       traceId: getTraceId(),
       depth: getDepth(),
-      data,
-    };
+      ...data,
+    } as AgentEvent;
 
     const listeners = exact.get(type);
     if (listeners) {
@@ -42,14 +42,14 @@ function createEventBus(): EventBus {
 
     for (const fn of wildcards) {
       try {
-        fn(event as BusEvent);
+        fn(event);
       } catch (err) {
         console.error(`[event-bus] wildcard listener error on "${type}":`, err);
       }
     }
   }
 
-  function on<K extends EventType>(type: K, listener: Listener<K>): () => void {
+  function on<T extends EventType>(type: T, listener: Listener<T>): () => void {
     let set = exact.get(type);
     if (!set) {
       set = new Set();
@@ -59,7 +59,7 @@ function createEventBus(): EventBus {
     return () => off(type, listener);
   }
 
-  function off<K extends EventType>(type: K, listener: Listener<K>): void {
+  function off<T extends EventType>(type: T, listener: Listener<T>): void {
     exact.get(type)?.delete(listener as Listener<any>);
   }
 

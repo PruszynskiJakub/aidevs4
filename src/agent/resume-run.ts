@@ -122,8 +122,7 @@ export async function resumeRun(
   }
 
   bus.emit("run.resumed", {
-    runId,
-    resolution: { kind: resolution.kind, ...(resolution as Record<string, unknown>) },
+    resolution,
   });
 
   // Rebuild run state from DB for the next attempt

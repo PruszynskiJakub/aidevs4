@@ -39,7 +39,6 @@ async function delegate(args: Record<string, unknown>, ctx?: ToolCallContext): P
   }
 
   bus.emit("run.delegated", {
-    parentRunId,
     childRunId: child.runId,
     childAgent: agent,
     task: prompt,

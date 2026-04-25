@@ -1,4 +1,9 @@
-// ── Event payload types ─────────────────────────────────────
+import type { Wait, WaitResolution } from "../agent/wait-descriptor.ts";
+
+// ── Shared payload types ───────────────────────────────────
+
+export type RunId = string;
+export type SessionId = string;
 
 export type TokenPair = { promptTokens: number; completionTokens: number };
 
@@ -13,188 +18,99 @@ export type MemoryGeneration = {
   startTime: number;
 };
 
-/**
- * Typed event registry. Each key is a domain state transition;
- * the value is the structured payload for that transition.
- *
- * Extend this interface when new features land — consumers that
- * don't recognise an event type simply ignore it.
- */
-export interface EventMap {
-  // ── Run lifecycle ────────────────────────────────────────
-  "run.started": { assistant: string; model: string; userInput?: string };
-  "run.completed": {
-    reason: "answer" | "max_iterations";
-    iterations: number;
-    tokens: TokenPair;
-  };
-  "run.failed": {
-    iterations: number;
-    tokens: TokenPair;
-    error: string;
-  };
-  "run.waiting": {
-    waitingOn: { kind: string; [k: string]: unknown };
-  };
-  "run.resumed": {
-    runId: string;
-    resolution: { kind: string; [k: string]: unknown };
-  };
-  "run.delegated": {
-    parentRunId: string;
-    childRunId: string;
-    childAgent: string;
-    task: string;
-  };
-  "run.child_terminal": {
-    parentRunId: string;
-    childRunId: string;
-    childStatus: string;
-  };
-
-  // ── Cycle ────────────────────────────────────────────────
-  "cycle.started": {
-    cycleIndex: number;
-    iteration: number;
-    maxIterations: number;
-    model: string;
-    messageCount: number;
-  };
-  "cycle.completed": {
-    cycleIndex: number;
-    iteration: number;
-    outcome: "continue" | "answer" | "max_iterations";
-    durationMs: number;
-    tokens: TokenPair;
-  };
-
-  // ── LLM Generation ─────────────────────────────────────
-  "generation.started": {
-    name: string;
-    model: string;
-    startTime: number;
-  };
-  "generation.completed": {
-    name: string;
-    model: string;
-    input: unknown[];
-    output: {
-      content: string | null;
-      toolCalls?: { id: string; name: string; arguments: string }[];
-    };
-    usage: { input: number; output: number; total: number };
-    durationMs: number;
-    startTime: number;
-  };
-
-  // ── LLM call errors ────────────────────────────────────
-  "llm.call.failed": {
-    model: string;
-    error: string;
-    fatal: boolean;
-    code?: string;
-  };
-
-  // ── Tool execution ───────────────────────────────────────
-  "tool.called": { toolCallId: string; name: string; args: string; batchIndex: number; batchSize: number; startTime: number };
-  "tool.succeeded": { toolCallId: string; name: string; durationMs: number; result: string; args?: string; startTime?: number };
-  "tool.failed": { toolCallId: string; name: string; durationMs: number; error: string; args?: string; startTime?: number };
-  "batch.started": {
-    batchId: string;
-    toolCallIds: string[];
-    count: number;
-  };
-  "batch.completed": {
-    batchId: string;
-    count: number;
-    durationMs: number;
-    succeeded: number;
-    failed: number;
-  };
-
-  // ── Confirmation ────────────────────────────────────────
-  "confirmation.requested": {
-    calls: Array<{ toolCallId: string; toolName: string }>;
-  };
-  "confirmation.resolved": {
-    approved: string[];
-    denied: string[];
-  };
-
-  // ── Memory — observation lifecycle ──────────────────────
-  "memory.observation.started": { tokensBefore: number };
-  "memory.observation.completed": {
-    tokensBefore: number;
-    tokensAfter: number;
-    generation: MemoryGeneration;
-  };
-  "memory.observation.failed": { error: string };
-
-  // ── Memory — reflection lifecycle ─────────────────────
-  "memory.reflection.started": { level: number; tokensBefore: number };
-  "memory.reflection.completed": {
-    level: number;
-    tokensBefore: number;
-    tokensAfter: number;
-    generations: MemoryGeneration[];
-  };
-  "memory.reflection.failed": { level: number; error: string };
-
-  // ── Agent lifecycle ────────────────────────────────────────
-  "agent.started": {
-    agentName: string;
-    model: string;
-    task: string;
-    parentRunId?: string;
-    depth: number;
-  };
-  "agent.completed": {
-    agentName: string;
-    durationMs: number;
-    iterations: number;
-    tokens: TokenPair;
-    result: string | null;
-  };
-  "agent.failed": {
-    agentName: string;
-    durationMs: number;
-    iterations: number;
-    error: string;
-  };
-  "agent.answered": { text: string | null };
-
-  // ── Moderation ───────────────────────────────────────────
-  "input.flagged": { categories: string[]; categoryScores: Record<string, number> };
-  "input.clean": { durationMs: number };
-}
-
-// ── Envelope ────────────────────────────────────────────────
-
-export interface BusEvent<T = unknown> {
+/** Envelope fields injected by the bus from AsyncLocalStorage. */
+type RunScoped = {
   id: string;
-  type: string;
   ts: number;
-  sessionId?: string;
+  sessionId?: SessionId;
   correlationId?: string;
-  runId?: string;
-  rootRunId?: string;
-  parentRunId?: string;
+  runId: RunId;
+  rootRunId?: RunId;
+  parentRunId?: RunId;
   traceId?: string;
   depth?: number;
-  data: T;
-}
+};
 
-// ── Bus interface ───────────────────────────────────────────
+/** Subset for events fired before a run exists. */
+type Unscoped = Omit<RunScoped, "runId"> & { runId?: RunId };
 
-export type EventType = keyof EventMap;
-export type Listener<K extends EventType> = (event: BusEvent<EventMap[K]>) => void;
-export type WildcardListener = (event: BusEvent) => void;
+// ── Flat discriminated union ───────────────────────────────
+
+export type AgentEvent =
+  // ── Run lifecycle ─────────────────────────────────────────
+  | (RunScoped & { type: "run.started"; assistant: string; model: string; userInput?: string })
+  | (RunScoped & { type: "run.completed"; reason: "answer" | "max_iterations"; iterations: number; tokens: TokenPair })
+  | (RunScoped & { type: "run.failed"; iterations: number; tokens: TokenPair; error: string })
+  | (RunScoped & { type: "run.waiting"; waitingOn: Wait })
+  | (RunScoped & { type: "run.resumed"; resolution: WaitResolution })
+  | (RunScoped & { type: "run.delegated"; childRunId: RunId; childAgent: string; task: string })
+  | (RunScoped & { type: "run.child_terminal"; childRunId: RunId; childStatus: string })
+
+  // ── Cycle ─────────────────────────────────────────────────
+  | (RunScoped & { type: "cycle.started"; cycleIndex: number; iteration: number; maxIterations: number; model: string; messageCount: number })
+  | (RunScoped & { type: "cycle.completed"; cycleIndex: number; iteration: number; outcome: "continue" | "answer" | "max_iterations"; durationMs: number; tokens: TokenPair })
+
+  // ── Generation ────────────────────────────────────────────
+  | (RunScoped & { type: "generation.started"; name: string; model: string; startTime: number })
+  | (RunScoped & {
+      type: "generation.completed";
+      name: string; model: string;
+      input: unknown[];
+      output: { content: string | null; toolCalls?: { id: string; name: string; arguments: string }[] };
+      usage: { input: number; output: number; total: number };
+      durationMs: number; startTime: number;
+    })
+  | (Unscoped & { type: "llm.call.failed"; model: string; error: string; fatal: boolean; code?: string })
+
+  // ── Tool execution ────────────────────────────────────────
+  | (RunScoped & { type: "tool.called"; toolCallId: string; name: string; args: string; batchIndex: number; batchSize: number; startTime: number })
+  | (RunScoped & { type: "tool.succeeded"; toolCallId: string; name: string; durationMs: number; result: string; args?: string; startTime?: number })
+  | (RunScoped & { type: "tool.failed"; toolCallId: string; name: string; durationMs: number; error: string; args?: string; startTime?: number })
+  | (RunScoped & { type: "batch.started"; batchId: string; toolCallIds: string[]; count: number })
+  | (RunScoped & { type: "batch.completed"; batchId: string; count: number; durationMs: number; succeeded: number; failed: number })
+
+  // ── Confirmation ──────────────────────────────────────────
+  | (RunScoped & { type: "confirmation.requested"; calls: Array<{ toolCallId: string; toolName: string }> })
+  | (RunScoped & { type: "confirmation.resolved"; approved: string[]; denied: string[] })
+
+  // ── Memory ────────────────────────────────────────────────
+  | (RunScoped & { type: "memory.observation.started"; tokensBefore: number })
+  | (RunScoped & { type: "memory.observation.completed"; tokensBefore: number; tokensAfter: number; generation: MemoryGeneration })
+  | (RunScoped & { type: "memory.observation.failed"; error: string })
+  | (RunScoped & { type: "memory.reflection.started"; level: number; tokensBefore: number })
+  | (RunScoped & { type: "memory.reflection.completed"; level: number; tokensBefore: number; tokensAfter: number; generations: MemoryGeneration[] })
+  | (RunScoped & { type: "memory.reflection.failed"; level: number; error: string })
+
+  // ── Agent ─────────────────────────────────────────────────
+  | (RunScoped & { type: "agent.started"; agentName: string; model: string; task: string; depth: number })
+  | (RunScoped & { type: "agent.completed"; agentName: string; durationMs: number; iterations: number; tokens: TokenPair; result: string | null })
+  | (RunScoped & { type: "agent.failed"; agentName: string; durationMs: number; iterations: number; error: string })
+  | (RunScoped & { type: "agent.answered"; text: string | null })
+
+  // ── Moderation ────────────────────────────────────────────
+  | (Unscoped & { type: "input.flagged"; categories: string[]; categoryScores: Record<string, number> })
+  | (Unscoped & { type: "input.clean"; durationMs: number });
+
+// ── Derived helpers ────────────────────────────────────────
+
+export type EventType = AgentEvent["type"];
+export type EventOf<T extends EventType> = Extract<AgentEvent, { type: T }>;
+
+/** Payload portion an emitter supplies — bus injects everything in RunScoped/Unscoped. */
+export type EventInput<T extends EventType> = Omit<EventOf<T>, keyof RunScoped | "type">;
+
+export type Listener<T extends EventType> = (event: EventOf<T>) => void;
+export type WildcardListener = (event: AgentEvent) => void;
 
 export interface EventBus {
-  emit<K extends EventType>(type: K, data: EventMap[K]): void;
-  on<K extends EventType>(type: K, listener: Listener<K>): () => void;
+  emit<T extends EventType>(type: T, data: EventInput<T>): void;
+  on<T extends EventType>(type: T, listener: Listener<T>): () => void;
   onAny(listener: WildcardListener): () => void;
-  off<K extends EventType>(type: K, listener: Listener<K>): void;
+  off<T extends EventType>(type: T, listener: Listener<T>): void;
   offAny(listener: WildcardListener): void;
   clear(): void;
 }
+
+export const assertNever = (x: never): never => {
+  throw new Error(`Unhandled event variant: ${JSON.stringify(x)}`);
+};

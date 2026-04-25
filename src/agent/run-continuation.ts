@@ -1,7 +1,7 @@
 import { bus } from "../infra/events.ts";
 import { resumeRun } from "./resume-run.ts";
 import * as dbOps from "../infra/db/index.ts";
-import type { BusEvent } from "../types/events.ts";
+import type { AgentEvent } from "../types/events.ts";
 import type { DbRun } from "../types/db.ts";
 import type { WaitDescriptor } from "./wait-descriptor.ts";
 
@@ -16,7 +16,7 @@ export function registerContinuationSubscriber(): void {
 }
 
 async function handleChildTerminal(
-  event: BusEvent<{ [k: string]: unknown }>,
+  event: AgentEvent,
 ): Promise<void> {
   const childRunId = event.runId;
   if (!childRunId) return;
@@ -30,7 +30,6 @@ async function handleChildTerminal(
   const result = childExitToResult(childRun);
 
   bus.emit("run.child_terminal", {
-    parentRunId: parent.id,
     childRunId,
     childStatus: childRun.status,
   });

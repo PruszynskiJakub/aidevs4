@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import * as fs from "../fs.ts";
-import type { BusEvent, WildcardListener } from "../../types/events.ts";
+import type { AgentEvent, WildcardListener } from "../../types/events.ts";
 import type { JsonlWriter } from "../../types/logger.ts";
 import { config } from "../../config/index.ts";
 
@@ -10,10 +10,24 @@ function dateFolderFromTs(ts: number): string {
   return new Date(ts).toISOString().slice(0, 10);
 }
 
-function defaultPathFn(event: BusEvent): string {
+function defaultPathFn(event: AgentEvent): string {
   const folder = dateFolderFromTs(event.ts);
   const sid = event.sessionId ?? "_global";
   return join(config.paths.sessionsDir, folder, sid, "log", "events.jsonl");
+}
+
+/** Envelope keys that should not appear in the persisted `data` object. */
+const ENVELOPE_KEYS = new Set([
+  "id", "type", "ts", "sessionId", "correlationId",
+  "runId", "rootRunId", "parentRunId", "traceId", "depth",
+]);
+
+function extractPayload(event: AgentEvent): Record<string, unknown> {
+  const data: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(event)) {
+    if (!ENVELOPE_KEYS.has(k) && v !== undefined) data[k] = v;
+  }
+  return data;
 }
 
 /**
@@ -26,13 +40,13 @@ function defaultPathFn(event: BusEvent): string {
  * the bus. Call `flush()` to wait for all pending writes.
  */
 export function createJsonlWriter(
-  pathFn: (event: BusEvent) => string = defaultPathFn,
+  pathFn: (event: AgentEvent) => string = defaultPathFn,
 ): JsonlWriter {
   let chain: Promise<void> = Promise.resolve();
   const ensuredDirs = new Set<string>();
 
-  function listener(event: BusEvent): void {
-    const data = compactData(event.type, event.data as Record<string, unknown>);
+  function listener(event: AgentEvent): void {
+    const data = compactData(event.type, extractPayload(event));
     const line = JSON.stringify({
       id: event.id,
       type: event.type,

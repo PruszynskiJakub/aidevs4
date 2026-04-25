@@ -140,8 +140,16 @@ The agent's toolbox grows with each completed task.
 
 ### Events
 
-- **Registry**: `EventMap` in `src/types/events.ts` — each key is a domain
-  state transition, the value is the structured payload.
+- **Registry**: `AgentEvent` flat discriminated union in `src/types/events.ts` —
+  each variant owns its `type` literal and all fields (envelope + payload) in
+  one shape. `switch (e.type)` narrows everything at once.
+- **Helpers**: `EventType = AgentEvent["type"]`,
+  `EventOf<T> = Extract<AgentEvent, { type: T }>`,
+  `EventInput<T>` (payload only — what emitters pass to `bus.emit`).
+- **Envelope injection**: Bus injects `id`, `ts`, `sessionId`, `runId`, etc.
+  from `AsyncLocalStorage`. Emitters only supply payload fields.
+- **Per-variant invariants**: `RunScoped` variants require `runId: string`;
+  `Unscoped` variants (`input.*`, `llm.call.failed`) have `runId?: string`.
 - **Dedicated events over boolean flags**: Prefer separate event types for
   distinct outcomes instead of a single event with a boolean discriminator.
   For example, use `tool.succeeded` and `tool.failed` instead of

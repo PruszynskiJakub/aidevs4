@@ -4,7 +4,7 @@ import { executeRun, type ExecuteRunResult } from "./agent/orchestrator.ts";
 import { bus } from "./infra/events.ts";
 import { log } from "./infra/log/logger.ts";
 import { initServices, installSignalHandlers } from "./infra/bootstrap.ts";
-import type { BusEvent } from "./types/events.ts";
+import type { AgentEvent } from "./types/events.ts";
 import type { RunExit } from "./agent/run-exit.ts";
 import {
   deriveSessionId,
@@ -33,7 +33,7 @@ const THROTTLE_MS = 1_000;
 // ── Throttled status updater ───────────────────────────────
 
 interface StatusUpdater {
-  onEvent(event: BusEvent): void;
+  onEvent(event: AgentEvent): void;
   destroy(): void;
 }
 
@@ -80,7 +80,7 @@ function createStatusUpdater(
   }
 
   return {
-    onEvent(event: BusEvent) {
+    onEvent(event: AgentEvent) {
       if (destroyed) return;
       const text = tracker.update(event);
       if (!text) return;
@@ -202,7 +202,7 @@ async function handleMessage(
 
   const status = createStatusUpdater(app, channelId, replyThread);
 
-  const unsubscribe = bus.onAny((event: BusEvent) => {
+  const unsubscribe = bus.onAny((event: AgentEvent) => {
     if (event.sessionId !== sessionId) return;
     status.onEvent(event);
   });

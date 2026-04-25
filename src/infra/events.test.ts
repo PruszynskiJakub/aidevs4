@@ -11,9 +11,10 @@ describe("EventBus", () => {
 
   it("delivers events to exact-match listeners", () => {
     const received: unknown[] = [];
-    bus.on("cycle.started", (e) => received.push(e.data));
+    bus.on("cycle.started", (e) => received.push({ iteration: e.iteration, maxIterations: e.maxIterations, model: e.model, messageCount: e.messageCount }));
 
     bus.emit("cycle.started", {
+      cycleIndex: 0,
       iteration: 0,
       maxIterations: 40,
       model: "gpt-4.1",
@@ -33,7 +34,7 @@ describe("EventBus", () => {
     const received: string[] = [];
     bus.onAny((e) => received.push(e.type));
 
-    bus.emit("tool.called", { toolCallId: "c1", name: "web_search", args: "{}", batchIndex: 0, batchSize: 1 });
+    bus.emit("tool.called", { toolCallId: "c1", name: "web_search", args: "{}", batchIndex: 0, batchSize: 1, startTime: Date.now() });
     bus.emit("tool.succeeded", {
       toolCallId: "c1",
       name: "web_search",
@@ -46,9 +47,10 @@ describe("EventBus", () => {
 
   it("does not deliver events to unrelated exact listeners", () => {
     const received: unknown[] = [];
-    bus.on("run.started", (e) => received.push(e.data));
+    bus.on("run.started", (e) => received.push(e.assistant));
 
     bus.emit("cycle.started", {
+      cycleIndex: 0,
       iteration: 0,
       maxIterations: 40,
       model: "gpt-4.1",
@@ -59,10 +61,11 @@ describe("EventBus", () => {
   });
 
   it("on() returns an unsubscribe function", () => {
-    const received: unknown[] = [];
-    const unsub = bus.on("cycle.started", (e) => received.push(e.data));
+    const received: number[] = [];
+    const unsub = bus.on("cycle.started", (e) => received.push(e.iteration));
 
     bus.emit("cycle.started", {
+      cycleIndex: 0,
       iteration: 0,
       maxIterations: 40,
       model: "m",
@@ -70,6 +73,7 @@ describe("EventBus", () => {
     });
     unsub();
     bus.emit("cycle.started", {
+      cycleIndex: 1,
       iteration: 1,
       maxIterations: 40,
       model: "m",
@@ -83,20 +87,21 @@ describe("EventBus", () => {
     const received: string[] = [];
     const unsub = bus.onAny((e) => received.push(e.type));
 
-    bus.emit("tool.called", { toolCallId: "c1", name: "a", args: "{}", batchIndex: 0, batchSize: 1 });
+    bus.emit("tool.called", { toolCallId: "c1", name: "a", args: "{}", batchIndex: 0, batchSize: 1, startTime: Date.now() });
     unsub();
-    bus.emit("tool.called", { toolCallId: "c2", name: "b", args: "{}", batchIndex: 0, batchSize: 1 });
+    bus.emit("tool.called", { toolCallId: "c2", name: "b", args: "{}", batchIndex: 0, batchSize: 1, startTime: Date.now() });
 
     expect(received).toHaveLength(1);
   });
 
   it("off() removes an exact listener", () => {
     const received: unknown[] = [];
-    const fn = (e: any) => received.push(e.data);
+    const fn = (e: any) => received.push(e.iteration);
     bus.on("cycle.started", fn);
     bus.off("cycle.started", fn);
 
     bus.emit("cycle.started", {
+      cycleIndex: 0,
       iteration: 0,
       maxIterations: 40,
       model: "m",
@@ -112,7 +117,7 @@ describe("EventBus", () => {
     bus.onAny(fn);
     bus.offAny(fn);
 
-    bus.emit("tool.called", { toolCallId: "c1", name: "a", args: "{}", batchIndex: 0, batchSize: 1 });
+    bus.emit("tool.called", { toolCallId: "c1", name: "a", args: "{}", batchIndex: 0, batchSize: 1, startTime: Date.now() });
     expect(received).toHaveLength(0);
   });
 
@@ -125,6 +130,7 @@ describe("EventBus", () => {
     bus.clear();
 
     bus.emit("cycle.started", {
+      cycleIndex: 0,
       iteration: 0,
       maxIterations: 40,
       model: "m",
@@ -160,10 +166,10 @@ describe("EventBus", () => {
       bus.on("tool.called", () => {
         throw new Error("boom");
       });
-      bus.on("tool.called", (e) => received.push(e.data.name));
+      bus.on("tool.called", (e) => received.push(e.name));
       bus.onAny((e) => received.push("wild:" + e.type));
 
-      bus.emit("tool.called", { toolCallId: "c1", name: "test_tool" });
+      bus.emit("tool.called", { toolCallId: "c1", name: "test_tool", args: "{}", batchIndex: 0, batchSize: 1, startTime: Date.now() });
 
       expect(received).toEqual(["test_tool", "wild:tool.called"]);
       expect(consoleSpy).toHaveBeenCalled();
@@ -193,10 +199,11 @@ describe("EventBus", () => {
   it("supports multiple listeners for the same event type", () => {
     const a: number[] = [];
     const b: number[] = [];
-    bus.on("cycle.started", (e) => a.push(e.data.iteration));
-    bus.on("cycle.started", (e) => b.push(e.data.iteration));
+    bus.on("cycle.started", (e) => a.push(e.iteration));
+    bus.on("cycle.started", (e) => b.push(e.iteration));
 
     bus.emit("cycle.started", {
+      cycleIndex: 0,
       iteration: 5,
       maxIterations: 40,
       model: "m",

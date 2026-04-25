@@ -117,13 +117,13 @@ function attachSessionHandlers(bus: EventBus, state: SubscriberState): (() => vo
       if (!runId) return;
 
       const depth = e.depth ?? 0;
-      const input = e.data.userInput;
+      const input = e.userInput;
 
       if (depth === 0) {
         state.propagateAttributes(
-          { sessionId: e.sessionId, traceName: e.data.assistant },
+          { sessionId: e.sessionId, traceName: e.assistant },
           () => {
-            const obs = state.startObservation(e.data.assistant, { input }, { asType: "agent" });
+            const obs = state.startObservation(e.assistant, { input }, { asType: "agent" });
             obs.setTraceIO({ input });
             state.agentMap.set(runId, { obs, ctx: otelContext.active() });
             flushModeration(state, obs);
@@ -135,7 +135,7 @@ function attachSessionHandlers(bus: EventBus, state: SubscriberState): (() => vo
         withAgentCtx(state, parentId, () => {
           const parentObs = state.agentMap.get(parentId)!.obs;
           const obs = parentObs.startObservation(
-            e.data.assistant,
+            e.assistant,
             { input },
             { asType: "agent" },
           );
@@ -149,7 +149,7 @@ function attachSessionHandlers(bus: EventBus, state: SubscriberState): (() => vo
     bus.on("run.completed", (e) => {
       const runId = e.runId;
       if (!runId) return;
-      endAgentObs(state, runId, e.data.reason, e.data.iterations, e.data.tokens);
+      endAgentObs(state, runId, e.reason, e.iterations, e.tokens);
     }),
   );
 
@@ -157,7 +157,7 @@ function attachSessionHandlers(bus: EventBus, state: SubscriberState): (() => vo
     bus.on("run.failed", (e) => {
       const runId = e.runId;
       if (!runId) return;
-      endAgentObs(state, runId, "error", e.data.iterations, e.data.tokens, e.data.error);
+      endAgentObs(state, runId, "error", e.iterations, e.tokens, e.error);
     }),
   );
 
@@ -175,9 +175,9 @@ function attachTurnHandlers(bus: EventBus, state: SubscriberState): (() => void)
       withAgentCtx(state, runId, () => {
         const agentObs = state.agentMap.get(runId)!.obs;
         const turn = agentObs.startObservation(
-          `cycle-${e.data.iteration}`,
+          `cycle-${e.iteration}`,
           {
-            input: { iteration: e.data.iteration, messageCount: e.data.messageCount },
+            input: { iteration: e.iteration, messageCount: e.messageCount },
             startTime: toDate(now),
           },
         );
@@ -194,7 +194,7 @@ function attachTurnHandlers(bus: EventBus, state: SubscriberState): (() => void)
       const turn = state.turnMap.get(runId);
       if (!turn) return;
       turn.update({
-        output: { outcome: e.data.outcome, durationMs: e.data.durationMs },
+        output: { outcome: e.outcome, durationMs: e.durationMs },
         endTime: toDate(Date.now()),
       });
       turn.end();
@@ -215,7 +215,7 @@ function attachGenerationHandlers(bus: EventBus, state: SubscriberState): (() =>
         const parent = parentFor(state, runId);
         if (!parent) return;
 
-        const output = e.data.output;
+        const output = e.output;
         const chatMlOutput: Record<string, unknown> = {
           role: "assistant",
           content: output.content,
@@ -228,7 +228,7 @@ function attachGenerationHandlers(bus: EventBus, state: SubscriberState): (() =>
           }));
         }
 
-        nestGeneration(parent, { ...e.data, name: `${e.data.name}-llm`, output: chatMlOutput });
+        nestGeneration(parent, { ...e, name: `${e.name}-llm`, output: chatMlOutput });
       });
     }),
   ];
@@ -245,37 +245,37 @@ function attachToolHandlers(bus: EventBus, state: SubscriberState): (() => void)
         const parent = parentFor(state, runId);
         if (!parent) return;
         const toolObs = parent.startObservation(
-          e.data.name,
-          { input: e.data.args, startTime: toDate(e.data.startTime) },
+          e.name,
+          { input: e.args, startTime: toDate(e.startTime) },
           { asType: "tool" },
         );
-        state.toolMap.set(e.data.toolCallId, toolObs);
+        state.toolMap.set(e.toolCallId, toolObs);
       });
     }),
   );
 
   unsubs.push(
     bus.on("tool.succeeded", (e) => {
-      const toolObs = state.toolMap.get(e.data.toolCallId);
+      const toolObs = state.toolMap.get(e.toolCallId);
       if (!toolObs) return;
-      toolObs.update({ output: e.data.result, endTime: toDate(Date.now()) });
+      toolObs.update({ output: e.result, endTime: toDate(Date.now()) });
       toolObs.end();
-      state.toolMap.delete(e.data.toolCallId);
+      state.toolMap.delete(e.toolCallId);
     }),
   );
 
   unsubs.push(
     bus.on("tool.failed", (e) => {
-      const toolObs = state.toolMap.get(e.data.toolCallId);
+      const toolObs = state.toolMap.get(e.toolCallId);
       if (!toolObs) return;
       toolObs.update({
-        output: e.data.error,
+        output: e.error,
         level: "ERROR",
-        statusMessage: e.data.error,
+        statusMessage: e.error,
         endTime: toDate(Date.now()),
       });
       toolObs.end();
-      state.toolMap.delete(e.data.toolCallId);
+      state.toolMap.delete(e.toolCallId);
     }),
   );
 
@@ -290,7 +290,7 @@ function attachAgentAnswerHandlers(bus: EventBus, state: SubscriberState): (() =
       const entry = state.agentMap.get(runId);
       if (!entry) return;
 
-      const answerText = truncate(e.data.text ?? "", TRUNCATE_ANSWER);
+      const answerText = truncate(e.text ?? "", TRUNCATE_ANSWER);
       state.agentAnswerMap.set(runId, answerText);
 
       otelContext.with(entry.ctx, () => {
@@ -315,7 +315,7 @@ function attachMemoryHandlers(bus: EventBus, state: SubscriberState): (() => voi
         const parent = parentFor(state, runId);
         if (!parent) return;
         const span = parent.startObservation("memory-observation", {
-          input: { tokensBefore: e.data.tokensBefore },
+          input: { tokensBefore: e.tokensBefore },
           startTime: toDate(Date.now()),
         });
         state.memoryMap.set(`${runId}:observation`, span);
@@ -330,9 +330,9 @@ function attachMemoryHandlers(bus: EventBus, state: SubscriberState): (() => voi
       withAgentCtx(state, runId, () => {
         const span = state.memoryMap.get(`${runId}:observation`);
         if (!span) return;
-        nestGeneration(span, e.data.generation);
+        nestGeneration(span, e.generation);
         span.update({
-          output: { tokensAfter: e.data.tokensAfter, compression: `${e.data.tokensBefore} → ${e.data.tokensAfter}` },
+          output: { tokensAfter: e.tokensAfter, compression: `${e.tokensBefore} → ${e.tokensAfter}` },
           endTime: toDate(Date.now()),
         });
         span.end();
@@ -347,7 +347,7 @@ function attachMemoryHandlers(bus: EventBus, state: SubscriberState): (() => voi
       if (!runId) return;
       const span = state.memoryMap.get(`${runId}:observation`);
       if (!span) return;
-      span.update({ level: "ERROR", statusMessage: e.data.error });
+      span.update({ level: "ERROR", statusMessage: e.error });
       span.end();
       state.memoryMap.delete(`${runId}:observation`);
     }),
@@ -361,8 +361,8 @@ function attachMemoryHandlers(bus: EventBus, state: SubscriberState): (() => voi
       withAgentCtx(state, runId, () => {
         const parent = parentFor(state, runId);
         if (!parent) return;
-        const span = parent.startObservation(`memory-reflection-L${e.data.level}`, {
-          input: { level: e.data.level, tokensBefore: e.data.tokensBefore },
+        const span = parent.startObservation(`memory-reflection-L${e.level}`, {
+          input: { level: e.level, tokensBefore: e.tokensBefore },
           startTime: toDate(Date.now()),
         });
         state.memoryMap.set(`${runId}:reflection`, span);
@@ -377,11 +377,11 @@ function attachMemoryHandlers(bus: EventBus, state: SubscriberState): (() => voi
       withAgentCtx(state, runId, () => {
         const span = state.memoryMap.get(`${runId}:reflection`);
         if (!span) return;
-        for (const gen of e.data.generations) {
+        for (const gen of e.generations) {
           nestGeneration(span, gen);
         }
         span.update({
-          output: { tokensAfter: e.data.tokensAfter, compression: `${e.data.tokensBefore} → ${e.data.tokensAfter}` },
+          output: { tokensAfter: e.tokensAfter, compression: `${e.tokensBefore} → ${e.tokensAfter}` },
           endTime: toDate(Date.now()),
         });
         span.end();
@@ -396,7 +396,7 @@ function attachMemoryHandlers(bus: EventBus, state: SubscriberState): (() => voi
       if (!runId) return;
       const span = state.memoryMap.get(`${runId}:reflection`);
       if (!span) return;
-      span.update({ level: "ERROR", statusMessage: e.data.error });
+      span.update({ level: "ERROR", statusMessage: e.error });
       span.end();
       state.memoryMap.delete(`${runId}:reflection`);
     }),
@@ -408,13 +408,13 @@ function attachMemoryHandlers(bus: EventBus, state: SubscriberState): (() => voi
 function attachModerationHandlers(bus: EventBus, state: SubscriberState): (() => void)[] {
   return [
     bus.on("input.clean", (e) => {
-      state.pendingModeration = { passed: true, durationMs: e.data.durationMs };
+      state.pendingModeration = { passed: true, durationMs: e.durationMs };
     }),
     bus.on("input.flagged", (e) => {
       state.pendingModeration = {
         passed: false,
-        categories: e.data.categories,
-        categoryScores: e.data.categoryScores,
+        categories: e.categories,
+        categoryScores: e.categoryScores,
       };
     }),
   ];

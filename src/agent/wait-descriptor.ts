@@ -18,6 +18,7 @@ export type WaitDescriptor =
       childRunId: string;
     };
 
+export type Wait = WaitDescriptor;
 export type WaitKind = WaitDescriptor["kind"];
 
 /**

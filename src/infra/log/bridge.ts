@@ -27,15 +27,15 @@ export function attachLoggerListener(
   unsubs.push(
     bus.on("run.started", (e) => {
       if (!mine(e.sessionId)) return;
-      log.info(`Assistant: ${e.data.assistant} (${e.data.model})`);
+      log.info(`Assistant: ${e.assistant} (${e.model})`);
     }),
   );
 
   unsubs.push(
     bus.on("run.completed", (e) => {
       if (!mine(e.sessionId)) return;
-      if (e.data.reason === "max_iterations") {
-        log.maxIter(e.data.iterations);
+      if (e.reason === "max_iterations") {
+        log.maxIter(e.iterations);
       }
       // "answer" reason — answer text is emitted separately via agent.answered event
     }),
@@ -44,14 +44,14 @@ export function attachLoggerListener(
   unsubs.push(
     bus.on("run.failed", (e) => {
       if (!mine(e.sessionId)) return;
-      log.error(`Run failed: ${e.data.error}`);
+      log.error(`Run failed: ${e.error}`);
     }),
   );
 
   unsubs.push(
     bus.on("agent.started", (e) => {
       if (!mine(e.sessionId)) return;
-      log.info(`Agent: ${e.data.agentName} (${e.data.model}, depth=${e.data.depth})`);
+      log.info(`Agent: ${e.agentName} (${e.model}, depth=${e.depth})`);
     }),
   );
 
@@ -59,10 +59,10 @@ export function attachLoggerListener(
     bus.on("cycle.started", (e) => {
       if (!mine(e.sessionId)) return;
       log.step(
-        e.data.iteration,
-        e.data.maxIterations,
-        e.data.model,
-        e.data.messageCount,
+        e.iteration,
+        e.maxIterations,
+        e.model,
+        e.messageCount,
       );
     }),
   );
@@ -70,11 +70,11 @@ export function attachLoggerListener(
   unsubs.push(
     bus.on("generation.completed", (e) => {
       if (!mine(e.sessionId)) return;
-      if (e.data.name === "act") {
+      if (e.name === "act") {
         log.llm(
-          formatMs(e.data.durationMs),
-          e.data.usage.input,
-          e.data.usage.output,
+          formatMs(e.durationMs),
+          e.usage.input,
+          e.usage.output,
         );
       }
     }),
@@ -83,45 +83,45 @@ export function attachLoggerListener(
   unsubs.push(
     bus.on("tool.called", (e) => {
       if (!mine(e.sessionId)) return;
-      if (e.data.batchIndex === 0) {
-        log.toolHeader(e.data.batchSize);
+      if (e.batchIndex === 0) {
+        log.toolHeader(e.batchSize);
       }
-      log.toolCall(e.data.name, e.data.args);
+      log.toolCall(e.name, e.args);
     }),
   );
 
   unsubs.push(
     bus.on("tool.succeeded", (e) => {
       if (!mine(e.sessionId)) return;
-      log.toolOk(e.data.name, formatMs(e.data.durationMs), e.data.result);
+      log.toolOk(e.name, formatMs(e.durationMs), e.result);
     }),
   );
 
   unsubs.push(
     bus.on("tool.failed", (e) => {
       if (!mine(e.sessionId)) return;
-      log.toolErr(e.data.name, e.data.error);
+      log.toolErr(e.name, e.error);
     }),
   );
 
   unsubs.push(
     bus.on("batch.completed", (e) => {
       if (!mine(e.sessionId)) return;
-      log.batchDone(e.data.count, formatMs(e.data.durationMs));
+      log.batchDone(e.count, formatMs(e.durationMs));
     }),
   );
 
   unsubs.push(
     bus.on("agent.answered", (e) => {
       if (!mine(e.sessionId)) return;
-      log.answer(e.data.text);
+      log.answer(e.text);
     }),
   );
 
   unsubs.push(
     bus.on("memory.observation.completed", (e) => {
       if (!mine(e.sessionId)) return;
-      log.memoryObserve(e.data.tokensBefore, e.data.tokensAfter);
+      log.memoryObserve(e.tokensBefore, e.tokensAfter);
     }),
   );
 
@@ -129,9 +129,9 @@ export function attachLoggerListener(
     bus.on("memory.reflection.completed", (e) => {
       if (!mine(e.sessionId)) return;
       log.memoryReflect(
-        e.data.level,
-        e.data.tokensBefore,
-        e.data.tokensAfter,
+        e.level,
+        e.tokensBefore,
+        e.tokensAfter,
       );
     }),
   );
