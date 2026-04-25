@@ -3,8 +3,10 @@ import { executeRun } from "./agent/orchestrator.ts";
 import { resumeRun } from "./agent/resume-run.ts";
 import { initServices, shutdownServices, installSignalHandlers } from "./infra/bootstrap.ts";
 import { takePendingConfirmation } from "./agent/confirmation.ts";
+import * as dbOps from "./infra/db/index.ts";
 import type { RunExit } from "./agent/run-exit.ts";
 import type { WaitDescriptor } from "./agent/wait-descriptor.ts";
+import type { ExecuteRunResult } from "./agent/orchestrator.ts";
 import type { Decision } from "./types/tool.ts";
 import * as readline from "node:readline/promises";
 
@@ -89,6 +91,43 @@ function printExit(exit: RunExit): void {
   }
 }
 
+/**
+ * Wait for the continuation subscriber to resume a parent run that is
+ * waiting on a child. Polls the DB until the parent leaves `waiting`.
+ */
+async function waitForChildResume(parentRunId: string): Promise<ExecuteRunResult> {
+  // Poll until the parent is no longer waiting
+  while (true) {
+    await new Promise((r) => setTimeout(r, 200));
+    const run = dbOps.getRun(parentRunId);
+    if (!run) {
+      return { exit: { kind: "failed", error: { message: "Run disappeared" } }, sessionId: "", runId: parentRunId };
+    }
+    if (run.status === "waiting") continue;
+
+    // Parent has moved past waiting — return its final state
+    let exit: RunExit;
+    switch (run.status) {
+      case "completed":
+        exit = { kind: "completed", result: run.result ?? "" };
+        break;
+      case "failed":
+        exit = { kind: "failed", error: { message: run.error ?? "unknown" } };
+        break;
+      case "cancelled":
+        exit = { kind: "cancelled", reason: run.error ?? "unknown" };
+        break;
+      case "exhausted":
+        exit = { kind: "exhausted", cycleCount: run.cycleCount };
+        break;
+      default:
+        // Still running — keep polling
+        continue;
+    }
+    return { exit, sessionId: run.sessionId, runId: parentRunId };
+  }
+}
+
 try {
   let result = await executeRun({
     sessionId,
@@ -98,15 +137,21 @@ try {
   });
 
   while (result.exit.kind === "waiting") {
-    const decisions = await promptApproval(result.exit.waitingOn);
-    result = await resumeRun(result.runId, {
-      kind: "user_approval",
-      confirmationId:
-        result.exit.waitingOn.kind === "user_approval"
-          ? result.exit.waitingOn.confirmationId
-          : "",
-      decisions,
-    });
+    if (result.exit.waitingOn.kind === "child_run") {
+      // Child run is executing asynchronously. Wait for the continuation
+      // subscriber to resume the parent, then read the final result.
+      result = await waitForChildResume(result.runId);
+    } else {
+      const decisions = await promptApproval(result.exit.waitingOn);
+      result = await resumeRun(result.runId, {
+        kind: "user_approval",
+        confirmationId:
+          result.exit.waitingOn.kind === "user_approval"
+            ? result.exit.waitingOn.confirmationId
+            : "",
+        decisions,
+      });
+    }
   }
 
   console.log(`\nSession: ${result.sessionId}`);

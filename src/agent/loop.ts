@@ -164,6 +164,13 @@ async function dispatchTools(
     })
   );
 
+  // Check if any tool threw WaitRequested — propagate it before processing results
+  for (const outcome of settled) {
+    if (outcome.status === "rejected" && outcome.reason instanceof WaitRequested) {
+      throw outcome.reason;
+    }
+  }
+
   for (let j = 0; j < approved.length; j++) {
     const tc = approved[j];
     const outcome = settled[j];
