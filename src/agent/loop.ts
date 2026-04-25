@@ -329,18 +329,17 @@ export async function runAgent(
       const workspaceContext = await buildWorkspaceContext();
       const actSystemPrompt = `${workspaceContext}\n\n${resolved.prompt}`;
       const memoryEnabled = resolved.memory !== false;
-      let cycleStartTime = 0;
+      let turnStartTime = 0;
 
       for (let i = 0; i < config.limits.maxIterations; i++) {
         state.iteration = i;
-        cycleStartTime = performance.now();
+        turnStartTime = performance.now();
 
         if (state.runId) dbOps.incrementCycleCount(state.runId);
 
-        bus.emit("cycle.started", {
-          cycleIndex: i,
-          iteration: i + 1,
-          maxIterations: config.limits.maxIterations,
+        bus.emit("turn.started", {
+          index: i,
+          maxTurns: config.limits.maxIterations,
           model: state.model,
           messageCount: state.messages.length,
         });
@@ -359,11 +358,10 @@ export async function runAgent(
             await saveMemoryIfChanged();
           }
 
-          bus.emit("cycle.completed", {
-            cycleIndex: i,
-            iteration: i + 1,
+          bus.emit("turn.completed", {
+            index: i,
             outcome: "answer",
-            durationMs: performance.now() - cycleStartTime,
+            durationMs: performance.now() - turnStartTime,
             tokens: { ...state.tokens },
           });
           bus.emit("agent.answered", { text: response.content });
@@ -394,11 +392,10 @@ export async function runAgent(
           if (err instanceof WaitRequested) {
             // Persist the messages produced so far before pausing so the
             // resumed run can rebuild full transcript.
-            bus.emit("cycle.completed", {
-              cycleIndex: i,
-              iteration: i + 1,
+            bus.emit("turn.completed", {
+              index: i,
               outcome: "continue",
-              durationMs: performance.now() - cycleStartTime,
+              durationMs: performance.now() - turnStartTime,
               tokens: { ...state.tokens },
             });
             return {
@@ -409,11 +406,10 @@ export async function runAgent(
           throw err;
         }
 
-        bus.emit("cycle.completed", {
-          cycleIndex: i,
-          iteration: i + 1,
+        bus.emit("turn.completed", {
+          index: i,
           outcome: "continue",
-          durationMs: performance.now() - cycleStartTime,
+          durationMs: performance.now() - turnStartTime,
           tokens: { ...state.tokens },
         });
       }
@@ -423,11 +419,10 @@ export async function runAgent(
         await saveMemoryIfChanged();
       }
 
-      bus.emit("cycle.completed", {
-        cycleIndex: config.limits.maxIterations - 1,
-        iteration: config.limits.maxIterations,
+      bus.emit("turn.completed", {
+        index: config.limits.maxIterations - 1,
         outcome: "max_iterations",
-        durationMs: performance.now() - cycleStartTime,
+        durationMs: performance.now() - turnStartTime,
         tokens: { ...state.tokens },
       });
       bus.emit("agent.completed", {

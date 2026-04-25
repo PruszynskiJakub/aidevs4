@@ -11,20 +11,19 @@ describe("EventBus", () => {
 
   it("delivers events to exact-match listeners", () => {
     const received: unknown[] = [];
-    bus.on("cycle.started", (e) => received.push({ iteration: e.iteration, maxIterations: e.maxIterations, model: e.model, messageCount: e.messageCount }));
+    bus.on("turn.started", (e) => received.push({ index: e.index, maxTurns: e.maxTurns, model: e.model, messageCount: e.messageCount }));
 
-    bus.emit("cycle.started", {
-      cycleIndex: 0,
-      iteration: 0,
-      maxIterations: 40,
+    bus.emit("turn.started", {
+      index: 0,
+      maxTurns: 40,
       model: "gpt-4.1",
       messageCount: 3,
     });
 
     expect(received).toHaveLength(1);
     expect(received[0]).toEqual({
-      iteration: 0,
-      maxIterations: 40,
+      index: 0,
+      maxTurns: 40,
       model: "gpt-4.1",
       messageCount: 3,
     });
@@ -49,10 +48,9 @@ describe("EventBus", () => {
     const received: unknown[] = [];
     bus.on("run.started", (e) => received.push(e.assistant));
 
-    bus.emit("cycle.started", {
-      cycleIndex: 0,
-      iteration: 0,
-      maxIterations: 40,
+    bus.emit("turn.started", {
+      index: 0,
+      maxTurns: 40,
       model: "gpt-4.1",
       messageCount: 1,
     });
@@ -62,20 +60,18 @@ describe("EventBus", () => {
 
   it("on() returns an unsubscribe function", () => {
     const received: number[] = [];
-    const unsub = bus.on("cycle.started", (e) => received.push(e.iteration));
+    const unsub = bus.on("turn.started", (e) => received.push(e.index));
 
-    bus.emit("cycle.started", {
-      cycleIndex: 0,
-      iteration: 0,
-      maxIterations: 40,
+    bus.emit("turn.started", {
+      index: 0,
+      maxTurns: 40,
       model: "m",
       messageCount: 1,
     });
     unsub();
-    bus.emit("cycle.started", {
-      cycleIndex: 1,
-      iteration: 1,
-      maxIterations: 40,
+    bus.emit("turn.started", {
+      index: 1,
+      maxTurns: 40,
       model: "m",
       messageCount: 2,
     });
@@ -96,14 +92,13 @@ describe("EventBus", () => {
 
   it("off() removes an exact listener", () => {
     const received: unknown[] = [];
-    const fn = (e: any) => received.push(e.iteration);
-    bus.on("cycle.started", fn);
-    bus.off("cycle.started", fn);
+    const fn = (e: any) => received.push(e.index);
+    bus.on("turn.started", fn);
+    bus.off("turn.started", fn);
 
-    bus.emit("cycle.started", {
-      cycleIndex: 0,
-      iteration: 0,
-      maxIterations: 40,
+    bus.emit("turn.started", {
+      index: 0,
+      maxTurns: 40,
       model: "m",
       messageCount: 1,
     });
@@ -124,15 +119,14 @@ describe("EventBus", () => {
   it("clear() removes all listeners", () => {
     const exact: unknown[] = [];
     const wild: unknown[] = [];
-    bus.on("cycle.started", (e) => exact.push(e));
+    bus.on("turn.started", (e) => exact.push(e));
     bus.onAny((e) => wild.push(e));
 
     bus.clear();
 
-    bus.emit("cycle.started", {
-      cycleIndex: 0,
-      iteration: 0,
-      maxIterations: 40,
+    bus.emit("turn.started", {
+      index: 0,
+      maxTurns: 40,
       model: "m",
       messageCount: 1,
     });
@@ -199,13 +193,12 @@ describe("EventBus", () => {
   it("supports multiple listeners for the same event type", () => {
     const a: number[] = [];
     const b: number[] = [];
-    bus.on("cycle.started", (e) => a.push(e.iteration));
-    bus.on("cycle.started", (e) => b.push(e.iteration));
+    bus.on("turn.started", (e) => a.push(e.index));
+    bus.on("turn.started", (e) => b.push(e.index));
 
-    bus.emit("cycle.started", {
-      cycleIndex: 0,
-      iteration: 5,
-      maxIterations: 40,
+    bus.emit("turn.started", {
+      index: 5,
+      maxTurns: 40,
       model: "m",
       messageCount: 1,
     });

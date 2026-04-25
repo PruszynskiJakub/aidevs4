@@ -44,11 +44,10 @@ describe("attachLoggerListener (Bus→Logger)", () => {
     expect(call!.args[0]).toContain("solver");
   });
 
-  it("cycle.started → log.step()", () => {
-    bus.emit("cycle.started", {
-      cycleIndex: 2,
-      iteration: 3,
-      maxIterations: 40,
+  it("turn.started → log.step()", () => {
+    bus.emit("turn.started", {
+      index: 2,
+      maxTurns: 40,
       model: "gpt-4.1",
       messageCount: 5,
     });
@@ -199,10 +198,9 @@ describe("attachLoggerListener (Bus→Logger)", () => {
   it("detach() stops all event delivery", () => {
     detach();
 
-    bus.emit("cycle.started", {
-      cycleIndex: 0,
-      iteration: 1,
-      maxIterations: 40,
+    bus.emit("turn.started", {
+      index: 0,
+      maxTurns: 40,
       model: "m",
       messageCount: 1,
     });

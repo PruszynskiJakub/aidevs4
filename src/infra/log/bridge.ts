@@ -56,11 +56,11 @@ export function attachLoggerListener(
   );
 
   unsubs.push(
-    bus.on("cycle.started", (e) => {
+    bus.on("turn.started", (e) => {
       if (!mine(e.sessionId)) return;
       log.step(
-        e.iteration,
-        e.maxIterations,
+        e.index + 1,
+        e.maxTurns,
         e.model,
         e.messageCount,
       );

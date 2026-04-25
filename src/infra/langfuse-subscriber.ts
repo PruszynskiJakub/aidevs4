@@ -168,16 +168,16 @@ function attachTurnHandlers(bus: EventBus, state: SubscriberState): (() => void)
   const unsubs: (() => void)[] = [];
 
   unsubs.push(
-    bus.on("cycle.started", (e) => {
+    bus.on("turn.started", (e) => {
       const runId = e.runId;
       if (!runId) return;
       const now = Date.now();
       withAgentCtx(state, runId, () => {
         const agentObs = state.agentMap.get(runId)!.obs;
         const turn = agentObs.startObservation(
-          `cycle-${e.iteration}`,
+          `turn-${e.index}`,
           {
-            input: { iteration: e.iteration, messageCount: e.messageCount },
+            input: { index: e.index, messageCount: e.messageCount },
             startTime: toDate(now),
           },
         );
@@ -188,7 +188,7 @@ function attachTurnHandlers(bus: EventBus, state: SubscriberState): (() => void)
   );
 
   unsubs.push(
-    bus.on("cycle.completed", (e) => {
+    bus.on("turn.completed", (e) => {
       const runId = e.runId;
       if (!runId) return;
       const turn = state.turnMap.get(runId);

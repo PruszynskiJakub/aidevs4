@@ -28,10 +28,9 @@ describe("JsonlWriter", () => {
     const { bus, writer } = await setup();
 
     bus.emit("run.started", { assistant: "default", model: "gpt-4.1" });
-    bus.emit("cycle.started", {
-      cycleIndex: 0,
-      iteration: 0,
-      maxIterations: 40,
+    bus.emit("turn.started", {
+      index: 0,
+      maxTurns: 40,
       model: "gpt-4.1",
       messageCount: 3,
     });
@@ -52,8 +51,8 @@ describe("JsonlWriter", () => {
     expect(first.ts).toBeNumber();
 
     const second = JSON.parse(lines[1]);
-    expect(second.type).toBe("cycle.started");
-    expect(second.data.iteration).toBe(0);
+    expect(second.type).toBe("turn.started");
+    expect(second.data.index).toBe(0);
 
     writer.dispose();
   });
@@ -62,10 +61,9 @@ describe("JsonlWriter", () => {
     const { bus, writer } = await setup();
 
     for (let i = 0; i < 10; i++) {
-      bus.emit("cycle.started", {
-        cycleIndex: i,
-        iteration: i,
-        maxIterations: 40,
+      bus.emit("turn.started", {
+        index: i,
+        maxTurns: 40,
         model: "m",
         messageCount: i,
       });
@@ -82,7 +80,7 @@ describe("JsonlWriter", () => {
 
     for (let i = 0; i < 10; i++) {
       const parsed = JSON.parse(lines[i]);
-      expect(parsed.data.iteration).toBe(i);
+      expect(parsed.data.index).toBe(i);
     }
 
     writer.dispose();

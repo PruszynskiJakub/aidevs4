@@ -48,8 +48,8 @@ export async function runEvalCase(message: string): Promise<AgentOutput> {
   );
 
   unsubs.push(
-    bus.on("cycle.completed", (event) => {
-      if (matchRun(event)) iterations = event.iteration;
+    bus.on("turn.completed", (event) => {
+      if (matchRun(event)) iterations = event.index + 1;
     }),
   );
 

@@ -2,7 +2,7 @@
  * Manual integration test for the HTTP confirmation gate.
  *
  * 1. Opens an SSE stream to /chat with a prompt that triggers web__scrape
- * 2. Waits for a confirmation.requested event
+ * 2. Waits for a run.waiting event with user_approval
  * 3. Posts approval (or denial) to /chat/:sessionId/confirm
  * 4. Waits for the final "done" event and prints the answer
  *
@@ -88,9 +88,9 @@ async function handleEvent(event: string, data: string) {
 
       console.log(`[SSE] ${type}`);
 
-      if (type === "confirmation.requested" && !confirmed) {
+      if (type === "run.waiting" && parsed.data.waitingOn?.kind === "user_approval" && !confirmed) {
         confirmed = true;
-        const calls = parsed.data.calls as Array<{ callId: string; toolName: string }>;
+        const calls = parsed.data.waitingOn.calls as Array<{ callId: string; toolName: string }>;
         console.log(`\n  Confirmation requested for:`);
         for (const c of calls) {
           console.log(`    - ${c.toolName} (${c.callId})`);
@@ -112,8 +112,8 @@ async function handleEvent(event: string, data: string) {
         console.log(`  Confirm response: ${JSON.stringify(confirmJson)}\n`);
       }
 
-      if (type === "confirmation.resolved") {
-        console.log(`  Resolved — approved: ${parsed.data.approved?.length ?? 0}, denied: ${parsed.data.denied?.length ?? 0}`);
+      if (type === "run.resumed") {
+        console.log(`  Resumed — resolution: ${JSON.stringify(parsed.data.resolution)}`);
       }
 
       if (type === "tool.succeeded") {

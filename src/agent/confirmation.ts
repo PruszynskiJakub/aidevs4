@@ -91,10 +91,6 @@ export async function confirmBatch(calls: LLMToolCall[]): Promise<GateResult> {
   const requests = needsApproval.map((e) => e.request);
   const toolCalls = needsApproval.map((e) => e.call);
 
-  bus.emit("confirmation.requested", {
-    calls: requests.map((r) => ({ toolCallId: r.toolCallId, toolName: r.toolName })),
-  });
-
   const confirmationId = randomUUID();
   pendingConfirmations.set(confirmationId, { requests, toolCalls });
 

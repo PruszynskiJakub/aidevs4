@@ -127,16 +127,6 @@ describe("confirmBatch", () => {
     expect(pending!.toolCalls).toHaveLength(2);
   });
 
-  it("emits confirmation.requested event before throwing", async () => {
-    try {
-      await confirmBatch([makeToolCall("c1", "sp76_web__scrape", {})]);
-    } catch {}
-
-    const requested = emittedEvents.find((e) => e.type === "confirmation.requested");
-    expect(requested).toBeDefined();
-    expect((requested!.data as any).calls[0].toolName).toBe("sp76_web__scrape");
-  });
-
   it("passes action name not expanded name to confirmIf", async () => {
     // sp76_web's confirmIf returns true only when action === "scrape".
     // For download (no confirmation), no throw should occur.

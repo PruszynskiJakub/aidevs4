@@ -46,9 +46,9 @@ export type AgentEvent =
   | (RunScoped & { type: "run.delegated"; childRunId: RunId; childAgent: string; task: string })
   | (RunScoped & { type: "run.child_terminal"; childRunId: RunId; childStatus: string })
 
-  // ── Cycle ─────────────────────────────────────────────────
-  | (RunScoped & { type: "cycle.started"; cycleIndex: number; iteration: number; maxIterations: number; model: string; messageCount: number })
-  | (RunScoped & { type: "cycle.completed"; cycleIndex: number; iteration: number; outcome: "continue" | "answer" | "max_iterations"; durationMs: number; tokens: TokenPair })
+  // ── Turn ──────────────────────────────────────────────────
+  | (RunScoped & { type: "turn.started"; index: number; maxTurns: number; model: string; messageCount: number })
+  | (RunScoped & { type: "turn.completed"; index: number; outcome: "continue" | "answer" | "max_iterations"; durationMs: number; tokens: TokenPair })
 
   // ── Generation ────────────────────────────────────────────
   | (RunScoped & { type: "generation.started"; name: string; model: string; startTime: number })
@@ -68,10 +68,6 @@ export type AgentEvent =
   | (RunScoped & { type: "tool.failed"; toolCallId: string; name: string; durationMs: number; error: string; args?: string; startTime?: number })
   | (RunScoped & { type: "batch.started"; batchId: string; toolCallIds: string[]; count: number })
   | (RunScoped & { type: "batch.completed"; batchId: string; count: number; durationMs: number; succeeded: number; failed: number })
-
-  // ── Confirmation ──────────────────────────────────────────
-  | (RunScoped & { type: "confirmation.requested"; calls: Array<{ toolCallId: string; toolName: string }> })
-  | (RunScoped & { type: "confirmation.resolved"; approved: string[]; denied: string[] })
 
   // ── Memory ────────────────────────────────────────────────
   | (RunScoped & { type: "memory.observation.started"; tokensBefore: number })
