@@ -2,14 +2,14 @@ import { describe, it, expect, beforeEach, beforeAll, afterAll } from "bun:test"
 import { mkdtemp, rm, stat } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { createSessionService, sessionService } from "./session.ts";
-import { inferCategory } from "../utils/media-types.ts";
-import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
-import { config } from "../config/index.ts";
-import { runWithContext } from "./context.ts";
-import type { AgentState } from "../types/agent-state.ts";
-import type { Logger } from "../types/logger.ts";
-import { emptyMemoryState } from "../types/memory.ts";
+import { createSessionService, sessionService } from "../../src/agent/session.ts";
+import { inferCategory } from "../../src/utils/media-types.ts";
+import { createBunFileService, _setFilesForTest } from "../../src/infra/file.ts";
+import { config } from "../../src/config/index.ts";
+import { runWithContext } from "../../src/agent/context.ts";
+import type { AgentState } from "../../src/types/agent-state.ts";
+import type { Logger } from "../../src/types/logger.ts";
+import { emptyMemoryState } from "../../src/types/memory.ts";
 
 const noopLog = new Proxy({} as Logger, { get: () => () => {} });
 

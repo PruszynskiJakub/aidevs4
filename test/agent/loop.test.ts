@@ -1,13 +1,13 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import type { LLMProvider, LLMChatResponse, LLMMessage, ChatCompletionParams } from "../types/llm.ts";
-import type { AgentState } from "../types/agent-state.ts";
-import { emptyMemoryState } from "../types/memory.ts";
+import type { LLMProvider, LLMChatResponse, LLMMessage, ChatCompletionParams } from "../../src/types/llm.ts";
+import type { AgentState } from "../../src/types/agent-state.ts";
+import { emptyMemoryState } from "../../src/types/memory.ts";
 
 // Use real prompt/assistant services. Tests check loop behavior, not model names.
 
 // Stub dispatcher — we control dispatch results per test
 let dispatchResults: Record<string, () => Promise<string>> = {};
-mock.module("../tools/index.ts", () => ({
+mock.module("../../src/tools/index.ts", () => ({
   register: () => {},
   getTools: async () => [],
   getToolsByName: () => undefined,
@@ -20,7 +20,7 @@ mock.module("../tools/index.ts", () => ({
 }));
 
 // Must import after mocks are installed
-const { runAgent } = await import("./loop.ts");
+const { runAgent } = await import("../../src/agent/loop.ts");
 
 /**
  * Create a provider that returns responses in sequence.

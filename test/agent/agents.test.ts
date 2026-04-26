@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { agentsService } from "./agents.ts";
-import { register, reset } from "../tools/registry.ts";
-import type { ToolDefinition } from "../types/tool.ts";
-import { text } from "../types/tool-result.ts";
+import { agentsService } from "../../src/agent/agents.ts";
+import { register, reset } from "../../src/tools/registry.ts";
+import type { ToolDefinition } from "../../src/types/tool.ts";
+import { text } from "../../src/types/tool-result.ts";
 
 function registerTool(name: string) {
   const tool: ToolDefinition = {
