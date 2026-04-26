@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent System Architecture</title>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --surface2: #1a2234;
+    --border: #2a3548;
+    --text: #e2e8f0;
+    --text-dim: #8892a4;
+    --accent: #6366f1;
+    --accent-glow: rgba(99,102,241,0.3);
+    --green: #22c55e;
+    --green-glow: rgba(34,197,94,0.25);
+    --amber: #f59e0b;
+    --amber-glow: rgba(245,158,11,0.25);
+    --red: #ef4444;
+    --red-glow: rgba(239,68,68,0.2);
+    --cyan: #06b6d4;
+    --cyan-glow: rgba(6,182,212,0.25);
+    --pink: #ec4899;
+    --pink-glow: rgba(236,72,153,0.25);
+    --orange: #f97316;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  .header {
+    text-align: center;
+    padding: 40px 20px 20px;
+    background: linear-gradient(180deg, rgba(99,102,241,0.08) 0%, transparent 100%);
+  }
+  .header h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #6366f1, #06b6d4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .header p { color: var(--text-dim); font-size: 0.95rem; }
+
+  .tabs {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px;
+    flex-wrap: wrap;
+  }
+  .tab {
+    padding: 10px 24px;
+    border-radius: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .tab:hover { border-color: var(--accent); color: var(--text); }
+  .tab.active {
+    background: rgba(99,102,241,0.15);
+    border-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+
+  .scene { display: none; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .scene.active { display: block; }
+
+  /* ── BLOCK DIAGRAM ── */
+  .diagram {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .block {
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    transition: all 0.3s;
+  }
+  .block:hover { transform: translateY(-1px); }
+
+  .block-session {
+    background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(99,102,241,0.03));
+    border: 2px solid rgba(99,102,241,0.3);
+    padding: 24px;
+  }
+  .block-run {
+    background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(6,182,212,0.03));
+    border: 2px solid rgba(6,182,212,0.25);
+    margin: 16px 0 0;
+  }
+  .block-turn {
+    background: linear-gradient(135deg, rgba(34,197,94,0.06), rgba(34,197,94,0.02));
+    border: 1px solid rgba(34,197,94,0.2);
+    margin: 12px 0 0;
+  }
+  .block-tool {
+    background: rgba(245,158,11,0.06);
+    border: 1px solid rgba(245,158,11,0.2);
+    margin: 8px 0 0;
+    padding: 14px;
+  }
+
+  .block-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+  }
+  .block-label .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dot-session { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+  .dot-run { background: var(--cyan); box-shadow: 0 0 8px var(--cyan-glow); }
+  .dot-turn { background: var(--green); box-shadow: 0 0 8px var(--green-glow); }
+  .dot-tool { background: var(--amber); box-shadow: 0 0 8px var(--amber-glow); }
+  .dot-wait { background: var(--red); box-shadow: 0 0 8px var(--red-glow); }
+  .dot-child { background: var(--pink); box-shadow: 0 0 8px var(--pink-glow); }
+
+  .block-meta {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .block-meta code {
+    background: rgba(255,255,255,0.06);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+
+  .inner { padding-left: 20px; border-left: 2px dashed rgba(255,255,255,0.06); }
+
+  /* ── FLOW / SEQUENCE ── */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+    padding-left: 36px;
+  }
+  .flow::before {
+    content: '';
+    position: absolute;
+    left: 15px; top: 0; bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, var(--accent), var(--cyan), var(--green), var(--amber), var(--red), var(--pink), var(--green));
+  }
+
+  .step {
+    position: relative;
+    padding: 14px 18px;
+    margin: 6px 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 0.88rem;
+    transition: all 0.25s;
+  }
+  .step::before {
+    content: '';
+    position: absolute;
+    left: -28px; top: 50%;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    transform: translateY(-50%);
+    border: 2px solid var(--border);
+    background: var(--surface);
+  }
+  .step.s-session::before { border-color: var(--accent); background: var(--accent); }
+  .step.s-run::before { border-color: var(--cyan); background: var(--cyan); }
+  .step.s-turn::before { border-color: var(--green); background: var(--green); }
+  .step.s-tool::before { border-color: var(--amber); background: var(--amber); }
+  .step.s-wait::before { border-color: var(--red); background: var(--red); }
+  .step.s-child::before { border-color: var(--pink); background: var(--pink); }
+  .step.s-resume::before { border-color: #a78bfa; background: #a78bfa; }
+
+  .step:hover {
+    border-color: rgba(255,255,255,0.15);
+    background: var(--surface2);
+  }
+
+  .step-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .step-title .badge {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .badge-event { background: rgba(99,102,241,0.2); color: #a5b4fc; }
+  .badge-action { background: rgba(34,197,94,0.2); color: #86efac; }
+  .badge-wait { background: rgba(239,68,68,0.2); color: #fca5a5; }
+  .badge-resume { background: rgba(167,139,250,0.2); color: #c4b5fd; }
+
+  .step-desc { color: var(--text-dim); font-size: 0.82rem; }
+
+  /* ── ANIMATED SIMULATION ── */
+  .sim-container {
+    position: relative;
+    min-height: 600px;
+  }
+
+  .sim-controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .sim-btn {
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .sim-btn:hover { border-color: var(--accent); background: var(--surface2); }
+  .sim-btn.active { background: rgba(99,102,241,0.15); border-color: var(--accent); }
+
+  .sim-canvas {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+  }
+  .sim-visual {
+    flex: 1;
+    min-width: 0;
+  }
+  .sim-log {
+    width: 340px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    max-height: 560px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.78rem;
+    line-height: 1.8;
+  }
+  .sim-log .log-entry {
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    opacity: 0;
+    animation: fadeIn 0.3s ease forwards;
+  }
+  @keyframes fadeIn { to { opacity: 1; } }
+
+  .log-ts { color: #64748b; }
+  .log-event { font-weight: 600; }
+  .log-session { color: var(--accent); }
+  .log-run { color: var(--cyan); }
+  .log-turn { color: var(--green); }
+  .log-tool { color: var(--amber); }
+  .log-wait { color: var(--red); }
+  .log-child { color: var(--pink); }
+  .log-resume { color: #a78bfa; }
+
+  /* Animated blocks */
+  .anim-block {
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 8px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .anim-block.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .anim-block.pulse {
+    animation: pulse 1.5s ease infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 transparent; }
+    50% { box-shadow: 0 0 20px var(--glow-color, var(--accent-glow)); }
+  }
+
+  .ab-session {
+    background: rgba(99,102,241,0.06);
+    border: 2px solid rgba(99,102,241,0.25);
+    --glow-color: var(--accent-glow);
+  }
+  .ab-run {
+    background: rgba(6,182,212,0.06);
+    border: 1px solid rgba(6,182,212,0.2);
+    margin-left: 20px;
+    --glow-color: var(--cyan-glow);
+  }
+  .ab-turn {
+    background: rgba(34,197,94,0.05);
+    border: 1px solid rgba(34,197,94,0.15);
+    margin-left: 20px;
+    --glow-color: var(--green-glow);
+  }
+  .ab-tool {
+    background: rgba(245,158,11,0.05);
+    border: 1px solid rgba(245,158,11,0.15);
+    margin-left: 20px;
+    padding: 10px 14px;
+    --glow-color: var(--amber-glow);
+  }
+  .ab-wait {
+    background: rgba(239,68,68,0.06);
+    border: 2px dashed rgba(239,68,68,0.3);
+    margin-left: 20px;
+    --glow-color: var(--red-glow);
+  }
+  .ab-child {
+    background: rgba(236,72,153,0.06);
+    border: 2px solid rgba(236,72,153,0.2);
+    margin-left: 40px;
+    --glow-color: var(--pink-glow);
+  }
+  .ab-resume {
+    background: rgba(167,139,250,0.06);
+    border: 1px solid rgba(167,139,250,0.2);
+    margin-left: 20px;
+    --glow-color: rgba(167,139,250,0.25);
+  }
+
+  .ab-label {
+    font-weight: 700;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+  }
+  .ab-detail { font-size: 0.82rem; color: var(--text-dim); }
+
+  .ab-status {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-left: 8px;
+  }
+  .status-running { background: rgba(34,197,94,0.2); color: #86efac; }
+  .status-waiting { background: rgba(239,68,68,0.2); color: #fca5a5; }
+  .status-completed { background: rgba(99,102,241,0.2); color: #a5b4fc; }
+
+  /* ── LEGEND ── */
+  .legend {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 24px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+  }
+  .legend-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+  }
+
+  /* ── MULTI-AGENT PANEL ── */
+  .agent-lanes {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    padding-bottom: 12px;
+  }
+  .agent-lane {
+    min-width: 320px;
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .lane-header {
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .connector {
+    text-align: center;
+    padding: 8px;
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    position: relative;
+  }
+  .connector::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: repeating-linear-gradient(180deg, var(--border), var(--border) 4px, transparent 4px, transparent 8px);
+    transform: translateX(-50%);
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 800px) {
+    .sim-canvas { flex-direction: column; }
+    .sim-log { width: 100%; max-height: 300px; }
+    .agent-lanes { flex-direction: column; }
+    .agent-lane { min-width: unset; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Agent System Architecture</h1>
+  <p>Sessions, Runs, Turns, Tools & Human-in-the-Loop</p>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('overview')">Overview</div>
+  <div class="tab" onclick="switchTab('single')">Single Agent Flow</div>
+  <div class="tab" onclick="switchTab('hitl')">Human in the Loop</div>
+  <div class="tab" onclick="switchTab('multi')">Multi-Agent Delegation</div>
+  <div class="tab" onclick="switchTab('sim')">Live Simulation</div>
+</div>
+
+<!-- ════════════ OVERVIEW ════════════ -->
+<div class="scene active" id="scene-overview">
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> Session</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--cyan)"></div> Run</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Turn</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div> Tool</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> Wait</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--pink)"></div> Child Run</div>
+  </div>
+
+  <div class="diagram">
+    <div class="block block-session">
+      <div class="block-label"><span class="dot dot-session"></span> SESSION</div>
+      <div class="block-meta">Persistent conversation container &mdash; <code>sessionId: uuid</code><br>Stores messages in SQLite. Spans multiple runs over time.</div>
+      <div class="inner">
+        <div class="block block-run">
+          <div class="block-label"><span class="dot dot-run"></span> RUN (Root)</div>
+          <div class="block-meta">Single agent execution &mdash; <code>runId: uuid</code><br>States: <code>pending &rarr; running &rarr; waiting | completed | failed | exhausted</code></div>
+          <div class="inner">
+            <div class="block block-turn">
+              <div class="block-label"><span class="dot dot-turn"></span> TURN 0</div>
+              <div class="block-meta">One plan/act cycle. LLM generates &rarr; tools execute &rarr; results appended.</div>
+              <div class="inner">
+                <div class="block block-tool">
+                  <div class="block-label"><span class="dot dot-tool"></span> TOOL: web_search</div>
+                  <div class="block-meta"><code>dispatch(name, args) &rarr; ToolResult</code> &mdash; Result appended to messages</div>
+                </div>
+                <div class="block block-tool">
+                  <div class="block-label"><span class="dot dot-tool"></span> TOOL: execute_code</div>
+                  <div class="block-meta">Tools can run in parallel batches within a turn</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="block block-turn">
+              <div class="block-label"><span class="dot dot-turn"></span> TURN 1</div>
+              <div class="block-meta">LLM sees previous results, decides next action or answers.</div>
+              <div class="inner">
+                <div class="block block-tool">
+                  <div class="block-label"><span class="dot dot-tool"></span> TOOL: delegate</div>
+                  <div class="block-meta">Spawns child run &rarr; throws <code>WaitRequested</code></div>
+                </div>
+                <div class="block" style="background:rgba(239,68,68,0.06);border:2px dashed rgba(239,68,68,0.25);margin-top:8px;padding:14px;">
+                  <div class="block-label"><span class="dot dot-wait"></span> WAIT &mdash; Parent Paused</div>
+                  <div class="block-meta">Run status &rarr; <code>waiting</code>. Persisted: <code>waitingOn: { kind: "child_run", childRunId }</code></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="block" style="background:rgba(236,72,153,0.06);border:2px solid rgba(236,72,153,0.2);margin-top:16px;padding:20px;">
+          <div class="block-label"><span class="dot dot-child"></span> CHILD RUN (Delegated Agent)</div>
+          <div class="block-meta">Own session, own run. <code>parentId</code> &rarr; root run. <code>rootRunId</code> &rarr; shared ancestor.</div>
+          <div class="inner">
+            <div class="block block-turn">
+              <div class="block-label"><span class="dot dot-turn"></span> TURN 0</div>
+              <div class="inner">
+                <div class="block block-tool">
+                  <div class="block-label"><span class="dot dot-tool"></span> TOOL: browse</div>
+                  <div class="block-meta">Child agent works independently with its own tools.</div>
+                </div>
+              </div>
+            </div>
+            <div class="block block-turn">
+              <div class="block-label"><span class="dot dot-turn"></span> TURN 1</div>
+              <div class="block-meta">LLM answers &rarr; <code>run.completed</code> event fires &rarr; continuation subscriber resumes parent</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="block block-run" style="margin-top:16px; border-style:dashed;">
+          <div class="block-label"><span class="dot dot-run"></span> RUN (Resumed Root)</div>
+          <div class="block-meta">Parent rebuilds state from DB + child result as synthetic tool output</div>
+          <div class="inner">
+            <div class="block block-turn">
+              <div class="block-label"><span class="dot dot-turn"></span> TURN 2 (continued)</div>
+              <div class="block-meta">LLM sees child result, produces final answer. <code>run.completed</code></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ SINGLE AGENT FLOW ════════════ -->
+<div class="scene" id="scene-single">
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> Session</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--cyan)"></div> Run</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Turn</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div> Tool</div>
+  </div>
+
+  <div class="flow">
+    <div class="step s-session">
+      <div class="step-title">executeRun() <span class="badge badge-action">Entry</span></div>
+      <div class="step-desc">Create/load session, validate agent, moderate input, persist run row as <code>pending</code></div>
+    </div>
+    <div class="step s-session">
+      <div class="step-title">Append User Message <span class="badge badge-action">Persist</span></div>
+      <div class="step-desc">User prompt stored in DB items table, load full message history</div>
+    </div>
+    <div class="step s-run">
+      <div class="step-title">run.started <span class="badge badge-event">Event</span></div>
+      <div class="step-desc">Run enters the loop. Status: <code>running</code>. Agent resolved, tools loaded.</div>
+    </div>
+    <div class="step s-turn">
+      <div class="step-title">turn.started (Turn 0) <span class="badge badge-event">Event</span></div>
+      <div class="step-desc">Loop iteration begins. Memory observations processed if enabled.</div>
+    </div>
+    <div class="step s-turn">
+      <div class="step-title">generation.started <span class="badge badge-event">Event</span></div>
+      <div class="step-desc">LLM call with full message context + system prompt + tool definitions</div>
+    </div>
+    <div class="step s-turn">
+      <div class="step-title">generation.completed <span class="badge badge-event">Event</span></div>
+      <div class="step-desc">LLM response received. Check: has tool calls? If no &rarr; terminal answer.</div>
+    </div>
+    <div class="step s-tool">
+      <div class="step-title">confirmBatch() <span class="badge badge-action">Gate</span></div>
+      <div class="step-desc">Check each tool's <code>confirmIf</code> predicate. Auto-approve if no gate or provider approves.</div>
+    </div>
+    <div class="step s-tool">
+      <div class="step-title">tool.called &rarr; dispatch() <span class="badge badge-event">Event</span></div>
+      <div class="step-desc">Parse args via <code>safeParse()</code>, lookup handler in registry, execute. Tools can run in parallel.</div>
+    </div>
+    <div class="step s-tool">
+      <div class="step-title">tool.succeeded / tool.failed <span class="badge badge-event">Event</span></div>
+      <div class="step-desc">Result appended to messages as function_call_output. Stored in result-store.</div>
+    </div>
+    <div class="step s-turn">
+      <div class="step-title">turn.completed (continue) <span class="badge badge-event">Event</span></div>
+      <div class="step-desc">Turn done. Loop increments iteration, starts next turn with updated context.</div>
+    </div>
+    <div class="step s-turn">
+      <div class="step-title">turn.started (Turn 1) <span class="badge badge-event">Event</span></div>
+      <div class="step-desc">LLM sees tool results from Turn 0. Generates response...</div>
+    </div>
+    <div class="step s-turn">
+      <div class="step-title">finishReason: "stop" <span class="badge badge-action">Terminal</span></div>
+      <div class="step-desc">No tool calls in response &mdash; LLM produced final answer.</div>
+    </div>
+    <div class="step s-run">
+      <div class="step-title">run.completed <span class="badge badge-event">Event</span></div>
+      <div class="step-desc">Status: <code>completed</code>. Result persisted. Messages flushed to DB.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ HUMAN IN THE LOOP ════════════ -->
+<div class="scene" id="scene-hitl">
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Normal Flow</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> Wait / Blocked</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div> Resume</div>
+  </div>
+
+  <h3 style="margin-bottom:16px; font-size:1.1rem;">Scenario: Agent needs user approval for a destructive action</h3>
+
+  <div class="flow">
+    <div class="step s-run">
+      <div class="step-title">Run is executing <span class="badge badge-action">Running</span></div>
+      <div class="step-desc">Agent is in Turn N, LLM requested tool calls</div>
+    </div>
+    <div class="step s-tool">
+      <div class="step-title">LLM requests: send_email(...) <span class="badge badge-action">Tool Call</span></div>
+      <div class="step-desc">An irreversible action. Tool has <code>confirmIf: () => true</code></div>
+    </div>
+    <div class="step s-tool">
+      <div class="step-title">confirmBatch() checks gates <span class="badge badge-action">Gate</span></div>
+      <div class="step-desc">Iterates tool calls, finds <code>send_email</code> requires confirmation</div>
+    </div>
+    <div class="step s-wait">
+      <div class="step-title">throw WaitRequested <span class="badge badge-wait">Halt</span></div>
+      <div class="step-desc">
+        <code>{ kind: "user_approval", confirmationId: uuid, prompt: "Send email to X?" }</code><br>
+        Pending tool calls stored in memory. Confirmation ID maps to the batch.
+      </div>
+    </div>
+    <div class="step s-wait">
+      <div class="step-title">Run status &rarr; waiting <span class="badge badge-wait">Persisted</span></div>
+      <div class="step-desc">
+        DB updated: <code>status = "waiting"</code>, <code>waiting_on = { kind: "user_approval", ... }</code><br>
+        Loop exits cleanly. All state saved to DB. Process can shut down safely.
+      </div>
+    </div>
+
+    <div class="connector" style="padding:20px 0;">
+      <div style="position:relative;z-index:1;background:var(--bg);display:inline-block;padding:4px 16px;border-radius:20px;border:1px dashed var(--red);color:var(--red);font-size:0.8rem;">
+        WAITING FOR HUMAN &mdash; could be seconds, hours, or days
+      </div>
+    </div>
+
+    <div class="step s-resume">
+      <div class="step-title">Human provides decision <span class="badge badge-resume">Resume</span></div>
+      <div class="step-desc">Via CLI, HTTP API, or Slack. Resolution: <code>{ kind: "user_approval", decisions: [{ toolCallId, approved: true }] }</code></div>
+    </div>
+    <div class="step s-resume">
+      <div class="step-title">resumeRun(runId, resolution) <span class="badge badge-resume">Entry</span></div>
+      <div class="step-desc">
+        Idempotent entry point. Validates run is in <code>waiting</code> state.<br>
+        Checks <code>resolution.kind</code> matches <code>waitingOn.kind</code>. Optimistic lock check.
+      </div>
+    </div>
+    <div class="step s-tool">
+      <div class="step-title">Dispatch approved tools <span class="badge badge-action">Execute</span></div>
+      <div class="step-desc">
+        Finds pending tool calls in transcript. For each approved call, runs the handler.<br>
+        Denied calls get synthetic "User denied this action" result.
+      </div>
+    </div>
+    <div class="step s-tool">
+      <div class="step-title">Append synthetic tool outputs <span class="badge badge-action">Persist</span></div>
+      <div class="step-desc">Results written as function_call_output items in DB. Run status &rarr; <code>running</code></div>
+    </div>
+    <div class="step s-run">
+      <div class="step-title">run.resumed <span class="badge badge-event">Event</span></div>
+      <div class="step-desc">RunState rebuilt from DB. Loop re-enters at next turn with tool results in context.</div>
+    </div>
+    <div class="step s-turn">
+      <div class="step-title">Loop continues from Turn N+1 <span class="badge badge-action">Continue</span></div>
+      <div class="step-desc">LLM sees the tool results (approved actions ran, denied actions have rejection message). Proceeds normally.</div>
+    </div>
+  </div>
+
+  <div style="margin-top:32px;">
+    <h3 style="margin-bottom:16px; font-size:1.1rem;">Key Design Properties</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
+      <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
+        <div style="font-weight:600;margin-bottom:6px;color:var(--cyan);">Crash-safe</div>
+        <div style="font-size:0.85rem;color:var(--text-dim);">All state persisted to SQLite before waiting. Process can restart &mdash; <code>reconcileOrphanedWaits()</code> at startup finds and resumes stranded runs.</div>
+      </div>
+      <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
+        <div style="font-weight:600;margin-bottom:6px;color:var(--amber);">Idempotent resume</div>
+        <div style="font-size:0.85rem;color:var(--text-dim);">Optimistic locking (version field) prevents double-resume. Safe to call <code>resumeRun()</code> multiple times.</div>
+      </div>
+      <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
+        <div style="font-weight:600;margin-bottom:6px;color:var(--green);">Granular decisions</div>
+        <div style="font-size:0.85rem;color:var(--text-dim);">Each tool call in the batch gets its own approve/deny decision. Partial approval is supported.</div>
+      </div>
+      <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
+        <div style="font-weight:600;margin-bottom:6px;color:var(--pink);">Multi-surface</div>
+        <div style="font-size:0.85rem;color:var(--text-dim);">Wait/resume protocol is transport-agnostic. Works from CLI (inline provider), HTTP API, or Slack bot.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ MULTI-AGENT ════════════ -->
+<div class="scene" id="scene-multi">
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> Orchestrator (Root)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--pink)"></div> Child Agent A</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--cyan)"></div> Child Agent B</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> Wait / Park</div>
+  </div>
+
+  <h3 style="margin-bottom:16px; font-size:1.1rem;">Multi-Agent Delegation with Nested Human-in-the-Loop</h3>
+
+  <div class="agent-lanes">
+    <!-- Orchestrator Lane -->
+    <div class="agent-lane">
+      <div class="lane-header"><span class="dot dot-session" style="width:8px;height:8px;"></span> Orchestrator (Root Run)</div>
+      <div class="flow" style="padding-left:28px;">
+        <div class="step s-run" style="font-size:0.82rem;">
+          <div class="step-title">Turn 0 <span class="badge badge-action">Act</span></div>
+          <div class="step-desc">LLM analyzes task, decides to delegate research to Agent A</div>
+        </div>
+        <div class="step s-tool" style="font-size:0.82rem;">
+          <div class="step-title">delegate("researcher", task) <span class="badge badge-action">Tool</span></div>
+          <div class="step-desc">Creates child run &rarr; <code>WaitRequested</code></div>
+        </div>
+        <div class="step s-wait" style="font-size:0.82rem;">
+          <div class="step-title">PARKED <span class="badge badge-wait">Waiting</span></div>
+          <div class="step-desc">waitingOn: child_run A</div>
+        </div>
+        <div class="step" style="font-size:0.82rem;border-style:dashed;min-height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);">
+          ... waiting for child A to complete ...
+        </div>
+        <div class="step s-resume" style="font-size:0.82rem;">
+          <div class="step-title">RESUMED <span class="badge badge-resume">Continue</span></div>
+          <div class="step-desc">Child A result injected as tool output</div>
+        </div>
+        <div class="step s-run" style="font-size:0.82rem;">
+          <div class="step-title">Turn 1 <span class="badge badge-action">Act</span></div>
+          <div class="step-desc">LLM sees research, delegates writing to Agent B</div>
+        </div>
+        <div class="step s-tool" style="font-size:0.82rem;">
+          <div class="step-title">delegate("writer", task) <span class="badge badge-action">Tool</span></div>
+          <div class="step-desc">Creates child run B &rarr; <code>WaitRequested</code></div>
+        </div>
+        <div class="step s-wait" style="font-size:0.82rem;">
+          <div class="step-title">PARKED <span class="badge badge-wait">Waiting</span></div>
+          <div class="step-desc">waitingOn: child_run B</div>
+        </div>
+        <div class="step" style="font-size:0.82rem;border-style:dashed;min-height:60px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);">
+          ... waiting for child B ...
+        </div>
+        <div class="step s-resume" style="font-size:0.82rem;">
+          <div class="step-title">RESUMED <span class="badge badge-resume">Continue</span></div>
+          <div class="step-desc">Child B result injected</div>
+        </div>
+        <div class="step s-run" style="font-size:0.82rem;">
+          <div class="step-title">Turn 2 &mdash; Final Answer <span class="badge badge-action">Complete</span></div>
+          <div class="step-desc">Combines both results, produces answer</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Child A Lane -->
+    <div class="agent-lane">
+      <div class="lane-header"><span class="dot dot-child" style="width:8px;height:8px;"></span> Child Agent A (Researcher)</div>
+      <div class="flow" style="padding-left:28px;">
+        <div class="step s-child" style="font-size:0.82rem;">
+          <div class="step-title">Turn 0 <span class="badge badge-action">Act</span></div>
+          <div class="step-desc">Uses web_search, browse tools</div>
+        </div>
+        <div class="step s-tool" style="font-size:0.82rem;">
+          <div class="step-title">send_email(report) <span class="badge badge-action">Tool</span></div>
+          <div class="step-desc">Destructive action &rarr; needs approval</div>
+        </div>
+        <div class="step s-wait" style="font-size:0.82rem;">
+          <div class="step-title">PARKED <span class="badge badge-wait">Approval</span></div>
+          <div class="step-desc">waitingOn: user_approval</div>
+        </div>
+        <div class="step" style="font-size:0.82rem;border:2px dashed var(--red);background:rgba(239,68,68,0.04);text-align:center;padding:20px;color:var(--red);">
+          <strong>HUMAN INTERVENTION</strong><br>
+          <span style="color:var(--text-dim);font-size:0.78rem;">User approves/denies via CLI, API, or Slack.<br>Parent orchestrator stays parked too &mdash;<br>entire chain is suspended.</span>
+        </div>
+        <div class="step s-resume" style="font-size:0.82rem;">
+          <div class="step-title">RESUMED <span class="badge badge-resume">Approved</span></div>
+          <div class="step-desc">Email sent. Loop continues.</div>
+        </div>
+        <div class="step s-child" style="font-size:0.82rem;">
+          <div class="step-title">Turn 1 &mdash; Done <span class="badge badge-action">Complete</span></div>
+          <div class="step-desc">run.completed fires &rarr; continuation subscriber resumes parent</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Child B Lane -->
+    <div class="agent-lane">
+      <div class="lane-header"><span class="dot dot-run" style="width:8px;height:8px;"></span> Child Agent B (Writer)</div>
+      <div class="flow" style="padding-left:28px;">
+        <div class="step" style="font-size:0.82rem;border-style:dashed;min-height:200px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);">
+          Not yet spawned &mdash; orchestrator hasn't reached Turn 1 yet
+        </div>
+        <div class="step s-run" style="font-size:0.82rem;">
+          <div class="step-title">Turn 0 <span class="badge badge-action">Act</span></div>
+          <div class="step-desc">Uses execute_code, file tools</div>
+        </div>
+        <div class="step s-run" style="font-size:0.82rem;">
+          <div class="step-title">Turn 1 &mdash; Done <span class="badge badge-action">Complete</span></div>
+          <div class="step-desc">run.completed &rarr; resumes orchestrator</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:24px;">
+    <h3 style="margin-bottom:12px; font-size:1rem;">Event Chain for Nested Wait</h3>
+    <div class="flow" style="max-width:700px;">
+      <div class="step s-child" style="font-size:0.82rem;">
+        <div class="step-title">Child A: tool needs approval</div>
+        <div class="step-desc"><code>throw WaitRequested({ kind: "user_approval" })</code></div>
+      </div>
+      <div class="step s-wait" style="font-size:0.82rem;">
+        <div class="step-title">Child A run &rarr; waiting</div>
+        <div class="step-desc">Parent is already waiting on child_run. Both are now suspended.</div>
+      </div>
+      <div class="step s-resume" style="font-size:0.82rem;">
+        <div class="step-title">Human approves child A action</div>
+        <div class="step-desc"><code>resumeRun(childA, { kind: "user_approval", decisions: [...] })</code></div>
+      </div>
+      <div class="step s-child" style="font-size:0.82rem;">
+        <div class="step-title">Child A loop resumes, finishes</div>
+        <div class="step-desc"><code>run.completed</code> event emitted</div>
+      </div>
+      <div class="step s-run" style="font-size:0.82rem;">
+        <div class="step-title">Continuation subscriber fires</div>
+        <div class="step-desc"><code>handleChildTerminal()</code> &rarr; finds parent waiting on this child</div>
+      </div>
+      <div class="step s-resume" style="font-size:0.82rem;">
+        <div class="step-title">Parent automatically resumed</div>
+        <div class="step-desc"><code>resumeRun(parent, { kind: "child_run", result: "..." })</code></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ SIMULATION ════════════ -->
+<div class="scene" id="scene-sim">
+  <div class="sim-controls">
+    <button class="sim-btn" onclick="runSim('simple')">Simple (2 turns, answer)</button>
+    <button class="sim-btn" onclick="runSim('hitl')">Human-in-the-Loop</button>
+    <button class="sim-btn" onclick="runSim('delegate')">Multi-Agent Delegation</button>
+    <button class="sim-btn" onclick="runSim('nested')">Nested Wait (Full)</button>
+  </div>
+  <div class="sim-canvas">
+    <div class="sim-visual" id="sim-visual"></div>
+    <div class="sim-log" id="sim-log"><div style="color:var(--text-dim);">Select a scenario to begin simulation...</div></div>
+  </div>
+</div>
+
+<script>
+// ── Tab switching ──
+function switchTab(id) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.scene').forEach(s => s.classList.remove('active'));
+  document.querySelector(`#scene-${id}`).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ── Simulation Engine ──
+let simTimer = null;
+
+function runSim(scenario) {
+  if (simTimer) clearTimeout(simTimer);
+  const visual = document.getElementById('sim-visual');
+  const log = document.getElementById('sim-log');
+  visual.innerHTML = '';
+  log.innerHTML = '';
+
+  document.querySelectorAll('.sim-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+
+  const steps = scenarios[scenario];
+  let i = 0;
+
+  function next() {
+    if (i >= steps.length) return;
+    const step = steps[i];
+
+    // Add log entry
+    const logEl = document.createElement('div');
+    logEl.className = 'log-entry';
+    logEl.innerHTML = `<span class="log-ts">${String(i).padStart(2,'0')}</span> <span class="log-event log-${step.color}">${step.event}</span>`;
+    if (step.detail) logEl.innerHTML += `<br><span style="color:var(--text-dim);padding-left:24px;">${step.detail}</span>`;
+    log.appendChild(logEl);
+    log.scrollTop = log.scrollHeight;
+
+    // Remove pulse from previous
+    visual.querySelectorAll('.pulse').forEach(el => el.classList.remove('pulse'));
+
+    // Add or modify visual block
+    if (step.action === 'add') {
+      const block = document.createElement('div');
+      block.className = `anim-block ab-${step.type}`;
+      block.id = step.id || '';
+      block.innerHTML = `<div class="ab-label" style="color:var(--${step.labelColor || step.color})">${step.label}${step.status ? ` <span class="ab-status status-${step.status}">${step.status}</span>` : ''}</div>${step.desc ? `<div class="ab-detail">${step.desc}</div>` : ''}`;
+      const parent = step.parent ? document.getElementById(step.parent) : visual;
+      if (parent) parent.appendChild(block);
+      requestAnimationFrame(() => {
+        block.classList.add('visible');
+        if (step.pulse) block.classList.add('pulse');
+      });
+    } else if (step.action === 'update') {
+      const block = document.getElementById(step.id);
+      if (block) {
+        if (step.status) {
+          const statusEl = block.querySelector('.ab-status');
+          if (statusEl) {
+            statusEl.className = `ab-status status-${step.status}`;
+            statusEl.textContent = step.status;
+          }
+        }
+        if (step.desc) {
+          const descEl = block.querySelector('.ab-detail');
+          if (descEl) descEl.innerHTML = step.desc;
+        }
+        if (step.pulse) block.classList.add('pulse');
+        if (step.addClass) block.className += ` ${step.addClass}`;
+      }
+    }
+
+    i++;
+    simTimer = setTimeout(next, step.delay || 700);
+  }
+
+  next();
+}
+
+const scenarios = {
+  simple: [
+    { action:'add', type:'session', id:'ss', color:'accent', labelColor:'accent', label:'SESSION', desc:'sessionId: a1b2c3...', delay:500 },
+    { action:'add', type:'run', id:'r1', parent:'ss', color:'cyan', labelColor:'cyan', label:'ROOT RUN', status:'running', desc:'runId: x7y8z9...', delay:600, pulse:true, event:'run.started', detail:'status: pending → running' },
+    { action:'add', type:'turn', id:'t0', parent:'r1', color:'green', labelColor:'green', label:'TURN 0', pulse:true, delay:500, event:'turn.started', detail:'iteration: 0' },
+    { action:'add', type:'', id:'gen0', parent:'t0', color:'green', label:'', desc:'generation.started → LLM thinking...', delay:800, event:'generation.started', detail:'model: gpt-4.1' },
+    { action:'update', id:'gen0', desc:'generation.completed → 2 tool calls', delay:600, event:'generation.completed', detail:'tool_calls: [web_search, execute_code]' },
+    { action:'add', type:'tool', id:'tool0', parent:'t0', color:'amber', labelColor:'amber', label:'TOOL: web_search', desc:'Searching...', pulse:true, delay:500, event:'tool.called', detail:'web_search({query: "..."})' },
+    { action:'update', id:'tool0', desc:'Done — 5 results found', delay:600, event:'tool.succeeded', detail:'3.2s, 1240 chars' },
+    { action:'add', type:'tool', id:'tool1', parent:'t0', color:'amber', labelColor:'amber', label:'TOOL: execute_code', desc:'Running code...', pulse:true, delay:500, event:'tool.called', detail:'execute_code({code: "..."})' },
+    { action:'update', id:'tool1', desc:'Done — output captured', delay:500, event:'tool.succeeded', detail:'0.8s, 340 chars' },
+    { action:'update', id:'t0', desc:'turn.completed (continue)', delay:400, event:'turn.completed', detail:'reason: continue' },
+    { action:'add', type:'turn', id:'t1', parent:'r1', color:'green', labelColor:'green', label:'TURN 1', pulse:true, delay:500, event:'turn.started', detail:'iteration: 1' },
+    { action:'add', type:'', id:'gen1', parent:'t1', color:'green', label:'', desc:'LLM sees tool results → generating answer...', delay:800, event:'generation.started' },
+    { action:'update', id:'gen1', desc:'finishReason: "stop" — Final answer produced', delay:700, event:'generation.completed', detail:'finishReason: stop, no tool calls' },
+    { action:'update', id:'r1', status:'completed', desc:'runId: x7y8z9... — Done!', delay:500, event:'run.completed', detail:'status: running → completed' },
+  ],
+
+  hitl: [
+    { action:'add', type:'session', id:'ss', color:'accent', labelColor:'accent', label:'SESSION', delay:400 },
+    { action:'add', type:'run', id:'r1', parent:'ss', color:'cyan', labelColor:'cyan', label:'ROOT RUN', status:'running', pulse:true, delay:500, event:'run.started' },
+    { action:'add', type:'turn', id:'t0', parent:'r1', color:'green', labelColor:'green', label:'TURN 0', delay:400, event:'turn.started' },
+    { action:'add', type:'', id:'gen0', parent:'t0', color:'green', label:'', desc:'LLM decides to send email...', delay:600, event:'generation.completed', detail:'tool_calls: [send_email]' },
+    { action:'add', type:'tool', id:'tool0', parent:'t0', color:'amber', labelColor:'amber', label:'TOOL: send_email', desc:'confirmIf → true! Needs approval.', pulse:true, delay:700, event:'tool.called', detail:'send_email({to: "boss@co.com", ...})' },
+    { action:'add', type:'wait', id:'w1', parent:'r1', color:'red', labelColor:'red', label:'WAIT — USER APPROVAL REQUIRED', desc:'Confirmation: "Send email to boss@co.com?"', pulse:true, delay:800, event:'run.waiting', detail:'waitingOn: user_approval' },
+    { action:'update', id:'r1', status:'waiting', delay:500, event:'run.waiting', detail:'status: running → waiting. Loop exited.' },
+    { action:'update', id:'w1', desc:'⏳ Waiting for human... (could be hours)', delay:1500, event:'— paused —', detail:'State fully persisted to DB' },
+    { action:'update', id:'w1', desc:'✓ Human approved! resumeRun() called', delay:1200, event:'run.resumed', detail:'resolution: approved' },
+    { action:'add', type:'resume', id:'res1', parent:'r1', color:'resume', labelColor:'resume', label:'RESUMED', desc:'Tool executed: email sent. Result appended.', pulse:true, delay:700, event:'tool.succeeded', detail:'send_email completed after approval' },
+    { action:'update', id:'r1', status:'running', delay:400, event:'run.resumed', detail:'status: waiting → running' },
+    { action:'add', type:'turn', id:'t1', parent:'r1', color:'green', labelColor:'green', label:'TURN 1', delay:500, event:'turn.started', detail:'loop re-entered' },
+    { action:'add', type:'', id:'gen1', parent:'t1', color:'green', label:'', desc:'LLM: "Email sent successfully to boss@co.com"', delay:600, event:'generation.completed', detail:'finishReason: stop' },
+    { action:'update', id:'r1', status:'completed', delay:500, event:'run.completed', detail:'status: running → completed' },
+  ],
+
+  delegate: [
+    { action:'add', type:'session', id:'ss', color:'accent', labelColor:'accent', label:'SESSION', delay:400 },
+    { action:'add', type:'run', id:'r1', parent:'ss', color:'cyan', labelColor:'cyan', label:'ORCHESTRATOR RUN', status:'running', pulse:true, delay:500, event:'run.started', detail:'agent: default' },
+    { action:'add', type:'turn', id:'t0', parent:'r1', color:'green', labelColor:'green', label:'TURN 0', delay:400, event:'turn.started' },
+    { action:'add', type:'', id:'gen0', parent:'t0', color:'green', label:'', desc:'LLM: "I need to delegate research..."', delay:600, event:'generation.completed', detail:'tool_calls: [delegate]' },
+    { action:'add', type:'tool', id:'dtool', parent:'t0', color:'amber', labelColor:'amber', label:'TOOL: delegate("researcher", ...)', desc:'Creating child run...', delay:600, event:'tool.called', detail:'delegate({agent: "researcher", prompt: "..."})' },
+    { action:'update', id:'dtool', desc:'Child run created → WaitRequested thrown', delay:500, event:'run.delegated', detail:'childRunId: child-abc' },
+    { action:'add', type:'wait', id:'w1', parent:'r1', color:'red', labelColor:'red', label:'PARKED — WAITING ON CHILD', desc:'waitingOn: { kind: "child_run", childRunId: "child-abc" }', delay:600, event:'run.waiting', detail:'parent parked' },
+    { action:'update', id:'r1', status:'waiting', delay:400 },
+    { action:'add', type:'child', id:'cr1', parent:'ss', color:'pink', labelColor:'pink', label:'CHILD RUN — Researcher', status:'running', desc:'parentId → orchestrator, own session', pulse:true, delay:800, event:'run.started', detail:'agent: researcher, childRunId: child-abc' },
+    { action:'add', type:'turn', id:'ct0', parent:'cr1', color:'green', labelColor:'green', label:'TURN 0', delay:500, event:'turn.started', detail:'child iteration 0' },
+    { action:'add', type:'tool', id:'ctool0', parent:'ct0', color:'amber', labelColor:'amber', label:'TOOL: web_search', desc:'Researching...', delay:600, event:'tool.called' },
+    { action:'update', id:'ctool0', desc:'Done — found 8 results', delay:500, event:'tool.succeeded' },
+    { action:'add', type:'turn', id:'ct1', parent:'cr1', color:'green', labelColor:'green', label:'TURN 1 — Answer', desc:'Research compiled', delay:600, event:'turn.started' },
+    { action:'update', id:'cr1', status:'completed', delay:500, event:'run.completed', detail:'child completed → continuation fires' },
+    { action:'update', id:'w1', desc:'Child completed! Auto-resuming parent...', delay:700, event:'run.child_terminal', detail:'handleChildTerminal() → resumeRun(parent)' },
+    { action:'update', id:'r1', status:'running', delay:500, event:'run.resumed', detail:'child result injected as tool output' },
+    { action:'add', type:'turn', id:'t1', parent:'r1', color:'green', labelColor:'green', label:'TURN 1', desc:'LLM sees research results, produces final answer', pulse:true, delay:600, event:'turn.started' },
+    { action:'update', id:'r1', status:'completed', delay:600, event:'run.completed', detail:'orchestrator done' },
+  ],
+
+  nested: [
+    { action:'add', type:'session', id:'ss', color:'accent', labelColor:'accent', label:'SESSION', delay:300 },
+    { action:'add', type:'run', id:'r1', parent:'ss', color:'cyan', labelColor:'cyan', label:'ORCHESTRATOR', status:'running', pulse:true, delay:400, event:'run.started', detail:'root agent' },
+    { action:'add', type:'turn', id:'t0', parent:'r1', color:'green', labelColor:'green', label:'TURN 0', delay:300, event:'turn.started' },
+    { action:'add', type:'tool', id:'dt1', parent:'t0', color:'amber', labelColor:'amber', label:'delegate("researcher")', delay:400, event:'tool.called' },
+    { action:'update', id:'dt1', desc:'→ WaitRequested(child_run)', delay:400, event:'run.delegated' },
+    { action:'update', id:'r1', status:'waiting', delay:300, event:'run.waiting', detail:'waiting on child A' },
+
+    { action:'add', type:'child', id:'ca', parent:'ss', color:'pink', labelColor:'pink', label:'CHILD A — Researcher', status:'running', pulse:true, delay:600, event:'run.started', detail:'child A spawned' },
+    { action:'add', type:'turn', id:'cat0', parent:'ca', color:'green', labelColor:'green', label:'TURN 0', delay:400, event:'turn.started' },
+    { action:'add', type:'tool', id:'catool', parent:'cat0', color:'amber', labelColor:'amber', label:'send_email(report)', desc:'Destructive! Needs approval.', delay:500, event:'tool.called', detail:'confirmIf → true' },
+    { action:'add', type:'wait', id:'caw', parent:'ca', color:'red', labelColor:'red', label:'WAIT — USER APPROVAL', desc:'Child A needs human approval. Parent is ALSO waiting.', pulse:true, delay:600, event:'run.waiting', detail:'ENTIRE CHAIN SUSPENDED' },
+    { action:'update', id:'ca', status:'waiting', delay:400 },
+
+    { action:'update', id:'caw', desc:'⏳ Both orchestrator AND child A are suspended...', delay:1500, event:'— suspended —', detail:'Human must act on child A approval' },
+    { action:'update', id:'caw', desc:'✓ Human approved! Child A resumes.', delay:1200, event:'run.resumed', detail:'user approved send_email' },
+    { action:'update', id:'ca', status:'running', delay:400 },
+    { action:'add', type:'turn', id:'cat1', parent:'ca', color:'green', labelColor:'green', label:'TURN 1 — Done', delay:500, event:'turn.started' },
+    { action:'update', id:'ca', status:'completed', delay:500, event:'run.completed', detail:'child A done → continuation fires' },
+
+    { action:'update', id:'r1', status:'running', desc:'Child A result received, orchestrator resumes', delay:700, event:'run.resumed', detail:'auto-resume from continuation subscriber' },
+    { action:'add', type:'turn', id:'t1', parent:'r1', color:'green', labelColor:'green', label:'TURN 1', pulse:true, delay:400, event:'turn.started' },
+    { action:'add', type:'tool', id:'dt2', parent:'t1', color:'amber', labelColor:'amber', label:'delegate("writer")', delay:400, event:'tool.called' },
+    { action:'update', id:'dt2', desc:'→ WaitRequested(child_run B)', delay:400, event:'run.delegated' },
+    { action:'update', id:'r1', status:'waiting', delay:300, event:'run.waiting', detail:'waiting on child B' },
+
+    { action:'add', type:'child', id:'cb', parent:'ss', color:'run', labelColor:'cyan', label:'CHILD B — Writer', status:'running', pulse:true, delay:600, event:'run.started', detail:'child B spawned' },
+    { action:'add', type:'turn', id:'cbt0', parent:'cb', color:'green', labelColor:'green', label:'TURN 0', delay:400, event:'turn.started' },
+    { action:'add', type:'turn', id:'cbt1', parent:'cb', color:'green', labelColor:'green', label:'TURN 1 — Done', delay:500, event:'turn.started' },
+    { action:'update', id:'cb', status:'completed', delay:500, event:'run.completed', detail:'child B done → continuation fires' },
+
+    { action:'update', id:'r1', status:'running', delay:600, event:'run.resumed', detail:'auto-resume from child B' },
+    { action:'add', type:'turn', id:'t2', parent:'r1', color:'green', labelColor:'green', label:'TURN 2 — Final Answer', pulse:true, delay:500, event:'turn.started' },
+    { action:'update', id:'r1', status:'completed', delay:600, event:'run.completed', detail:'orchestrator complete. All agents finished.' },
+  ],
+};
+</script>
+
+</body>
+</html>

@@ -4,6 +4,9 @@ title: Knowledge Base Index
 
 This is the agent's curated knowledge base.
 
+## Profile
+- [About Jakub](about_user.md) — persistent personal facts (preferences, possessions, people). Writes go through the `memory` agent.
+
 ## Procedures
 - [Task Solving](procedures/task-solving.md) — how to approach AG3NTS hub tasks
 
