@@ -5,7 +5,7 @@ import {
   validateKeys,
   assertMaxLength,
   assertNumericBounds,
-} from "./parse.ts";
+} from "../../src/utils/parse.ts";
 
 // --------------- safeParse ---------------
 

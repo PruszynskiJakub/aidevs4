@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { sessionService } from "./agent/session.ts";
+import { sessionService } from "../src/agent/session.ts";
 
 // Mock the orchestrator — avoids polluting agent/loop.ts mock across test files
 const KNOWN_AGENTS = ["default", "proxy"];
-mock.module("./agent/orchestrator.ts", () => ({
+mock.module("../src/agent/orchestrator.ts", () => ({
   executeTurn: async (opts: { prompt: string; sessionId?: string; assistant?: string }) => {
     const sid = opts.sessionId ?? "auto";
     const assistantName = opts.assistant ?? "default";
@@ -19,7 +19,7 @@ mock.module("./agent/orchestrator.ts", () => ({
 }));
 
 // Import after mock is set up
-const { default: server } = await import("./server.ts");
+const { default: server } = await import("../src/server.ts");
 
 function request(path: string, init?: RequestInit) {
   return server.fetch(

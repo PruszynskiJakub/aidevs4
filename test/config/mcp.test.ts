@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { loadMcpConfig } from "./mcp.ts";
+import { loadMcpConfig } from "../../src/config/mcp.ts";
 
 describe("loadMcpConfig", () => {
   test("returns empty servers array when mcp.json does not exist", async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { resolveUri } from "./uri.ts";
+import { resolveUri } from "../../src/utils/uri.ts";
 
 describe("resolveUri", () => {
   it("converts file:// URI to absolute path", () => {

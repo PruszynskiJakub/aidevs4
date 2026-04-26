@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { resolve } from "path";
-import { config } from "./index.ts";
+import { config } from "../../src/config/index.ts";
 
 // For subprocess tests — avoids depending on config for cwd
 const PROJECT_ROOT = resolve(import.meta.dir, "../..");

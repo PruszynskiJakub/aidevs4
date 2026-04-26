@@ -4,8 +4,8 @@ import {
   toSlackMarkdown,
   splitMessage,
   StatusTracker,
-} from "./slack-utils.ts";
-import type { BusEvent } from "./types/events.ts";
+} from "../src/slack-utils.ts";
+import type { BusEvent } from "../src/types/events.ts";
 
 // ── deriveSessionId ────────────────────────────────────────
 
