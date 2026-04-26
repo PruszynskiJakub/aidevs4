@@ -10,10 +10,10 @@ import type { LLMMessage } from "../types/llm.ts";
 import type { RunState } from "../types/run-state.ts";
 import type { Session } from "../types/session.ts";
 import type { RunExit } from "./run-exit.ts";
-import type { WaitDescriptor } from "./wait-descriptor.ts";
 import { emptyMemoryState } from "../types/memory.ts";
 import { loadState } from "./memory/persistence.ts";
 import { resumeRun } from "./resume-run.ts";
+import { getErrorMessage } from "../utils/errors.ts";
 import * as dbOps from "../infra/db/index.ts";
 
 interface ExecuteRunOpts {
@@ -34,6 +34,16 @@ export interface ExecuteRunResult {
   runId: string;
 }
 
+export interface CreateChildRunOpts {
+  prompt: string;
+  assistant: string;
+  parentRunId: string;
+  rootRunId: string;
+  parentTraceId?: string;
+  parentDepth?: number;
+  sourceCallId?: string;
+}
+
 function pickAssistantName(
   session: Session,
   sessionId: string,
@@ -50,17 +60,64 @@ function pickAssistantName(
   return requestedAssistant ?? "default";
 }
 
-export async function executeRun(opts: ExecuteRunOpts): Promise<ExecuteRunResult> {
-  const sessionId = opts.sessionId ?? randomSessionId();
-  const session = sessionService.getOrCreate(sessionId);
-  const assistantName = pickAssistantName(session, sessionId, opts.assistant);
+interface RunRowOpts {
+  runId: string;
+  sessionId: string;
+  parentRunId?: string;
+  rootRunId: string;
+  sourceCallId?: string;
+  assistantName: string;
+  prompt: string;
+}
 
-  // Validate agent exists before proceeding (throws "Unknown agent" if not found)
-  await agentsService.get(assistantName);
+function insertRunRow(opts: RunRowOpts): void {
+  dbOps.createRun({
+    id: opts.runId,
+    sessionId: opts.sessionId,
+    parentId: opts.parentRunId,
+    rootRunId: opts.rootRunId,
+    sourceCallId: opts.sourceCallId,
+    template: opts.assistantName,
+    task: opts.prompt,
+  });
+}
 
-  // Moderation guardrail — check user input before it enters the session
+interface HydrateOpts {
+  runId: string;
+  sessionId: string;
+  assistantName: string;
+  rootRunId: string;
+  parentRunId?: string;
+  traceId: string;
+  depth: number;
+  model: string;
+  tools: RunState["tools"];
+}
+
+async function hydrateRunState(opts: HydrateOpts): Promise<RunState> {
+  const messages: LLMMessage[] = sessionService.getMessages(opts.sessionId, opts.runId);
+  const persisted = await loadState(opts.sessionId);
+  return {
+    sessionId: opts.sessionId,
+    agentName: opts.assistantName,
+    runId: opts.runId,
+    rootRunId: opts.rootRunId,
+    parentRunId: opts.parentRunId,
+    traceId: opts.traceId,
+    depth: opts.depth,
+    messages,
+    tokens: { promptTokens: 0, completionTokens: 0 },
+    iteration: 0,
+    assistant: opts.assistantName,
+    model: opts.model,
+    tools: opts.tools,
+    memory: persisted ?? emptyMemoryState(),
+  };
+}
+
+async function emitModerationEvents(prompt: string): Promise<void> {
   const moderationStart = Date.now();
-  const moderation = await moderateInput(opts.prompt);
+  const moderation = await moderateInput(prompt);
   const moderationDurationMs = Date.now() - moderationStart;
 
   if (moderation.flagged) {
@@ -74,61 +131,76 @@ export async function executeRun(opts: ExecuteRunOpts): Promise<ExecuteRunResult
   } else {
     bus.emit("input.clean", { durationMs: moderationDurationMs });
   }
-
   assertNotFlagged(moderation);
+}
 
-  if (!session.assistant) {
-    sessionService.setAssistant(sessionId, assistantName);
+function persistRunExit(runId: string, exit: RunExit): void {
+  switch (exit.kind) {
+    case "completed":
+      dbOps.updateRunStatus(runId, { status: "completed", result: exit.result, exitKind: "completed" });
+      return;
+    case "failed":
+      dbOps.updateRunStatus(runId, { status: "failed", error: exit.error.message, exitKind: "failed" });
+      return;
+    case "cancelled":
+      dbOps.updateRunStatus(runId, { status: "cancelled", error: exit.reason, exitKind: "cancelled" });
+      return;
+    case "exhausted":
+      dbOps.updateRunStatus(runId, { status: "exhausted", exitKind: "exhausted" });
+      return;
+    case "waiting":
+      dbOps.updateRunStatus(runId, {
+        status: "waiting",
+        waitingOn: JSON.stringify(exit.waitingOn),
+      });
+      bus.emit("run.waiting", { waitingOn: exit.waitingOn });
+      return;
   }
+}
+
+function kickChildRunAsync(parentRunId: string, childRunId: string): void {
+  startChildRun(childRunId).catch((err) => {
+    const errMsg = getErrorMessage(err);
+    log.error(`[orchestrator] Child run ${childRunId} failed to start: ${errMsg}`);
+    resumeRun(parentRunId, {
+      kind: "child_run",
+      childRunId,
+      result: `Child run failed to start: ${errMsg}`,
+    }).catch((resumeErr) => {
+      log.error(
+        `[orchestrator] Failed to resume parent ${parentRunId} after child start failure: ${getErrorMessage(resumeErr)}`,
+      );
+    });
+  });
+}
+
+export async function executeRun(opts: ExecuteRunOpts): Promise<ExecuteRunResult> {
+  const sessionId = opts.sessionId ?? randomSessionId();
+  const session = sessionService.getOrCreate(sessionId);
+  const assistantName = pickAssistantName(session, sessionId, opts.assistant);
+
+  await agentsService.get(assistantName);
+  await emitModerationEvents(opts.prompt);
+
+  if (!session.assistant) sessionService.setAssistant(sessionId, assistantName);
 
   const runId = randomUUID();
   const traceId = opts.parentTraceId ?? randomUUID();
   const depth = opts.parentRunId ? (opts.parentDepth ?? 0) + 1 : 0;
-
   const rootRunId = opts.rootRunId ?? runId;
 
-  // Persist run row
-  dbOps.createRun({
-    id: runId,
-    sessionId,
-    parentId: opts.parentRunId,
-    rootRunId,
-    sourceCallId: opts.sourceCallId,
-    template: assistantName,
-    task: opts.prompt,
-  });
-
-  // Set root run for the session if this is the root run
-  if (!opts.parentRunId) {
-    dbOps.setRootRun(sessionId, runId);
-  }
-
+  insertRunRow({ runId, sessionId, parentRunId: opts.parentRunId, rootRunId,
+    sourceCallId: opts.sourceCallId, assistantName, prompt: opts.prompt });
+  if (!opts.parentRunId) dbOps.setRootRun(sessionId, runId);
   dbOps.updateRunStatus(runId, { status: "running" });
 
-  // Append user message to DB
   sessionService.appendMessage(sessionId, runId, { role: "user", content: opts.prompt });
 
-  // Load full conversation for this run
-  const messages: LLMMessage[] = sessionService.getMessages(sessionId, runId);
-
-  const persisted = await loadState(sessionId);
-
-  const state: RunState = {
-    sessionId,
-    agentName: assistantName,
-    runId,
-    rootRunId,
-    parentRunId: opts.parentRunId,
-    traceId,
-    depth,
-    messages,
-    tokens: { promptTokens: 0, completionTokens: 0 },
-    iteration: 0,
-    assistant: assistantName,
-    model: opts.model ?? "",
-    tools: [],
-    memory: persisted ?? emptyMemoryState(),
-  };
+  const state = await hydrateRunState({
+    runId, sessionId, assistantName, rootRunId,
+    parentRunId: opts.parentRunId, traceId, depth,
+    model: opts.model ?? "", tools: [],
+  });
 
   return runAndPersist(state);
 }
@@ -144,80 +216,22 @@ export async function runAndPersist(state: RunState): Promise<ExecuteRunResult> 
 
   try {
     const { exit, messages } = await runAgent(state);
-
-    // Persist any new messages produced by the loop
     sessionService.appendRun(sessionId, runId, messages);
+    persistRunExit(runId, exit);
 
-    // Apply terminal/waiting persistence
-    switch (exit.kind) {
-      case "completed":
-        dbOps.updateRunStatus(runId, {
-          status: "completed",
-          result: exit.result,
-          exitKind: "completed",
-        });
-        break;
-      case "failed":
-        dbOps.updateRunStatus(runId, {
-          status: "failed",
-          error: exit.error.message,
-          exitKind: "failed",
-        });
-        break;
-      case "cancelled":
-        dbOps.updateRunStatus(runId, {
-          status: "cancelled",
-          error: exit.reason,
-          exitKind: "cancelled",
-        });
-        break;
-      case "exhausted":
-        dbOps.updateRunStatus(runId, {
-          status: "exhausted",
-          exitKind: "exhausted",
-        });
-        break;
-      case "waiting":
-        dbOps.updateRunStatus(runId, {
-          status: "waiting",
-          waitingOn: JSON.stringify(exit.waitingOn),
-        });
-        bus.emit("run.waiting", { waitingOn: exit.waitingOn });
-
-        // If waiting on a child run, start the child asynchronously
-        if (exit.waitingOn.kind === "child_run") {
-          const childRunId = exit.waitingOn.childRunId;
-          startChildRun(childRunId).catch((err) => {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            console.error(`[orchestrator] Child run ${childRunId} failed to start: ${errMsg}`);
-            resumeRun(runId, {
-              kind: "child_run",
-              childRunId,
-              result: `Child run failed to start: ${errMsg}`,
-            }).catch((resumeErr) => {
-              console.error(
-                `[orchestrator] Failed to resume parent ${runId} after child start failure:`,
-                resumeErr,
-              );
-            });
-          });
-        }
-        break;
+    if (exit.kind === "waiting" && exit.waitingOn.kind === "child_run") {
+      kickChildRunAsync(runId, exit.waitingOn.childRunId);
     }
 
     return { exit, sessionId, runId };
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    dbOps.updateRunStatus(runId, {
-      status: "failed",
-      error: errorMsg,
-      exitKind: "failed",
-    });
-    const exit: RunExit = {
-      kind: "failed",
-      error: { message: errorMsg, cause: err },
+    const errorMsg = getErrorMessage(err);
+    dbOps.updateRunStatus(runId, { status: "failed", error: errorMsg, exitKind: "failed" });
+    return {
+      exit: { kind: "failed", error: { message: errorMsg, cause: err } },
+      sessionId,
+      runId,
     };
-    return { exit, sessionId, runId };
   }
 }
 
@@ -226,16 +240,6 @@ export async function runAndPersist(state: RunState): Promise<ExecuteRunResult> 
  * the loop. Returns the child runId. The caller is responsible for
  * starting execution (typically via startChildRun after the parent parks).
  */
-export interface CreateChildRunOpts {
-  prompt: string;
-  assistant: string;
-  parentRunId: string;
-  rootRunId: string;
-  parentTraceId?: string;
-  parentDepth?: number;
-  sourceCallId?: string;
-}
-
 export async function createChildRun(opts: CreateChildRunOpts): Promise<{
   runId: string;
   sessionId: string;
@@ -243,26 +247,17 @@ export async function createChildRun(opts: CreateChildRunOpts): Promise<{
   const sessionId = randomSessionId();
   sessionService.getOrCreate(sessionId);
 
-  // Validate agent exists
   await agentsService.get(opts.assistant);
-
-  // Moderation guardrail
   const moderation = await moderateInput(opts.prompt);
   assertNotFlagged(moderation);
 
   const runId = randomUUID();
-
-  dbOps.createRun({
-    id: runId,
-    sessionId,
-    parentId: opts.parentRunId,
-    rootRunId: opts.rootRunId,
+  insertRunRow({
+    runId, sessionId,
+    parentRunId: opts.parentRunId, rootRunId: opts.rootRunId,
     sourceCallId: opts.sourceCallId,
-    template: opts.assistant,
-    task: opts.prompt,
+    assistantName: opts.assistant, prompt: opts.prompt,
   });
-
-  // Append user message to DB
   sessionService.appendMessage(sessionId, runId, { role: "user", content: opts.prompt });
 
   return { runId, sessionId };
@@ -278,28 +273,18 @@ export async function startChildRun(runId: string): Promise<ExecuteRunResult> {
 
   dbOps.updateRunStatus(runId, { status: "running" });
 
-  const messages: LLMMessage[] = sessionService.getMessages(run.sessionId, runId);
-  const persisted = await loadState(run.sessionId);
-  const assistantName = run.template;
-  const resolved = await agentsService.resolve(assistantName);
-  const depth = run.parentId ? 1 : 0;
-
-  const state: RunState = {
-    sessionId: run.sessionId,
-    agentName: assistantName,
+  const resolved = await agentsService.resolve(run.template);
+  const state = await hydrateRunState({
     runId,
+    sessionId: run.sessionId,
+    assistantName: run.template,
     rootRunId: run.rootRunId ?? runId,
     parentRunId: run.parentId ?? undefined,
     traceId: randomUUID(),
-    depth,
-    messages,
-    tokens: { promptTokens: 0, completionTokens: 0 },
-    iteration: 0,
-    assistant: assistantName,
+    depth: run.parentId ? 1 : 0,
     model: resolved.model,
     tools: resolved.tools,
-    memory: persisted ?? emptyMemoryState(),
-  };
+  });
 
   return runAndPersist(state);
 }
