@@ -230,7 +230,7 @@ interface MemoryContext {
   contextLength: number;
 }
 
-async function buildCycleContext(
+async function buildTurnContext(
   actSystemPrompt: string,
   state: RunState,
   memoryEnabled: boolean,
@@ -268,22 +268,22 @@ function createMemorySaver(state: RunState) {
   };
 }
 
-type CycleOutcome =
+type TurnOutcome =
   | { kind: "continue" }
   | { kind: "completed"; text: string | null }
   | { kind: "waiting"; waitingOn: WaitDescriptor };
 
-async function runCycle(
+async function runTurn(
   state: RunState,
   ctx: RunContext,
   provider: LLMProvider,
   saveMemoryIfChanged: () => Promise<void>,
-): Promise<CycleOutcome> {
-  const cycleCtx = await buildCycleContext(ctx.systemPrompt, state, ctx.memoryEnabled, provider);
-  const response = await executeActPhase(cycleCtx.systemPrompt, provider);
+): Promise<TurnOutcome> {
+  const turnCtx = await buildTurnContext(ctx.systemPrompt, state, ctx.memoryEnabled, provider);
+  const response = await executeActPhase(turnCtx.systemPrompt, provider);
 
-  const newMessages = state.messages.slice(cycleCtx.contextLength);
-  state.messages = cycleCtx.messagesSnapshot.concat(newMessages);
+  const newMessages = state.messages.slice(turnCtx.contextLength);
+  state.messages = turnCtx.messagesSnapshot.concat(newMessages);
 
   await saveMemoryIfChanged();
 
@@ -366,7 +366,7 @@ async function runIteration(
   state.iteration = i;
   const turnStartTime = performance.now();
   const iterationsRun = i + 1;
-  if (state.runId) dbOps.incrementCycleCount(state.runId);
+  if (state.runId) dbOps.incrementTurnCount(state.runId);
 
   emitTurnStarted({
     index: i,
@@ -375,7 +375,7 @@ async function runIteration(
     messageCount: state.messages.length,
   });
 
-  const outcome = await runCycle(state, ctx, provider, saveMemoryIfChanged);
+  const outcome = await runTurn(state, ctx, provider, saveMemoryIfChanged);
 
   if (outcome.kind === "completed") {
     const exit: RunExit = { kind: "completed", result: outcome.text ?? "" };
@@ -426,7 +426,7 @@ export async function runAgent(
         lastTurnStartTime = result.turnStartTime;
       }
 
-      const exit: RunExit = { kind: "exhausted", cycleCount: config.limits.maxIterations };
+      const exit: RunExit = { kind: "exhausted", turnCount: config.limits.maxIterations };
       await finalizeTerminal(state, exit, ctx, provider, saveMemoryIfChanged,
         { runStartTime, turnStartTime: lastTurnStartTime, iterationsRun: config.limits.maxIterations });
       return { exit, messages: sliceMessages() };

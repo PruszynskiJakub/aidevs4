@@ -83,7 +83,7 @@ function printExit(exit: RunExit): void {
       console.error(`Run cancelled: ${exit.reason}`);
       break;
     case "exhausted":
-      console.error(`Run exhausted after ${exit.cycleCount} cycles`);
+      console.error(`Run exhausted after ${exit.turnCount} turns`);
       break;
     case "waiting":
       // handled by loop below, should not be reached here
@@ -118,7 +118,7 @@ async function waitForChildResume(parentRunId: string): Promise<ExecuteRunResult
         exit = { kind: "cancelled", reason: run.error ?? "unknown" };
         break;
       case "exhausted":
-        exit = { kind: "exhausted", cycleCount: run.cycleCount };
+        exit = { kind: "exhausted", turnCount: run.turnCount };
         break;
       default:
         // Still running — keep polling

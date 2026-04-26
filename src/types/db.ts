@@ -30,7 +30,7 @@ export interface DbRun {
   error: string | null;
   waitingOn: string | null;
   exitKind: string | null;
-  cycleCount: number;
+  turnCount: number;
   version: number;
   createdAt: string;
   startedAt: string | null;

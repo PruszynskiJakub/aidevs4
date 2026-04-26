@@ -167,7 +167,7 @@ function exitToText(exit: RunExit): string {
     case "cancelled":
       return `Cancelled: ${exit.reason}`;
     case "exhausted":
-      return `Run exhausted after ${exit.cycleCount} cycles.`;
+      return `Run exhausted after ${exit.turnCount} turns.`;
     case "waiting":
       return "";
   }

@@ -106,7 +106,7 @@ function exitToPayload(result: ExecuteRunResult): Record<string, unknown> {
     case "cancelled":
       return { kind: "cancelled", runId, sessionId, reason: exit.reason };
     case "exhausted":
-      return { kind: "exhausted", runId, sessionId, cycleCount: exit.cycleCount };
+      return { kind: "exhausted", runId, sessionId, turnCount: exit.turnCount };
     case "waiting":
       return { kind: "waiting", runId, sessionId, waitingOn: exit.waitingOn };
   }

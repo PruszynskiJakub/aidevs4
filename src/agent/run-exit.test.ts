@@ -300,7 +300,7 @@ describe("executeRun happy path", () => {
   });
 });
 
-describe("executeRun HITL cycle", () => {
+describe("executeRun HITL turn", () => {
   it("returns 'waiting' then resumes to 'completed'; DB row transitions running → waiting → running → completed", async () => {
     const provider = seqProvider([
       {
@@ -358,7 +358,7 @@ describe("executeRun HITL cycle", () => {
 });
 
 describe("executeRun loop exhaustion", () => {
-  it("returns { kind: 'exhausted', cycleCount } with DB status=exhausted", async () => {
+  it("returns { kind: 'exhausted', turnCount } with DB status=exhausted", async () => {
     const maxIter = config.limits.maxIterations;
 
     const neverEnding: LLMChatResponse[] = [];
@@ -377,12 +377,12 @@ describe("executeRun loop exhaustion", () => {
 
     expect(result.exit.kind).toBe("exhausted");
     if (result.exit.kind === "exhausted") {
-      expect(result.exit.cycleCount).toBe(maxIter);
+      expect(result.exit.turnCount).toBe(maxIter);
     }
 
     const run = dbOps.getRun(result.runId)!;
     expect(run.status).toBe("exhausted");
     expect(run.exitKind).toBe("exhausted");
-    expect(run.cycleCount).toBe(maxIter);
+    expect(run.turnCount).toBe(maxIter);
   }, 30_000);
 });

@@ -191,7 +191,7 @@ function dbRunToExit(run: DbRun): RunExit {
     case "cancelled":
       return { kind: "cancelled", reason: run.error ?? "unknown" };
     case "exhausted":
-      return { kind: "exhausted", cycleCount: run.cycleCount };
+      return { kind: "exhausted", turnCount: run.turnCount };
     case "waiting":
       return { kind: "waiting", waitingOn: JSON.parse(run.waitingOn!) };
     default:

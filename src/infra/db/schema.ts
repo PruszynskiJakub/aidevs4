@@ -40,7 +40,7 @@ export const runs = sqliteTable("runs", {
   error:         text("error"),
   waitingOn:     text("waiting_on"),
   exitKind:      text("exit_kind"),
-  cycleCount:    integer("cycle_count").notNull().default(0),
+  turnCount:     integer("turn_count").notNull().default(0),
   version:       integer("version").notNull().default(1),
   createdAt:     timestamp(),
   startedAt:     text("started_at"),

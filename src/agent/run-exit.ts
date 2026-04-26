@@ -12,7 +12,7 @@ export type RunExit =
   | { kind: "failed"; error: { message: string; cause?: unknown } }
   | { kind: "cancelled"; reason: string }
   | { kind: "waiting"; waitingOn: WaitDescriptor }
-  | { kind: "exhausted"; cycleCount: number };
+  | { kind: "exhausted"; turnCount: number };
 
 export type RunExitKind = RunExit["kind"];
 

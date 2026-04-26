@@ -117,13 +117,13 @@ describe("runs", () => {
     expect(run.waitingOn).toBe(waiting);
   });
 
-  it("incrementCycleCount increments correctly", () => {
+  it("incrementTurnCount increments correctly", () => {
     dbOps.createSession("s-cyc");
     dbOps.createRun({ id: "r-cyc", sessionId: "s-cyc", template: "default", task: "t" });
-    expect(dbOps.getRun("r-cyc")!.cycleCount).toBe(0);
-    dbOps.incrementCycleCount("r-cyc");
-    dbOps.incrementCycleCount("r-cyc");
-    expect(dbOps.getRun("r-cyc")!.cycleCount).toBe(2);
+    expect(dbOps.getRun("r-cyc")!.turnCount).toBe(0);
+    dbOps.incrementTurnCount("r-cyc");
+    dbOps.incrementTurnCount("r-cyc");
+    expect(dbOps.getRun("r-cyc")!.turnCount).toBe(2);
   });
 });
 

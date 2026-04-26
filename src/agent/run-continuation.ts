@@ -57,7 +57,7 @@ function childExitToResult(child: DbRun): string {
     case "cancelled":
       return `Delegated run was cancelled: ${child.error ?? "no reason"}`;
     case "exhausted":
-      return `Delegated run hit cycle limit (${child.cycleCount} cycles)`;
+      return `Delegated run hit turn limit (${child.turnCount} turns)`;
     default:
       return `Delegated run ended with unexpected status: ${child.status}`;
   }

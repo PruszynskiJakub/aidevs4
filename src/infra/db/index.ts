@@ -112,9 +112,9 @@ export function updateRunStatus(id: string, opts: UpdateRunStatusOpts): boolean 
   return result.changes > 0;
 }
 
-export function incrementCycleCount(id: string): void {
+export function incrementTurnCount(id: string): void {
   db.update(runs)
-    .set({ cycleCount: sql`${runs.cycleCount} + 1` })
+    .set({ turnCount: sql`${runs.turnCount} + 1` })
     .where(eq(runs.id, id))
     .run();
 }
