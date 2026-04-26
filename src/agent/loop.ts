@@ -20,6 +20,22 @@ import { buildWorkspaceContext } from "./workspace.ts";
 import { WaitRequested } from "./wait-descriptor.ts";
 import type { RunExit } from "./run-exit.ts";
 import * as dbOps from "../infra/db/index.ts";
+import {
+  emitRunStarted,
+  emitAgentStarted,
+  emitTurnStarted,
+  emitTurnCompleted,
+  emitGenerationStarted,
+  emitGenerationCompleted,
+  emitToolCalled,
+  emitToolSucceeded,
+  emitToolFailed,
+  emitBatchStarted,
+  emitBatchCompleted,
+  emitAnswerTerminal,
+  emitMaxIterationsTerminal,
+  emitFailureTerminal,
+} from "./run-telemetry.ts";
 
 interface SessionResources {
   log: Logger;
@@ -65,7 +81,7 @@ async function executeActPhase(
   ];
 
   const startTime = Date.now();
-  bus.emit("generation.started", { name: "act", model: state.model, startTime });
+  emitGenerationStarted({ name: "act", model: state.model, startTime });
 
   const actStart = performance.now();
   const response = await provider.chatCompletion({
@@ -80,7 +96,7 @@ async function executeActPhase(
   state.tokens.promptTokens += tokensIn;
   state.tokens.completionTokens += tokensOut;
 
-  bus.emit("generation.completed", {
+  emitGenerationCompleted({
     name: "act",
     model: state.model,
     input: actMessages,
@@ -132,7 +148,7 @@ async function dispatchTools(
 
   // ── Emit tool.called only for approved calls ──────────────
   if (approved.length > 1) {
-    bus.emit("batch.started", {
+    emitBatchStarted({
       batchId,
       toolCallIds: approved.map((tc) => tc.id),
       count: approved.length,
@@ -141,7 +157,7 @@ async function dispatchTools(
 
   for (let idx = 0; idx < approved.length; idx++) {
     const tc = approved[idx];
-    bus.emit("tool.called", {
+    emitToolCalled({
       toolCallId: tc.id,
       name: tc.function.name,
       args: tc.function.arguments,
@@ -179,7 +195,7 @@ async function dispatchTools(
       const { content, isError, durationMs } = outcome.value;
       if (isError) {
         failed++;
-        bus.emit("tool.failed", {
+        emitToolFailed({
           toolCallId: tc.id,
           name: tc.function.name,
           durationMs,
@@ -189,7 +205,7 @@ async function dispatchTools(
         });
       } else {
         succeeded++;
-        bus.emit("tool.succeeded", {
+        emitToolSucceeded({
           toolCallId: tc.id,
           name: tc.function.name,
           durationMs,
@@ -206,7 +222,7 @@ async function dispatchTools(
     } else {
       failed++;
       const errorMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
-      bus.emit("tool.failed", {
+      emitToolFailed({
         toolCallId: tc.id,
         name: tc.function.name,
         durationMs: 0,
@@ -223,7 +239,7 @@ async function dispatchTools(
   }
 
   if (approved.length > 1) {
-    bus.emit("batch.completed", {
+    emitBatchCompleted({
       batchId,
       count: approved.length,
       durationMs: performance.now() - batchStart,
@@ -313,13 +329,13 @@ export async function runAgent(
 
       state.tools = resolved.tools;
 
-      bus.emit("run.started", {
+      emitRunStarted({
         assistant: state.assistant,
         model: state.model,
         userInput: typeof userPrompt === "string" ? userPrompt : undefined,
       });
 
-      bus.emit("agent.started", {
+      emitAgentStarted({
         agentName: state.agentName ?? state.assistant,
         model: state.model,
         task: typeof userPrompt === "string" ? userPrompt : "(structured)",
@@ -337,7 +353,7 @@ export async function runAgent(
 
         if (state.runId) dbOps.incrementCycleCount(state.runId);
 
-        bus.emit("turn.started", {
+        emitTurnStarted({
           index: i,
           maxTurns: config.limits.maxIterations,
           model: state.model,
@@ -358,24 +374,14 @@ export async function runAgent(
             await saveMemoryIfChanged();
           }
 
-          bus.emit("turn.completed", {
-            index: i,
-            outcome: "answer",
-            durationMs: performance.now() - turnStartTime,
-            tokens: { ...state.tokens },
-          });
-          bus.emit("agent.answered", { text: response.content });
-          bus.emit("agent.completed", {
+          emitAnswerTerminal({
             agentName: state.agentName ?? state.assistant,
-            durationMs: performance.now() - runStartTime,
-            iterations: i + 1,
-            tokens: { ...state.tokens },
-            result: response.content,
-          });
-          bus.emit("run.completed", {
-            reason: "answer",
-            iterations: i + 1,
-            tokens: { ...state.tokens },
+            iterationIndex: i,
+            iterationCount: i + 1,
+            turnDurationMs: performance.now() - turnStartTime,
+            runDurationMs: performance.now() - runStartTime,
+            tokens: state.tokens,
+            answerText: response.content,
           });
 
           return {
@@ -390,13 +396,11 @@ export async function runAgent(
           await dispatchTools(functionCalls);
         } catch (err) {
           if (err instanceof WaitRequested) {
-            // Persist the messages produced so far before pausing so the
-            // resumed run can rebuild full transcript.
-            bus.emit("turn.completed", {
+            emitTurnCompleted({
               index: i,
               outcome: "continue",
               durationMs: performance.now() - turnStartTime,
-              tokens: { ...state.tokens },
+              tokens: state.tokens,
             });
             return {
               exit: { kind: "waiting", waitingOn: err.waitingOn },
@@ -406,11 +410,11 @@ export async function runAgent(
           throw err;
         }
 
-        bus.emit("turn.completed", {
+        emitTurnCompleted({
           index: i,
           outcome: "continue",
           durationMs: performance.now() - turnStartTime,
-          tokens: { ...state.tokens },
+          tokens: state.tokens,
         });
       }
 
@@ -419,23 +423,12 @@ export async function runAgent(
         await saveMemoryIfChanged();
       }
 
-      bus.emit("turn.completed", {
-        index: config.limits.maxIterations - 1,
-        outcome: "max_iterations",
-        durationMs: performance.now() - turnStartTime,
-        tokens: { ...state.tokens },
-      });
-      bus.emit("agent.completed", {
+      emitMaxIterationsTerminal({
         agentName: state.agentName ?? state.assistant,
-        durationMs: performance.now() - runStartTime,
-        iterations: config.limits.maxIterations,
-        tokens: { ...state.tokens },
-        result: null,
-      });
-      bus.emit("run.completed", {
-        reason: "max_iterations",
-        iterations: config.limits.maxIterations,
-        tokens: { ...state.tokens },
+        maxIterations: config.limits.maxIterations,
+        turnDurationMs: performance.now() - turnStartTime,
+        runDurationMs: performance.now() - runStartTime,
+        tokens: state.tokens,
       });
 
       return {
@@ -444,22 +437,17 @@ export async function runAgent(
       };
     } catch (err) {
       if (err instanceof WaitRequested) {
-        // Defensive: should already be caught inside the dispatch block.
         return {
           exit: { kind: "waiting", waitingOn: err.waitingOn },
           messages: state.messages.slice(inputLength),
         };
       }
       const errorMsg = getErrorMessage(err);
-      bus.emit("agent.failed", {
+      emitFailureTerminal({
         agentName: state.agentName ?? state.assistant,
-        durationMs: performance.now() - runStartTime,
         iterations: state.iteration + 1,
-        error: errorMsg,
-      });
-      bus.emit("run.failed", {
-        iterations: state.iteration + 1,
-        tokens: { ...state.tokens },
+        runDurationMs: performance.now() - runStartTime,
+        tokens: state.tokens,
         error: errorMsg,
       });
       throw err;
