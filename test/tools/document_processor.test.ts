@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, mock } from "bun:test";
 import { join } from "path";
 import { mkdirSync, writeFileSync, rmSync } from "fs";
-import type { ChatCompletionParams, LLMChatResponse } from "../types/llm.ts";
-import type { ToolResult } from "../types/tool-result.ts";
+import type { ChatCompletionParams, LLMChatResponse } from "../../src/types/llm.ts";
+import type { ToolResult } from "../../src/types/tool-result.ts";
 
 // Mock llm service before importing the tool
 const mockChatCompletion = mock(
@@ -14,7 +14,7 @@ const mockChatCompletion = mock(
     }),
 );
 
-mock.module("../llm/llm.ts", () => ({
+mock.module("../../src/llm/llm.ts", () => ({
   llm: {
     chatCompletion: mockChatCompletion,
     completion: mock(() => Promise.resolve("")),
@@ -22,7 +22,7 @@ mock.module("../llm/llm.ts", () => ({
 }));
 
 // Import after mocking
-const { default: documentProcessor } = await import("./document_processor.ts");
+const { default: documentProcessor } = await import("../../src/tools/document_processor.ts");
 
 const handler = documentProcessor.handler;
 

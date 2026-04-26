@@ -1,19 +1,19 @@
 import { describe, test, expect, mock } from "bun:test";
 import { join, resolve } from "path";
 import { mkdir } from "fs/promises";
-import type { ToolResult } from "../types/tool-result.ts";
-import executeCode from "./execute_code.ts";
+import type { ToolResult } from "../../src/types/tool-result.ts";
+import executeCode from "../../src/tools/execute_code.ts";
 
 // Mock getSessionId to return a test session
 const mockSessionId = "test-session-code-001";
-mock.module("../agent/context.ts", () => ({
+mock.module("../../src/agent/context.ts", () => ({
   getSessionId: () => mockSessionId,
   getAgentName: () => "default",
   requireSessionId: () => mockSessionId,
 }));
 
 // Resolve session dir for test setup
-import { config } from "../config/index.ts";
+import { config } from "../../src/config/index.ts";
 const sessionDir = resolve(
   join(
     config.paths.sessionsDir,

@@ -2,11 +2,11 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import type { ToolResult } from "../types/tool-result.ts";
-import geoDistance from "./geo_distance.ts";
-import { haversine } from "./geo_distance.ts";
-import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
-import { config } from "../config/index.ts";
+import type { ToolResult } from "../../src/types/tool-result.ts";
+import geoDistance from "../../src/tools/geo_distance.ts";
+import { haversine } from "../../src/tools/geo_distance.ts";
+import { createBunFileService, _setFilesForTest } from "../../src/infra/file.ts";
+import { config } from "../../src/config/index.ts";
 
 const handler = geoDistance.handler;
 

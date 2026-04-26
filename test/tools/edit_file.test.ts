@@ -3,9 +3,9 @@ import { join } from "path";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { createHash } from "crypto";
-import type { ToolResult } from "../types/tool-result.ts";
-import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
-import edit_file from "./edit_file.ts";
+import type { ToolResult } from "../../src/types/tool-result.ts";
+import { createBunFileService, _setFilesForTest } from "../../src/infra/file.ts";
+import edit_file from "../../src/tools/edit_file.ts";
 
 let tmpDir: string;
 let restore: () => void;

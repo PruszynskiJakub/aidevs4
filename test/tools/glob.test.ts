@@ -2,9 +2,9 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { join } from "path";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
-import type { ToolResult } from "../types/tool-result.ts";
-import { createBunFileService, _setFilesForTest } from "../infra/file.ts";
-import glob from "./glob.ts";
+import type { ToolResult } from "../../src/types/tool-result.ts";
+import { createBunFileService, _setFilesForTest } from "../../src/infra/file.ts";
+import glob from "../../src/tools/glob.ts";
 
 let tmpDir: string;
 let restore: () => void;

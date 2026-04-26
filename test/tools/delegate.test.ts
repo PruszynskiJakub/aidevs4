@@ -1,19 +1,19 @@
 import { describe, it, expect, mock, beforeEach, spyOn } from "bun:test";
-import type { ToolResult } from "../types/tool-result.ts";
+import type { ToolResult } from "../../src/types/tool-result.ts";
 
 // Mock orchestrator (no circular dep — delegate lazy-imports it)
 const mockExecuteTurn = mock(() =>
   Promise.resolve({ answer: "child answer", sessionId: "child-session-123" }),
 );
-mock.module("../agent/orchestrator.ts", () => ({
+mock.module("../../src/agent/orchestrator.ts", () => ({
   executeTurn: mockExecuteTurn,
 }));
 
 // Import the tool — scanAgents runs at top level, reads real agent files
-const { default: delegateTool } = await import("./delegate.ts");
+const { default: delegateTool } = await import("../../src/tools/delegate.ts");
 
 // Spy on context functions after import
-import * as context from "../agent/context.ts";
+import * as context from "../../src/agent/context.ts";
 
 /** Extract text from ToolResult */
 function getText(result: ToolResult): string {
