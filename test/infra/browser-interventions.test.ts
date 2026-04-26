@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { createBrowserFeedbackTracker } from "./browser-feedback.ts";
-import { createBrowserInterventions } from "./browser-interventions.ts";
+import { createBrowserFeedbackTracker } from "../../src/infra/browser-feedback.ts";
+import { createBrowserInterventions } from "../../src/infra/browser-interventions.ts";
 
 describe("BrowserInterventions", () => {
   describe("screenshot hint", () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { createBunFileService, FileSizeLimitError } from "./file.ts";
+import { createBunFileService, FileSizeLimitError } from "../../src/infra/file.ts";
 
 let allowedDir: string;
 let siblingDir: string;

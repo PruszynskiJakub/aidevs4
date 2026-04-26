@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
-import { condense } from "./condense.ts";
-import type { LLMProvider } from "../types/llm.ts";
+import { condense } from "../../src/infra/condense.ts";
+import type { LLMProvider } from "../../src/types/llm.ts";
 
 // Stub provider that echoes a fixed summary
 function stubProvider(summary: string): LLMProvider {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { createEventBus } from "./events.ts";
-import type { EventBus } from "../types/events.ts";
+import { createEventBus } from "../../src/infra/events.ts";
+import type { EventBus } from "../../src/types/events.ts";
 
 describe("EventBus", () => {
   let bus: EventBus;

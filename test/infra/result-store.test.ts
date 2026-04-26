@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { createResultStore } from "./result-store.ts";
+import { createResultStore } from "../../src/infra/result-store.ts";
 
 describe("resultStore", () => {
   let store: ReturnType<typeof createResultStore>;
