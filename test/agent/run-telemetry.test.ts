@@ -3,12 +3,7 @@ import { bus } from "../../src/infra/events.ts";
 import type { AgentEvent, EventType } from "../../src/types/events.ts";
 import {
   emitRunStarted,
-  emitRunCompleted,
-  emitRunFailed,
   emitAgentStarted,
-  emitAgentAnswered,
-  emitAgentCompleted,
-  emitAgentFailed,
   emitTurnStarted,
   emitTurnCompleted,
   emitGenerationStarted,
@@ -61,25 +56,6 @@ describe("run-telemetry single-event helpers", () => {
     expect((events[0] as any).userInput).toBe("hi");
   });
 
-  it("emitRunCompleted emits run.completed", () => {
-    const { events, detach: d } = capture();
-    detach = d;
-    emitRunCompleted({ reason: "answer", iterations: 3, tokens: { promptTokens: 10, completionTokens: 5 } });
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("run.completed");
-    expect((events[0] as any).reason).toBe("answer");
-    expect((events[0] as any).iterations).toBe(3);
-  });
-
-  it("emitRunFailed emits run.failed", () => {
-    const { events, detach: d } = capture();
-    detach = d;
-    emitRunFailed({ iterations: 2, tokens: { promptTokens: 0, completionTokens: 0 }, error: "boom" });
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("run.failed");
-    expect((events[0] as any).error).toBe("boom");
-  });
-
   it("emitAgentStarted emits agent.started", () => {
     const { events, detach: d } = capture();
     detach = d;
@@ -87,38 +63,6 @@ describe("run-telemetry single-event helpers", () => {
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe("agent.started");
     expect((events[0] as any).agentName).toBe("test");
-  });
-
-  it("emitAgentAnswered emits agent.answered", () => {
-    const { events, detach: d } = capture();
-    detach = d;
-    emitAgentAnswered("hello");
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("agent.answered");
-    expect((events[0] as any).text).toBe("hello");
-  });
-
-  it("emitAgentCompleted emits agent.completed", () => {
-    const { events, detach: d } = capture();
-    detach = d;
-    emitAgentCompleted({
-      agentName: "a",
-      durationMs: 100,
-      iterations: 2,
-      tokens: { promptTokens: 1, completionTokens: 2 },
-      result: "done",
-    });
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("agent.completed");
-  });
-
-  it("emitAgentFailed emits agent.failed", () => {
-    const { events, detach: d } = capture();
-    detach = d;
-    emitAgentFailed({ agentName: "a", durationMs: 50, iterations: 1, error: "oops" });
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("agent.failed");
-    expect((events[0] as any).error).toBe("oops");
   });
 
   it("emitTurnStarted emits turn.started", () => {
@@ -303,15 +247,6 @@ describe("run-telemetry token snapshots", () => {
     emitTurnCompleted({ index: 0, outcome: "continue", durationMs: 10, tokens });
     tokens.promptTokens = 999;
     expect((events[0] as any).tokens.promptTokens).toBe(5);
-  });
-
-  it("emitRunCompleted snapshots tokens", () => {
-    const { events, detach: d } = capture();
-    detach = d;
-    const tokens = { promptTokens: 7, completionTokens: 4 };
-    emitRunCompleted({ reason: "answer", iterations: 1, tokens });
-    tokens.promptTokens = 999;
-    expect((events[0] as any).tokens.promptTokens).toBe(7);
   });
 
   it("emitMaxIterationsTerminal snapshots tokens independently across all emitted events", () => {

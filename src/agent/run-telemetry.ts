@@ -11,22 +11,6 @@ export function emitRunStarted(args: {
   bus.emit("run.started", args);
 }
 
-export function emitRunCompleted(args: {
-  reason: "answer" | "max_iterations";
-  iterations: number;
-  tokens: TokenPair;
-}): void {
-  bus.emit("run.completed", { ...args, tokens: { ...args.tokens } });
-}
-
-export function emitRunFailed(args: {
-  iterations: number;
-  tokens: TokenPair;
-  error: string;
-}): void {
-  bus.emit("run.failed", { ...args, tokens: { ...args.tokens } });
-}
-
 // ── Agent lifecycle ─────────────────────────────────────────
 
 export function emitAgentStarted(args: {
@@ -36,29 +20,6 @@ export function emitAgentStarted(args: {
   depth: number;
 }): void {
   bus.emit("agent.started", args);
-}
-
-export function emitAgentAnswered(text: string | null): void {
-  bus.emit("agent.answered", { text });
-}
-
-export function emitAgentCompleted(args: {
-  agentName: string;
-  durationMs: number;
-  iterations: number;
-  tokens: TokenPair;
-  result: string | null;
-}): void {
-  bus.emit("agent.completed", { ...args, tokens: { ...args.tokens } });
-}
-
-export function emitAgentFailed(args: {
-  agentName: string;
-  durationMs: number;
-  iterations: number;
-  error: string;
-}): void {
-  bus.emit("agent.failed", args);
 }
 
 // ── Turn ────────────────────────────────────────────────────

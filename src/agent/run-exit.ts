@@ -14,9 +14,3 @@ export type RunExit =
   | { kind: "waiting"; waitingOn: WaitDescriptor }
   | { kind: "exhausted"; cycleCount: number };
 
-export type RunExitKind = RunExit["kind"];
-
-/** True for every `RunExit` that puts the run row into a terminal status. */
-export function isTerminal(exit: RunExit): boolean {
-  return exit.kind !== "waiting";
-}

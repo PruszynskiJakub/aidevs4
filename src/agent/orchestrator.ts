@@ -16,7 +16,9 @@ import { resumeRun } from "./resume-run.ts";
 import { getErrorMessage } from "../utils/errors.ts";
 import * as dbOps from "../infra/db/index.ts";
 
-interface ExecuteRunOpts {
+// ── Types ──────────────────────────────────────────────────
+
+export interface ExecuteRunOpts {
   sessionId?: string;
   prompt: string;
   assistant?: string;
@@ -44,6 +46,30 @@ export interface CreateChildRunOpts {
   sourceCallId?: string;
 }
 
+interface RunRowOpts {
+  runId: string;
+  sessionId: string;
+  parentRunId?: string;
+  rootRunId: string;
+  sourceCallId?: string;
+  assistantName: string;
+  prompt: string;
+}
+
+interface HydrateOpts {
+  runId: string;
+  sessionId: string;
+  assistantName: string;
+  rootRunId: string;
+  parentRunId?: string;
+  traceId: string;
+  depth: number;
+  model: string;
+  tools: RunState["tools"];
+}
+
+// ── Helpers ────────────────────────────────────────────────
+
 function pickAssistantName(
   session: Session,
   sessionId: string,
@@ -60,16 +86,6 @@ function pickAssistantName(
   return requestedAssistant ?? "default";
 }
 
-interface RunRowOpts {
-  runId: string;
-  sessionId: string;
-  parentRunId?: string;
-  rootRunId: string;
-  sourceCallId?: string;
-  assistantName: string;
-  prompt: string;
-}
-
 function insertRunRow(opts: RunRowOpts): void {
   dbOps.createRun({
     id: opts.runId,
@@ -80,18 +96,6 @@ function insertRunRow(opts: RunRowOpts): void {
     template: opts.assistantName,
     task: opts.prompt,
   });
-}
-
-interface HydrateOpts {
-  runId: string;
-  sessionId: string;
-  assistantName: string;
-  rootRunId: string;
-  parentRunId?: string;
-  traceId: string;
-  depth: number;
-  model: string;
-  tools: RunState["tools"];
 }
 
 async function hydrateRunState(opts: HydrateOpts): Promise<RunState> {
@@ -115,7 +119,7 @@ async function hydrateRunState(opts: HydrateOpts): Promise<RunState> {
   };
 }
 
-async function emitModerationEvents(prompt: string): Promise<void> {
+async function moderateAndAssert(prompt: string): Promise<void> {
   const moderationStart = Date.now();
   const moderation = await moderateInput(prompt);
   const moderationDurationMs = Date.now() - moderationStart;
@@ -174,13 +178,15 @@ function kickChildRunAsync(parentRunId: string, childRunId: string): void {
   });
 }
 
+// ── Public API ─────────────────────────────────────────────
+
 export async function executeRun(opts: ExecuteRunOpts): Promise<ExecuteRunResult> {
   const sessionId = opts.sessionId ?? randomSessionId();
   const session = sessionService.getOrCreate(sessionId);
   const assistantName = pickAssistantName(session, sessionId, opts.assistant);
 
   await agentsService.get(assistantName);
-  await emitModerationEvents(opts.prompt);
+  await moderateAndAssert(opts.prompt);
 
   if (!session.assistant) sessionService.setAssistant(sessionId, assistantName);
 
@@ -248,8 +254,7 @@ export async function createChildRun(opts: CreateChildRunOpts): Promise<{
   sessionService.getOrCreate(sessionId);
 
   await agentsService.get(opts.assistant);
-  const moderation = await moderateInput(opts.prompt);
-  assertNotFlagged(moderation);
+  await moderateAndAssert(opts.prompt);
 
   const runId = randomUUID();
   insertRunRow({

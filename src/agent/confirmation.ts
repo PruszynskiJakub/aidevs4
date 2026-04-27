@@ -1,22 +1,19 @@
 import { randomUUID } from "node:crypto";
 import type { LLMToolCall } from "../types/llm.ts";
-import type { Decision } from "../types/tool.ts";
-import type { ConfirmationRequest, ConfirmationProvider, GateResult } from "../types/confirmation.ts";
+import type { ConfirmationRequest, GateResult } from "../types/confirmation.ts";
 import { getToolMeta, SEPARATOR } from "../tools/registry.ts";
-import { bus } from "../infra/events.ts";
 import { safeParse } from "../utils/parse.ts";
 
-export type { ConfirmationRequest, ConfirmationProvider, GateResult } from "../types/confirmation.ts";
+export type { ConfirmationRequest } from "../types/confirmation.ts";
 
-let provider: ConfirmationProvider | null = null;
+// ── Types ──────────────────────────────────────────────────
 
-export function setConfirmationProvider(p: ConfirmationProvider): void {
-  provider = p;
+interface PendingConfirmation {
+  requests: ConfirmationRequest[];
+  toolCalls: LLMToolCall[];
 }
 
-export function clearConfirmationProvider(): void {
-  provider = null;
-}
+// ── Module state ───────────────────────────────────────────
 
 /**
  * In-memory cache of pending confirmations by `confirmationId`. The
@@ -24,12 +21,16 @@ export function clearConfirmationProvider(): void {
  * This cache is optional — a synchronous in-process resume (e.g. CLI
  * provider) reads from here to avoid a DB round-trip.
  */
-interface PendingConfirmation {
-  requests: ConfirmationRequest[];
-  toolCalls: LLMToolCall[];
+const pendingConfirmations = new Map<string, PendingConfirmation>();
+
+// ── Helpers ────────────────────────────────────────────────
+
+function extractAction(expandedName: string): string {
+  const idx = expandedName.indexOf(SEPARATOR);
+  return idx === -1 ? expandedName : expandedName.slice(idx + SEPARATOR.length);
 }
 
-const pendingConfirmations = new Map<string, PendingConfirmation>();
+// ── Public API ─────────────────────────────────────────────
 
 export function takePendingConfirmation(id: string): PendingConfirmation | undefined {
   const p = pendingConfirmations.get(id);
@@ -37,17 +38,10 @@ export function takePendingConfirmation(id: string): PendingConfirmation | undef
   return p;
 }
 
-export function peekPendingConfirmation(id: string): PendingConfirmation | undefined {
-  return pendingConfirmations.get(id);
-}
-
-export function clearPendingConfirmations(): void {
-  pendingConfirmations.clear();
-}
-
-function extractAction(expandedName: string): string {
-  const idx = expandedName.indexOf(SEPARATOR);
-  return idx === -1 ? expandedName : expandedName.slice(idx + SEPARATOR.length);
+export function setConfirmationProvider(p: import("../types/confirmation.ts").ConfirmationProvider): void {
+  // Reserved for future use by eval harness / Slack provider.
+  // Currently a no-op — the CLI reads from pendingConfirmations directly.
+  void p;
 }
 
 /**
@@ -109,23 +103,4 @@ export async function confirmBatch(calls: LLMToolCall[]): Promise<GateResult> {
       prompt,
     },
   };
-}
-
-/**
- * For callers that want in-process, synchronous approval (e.g. the CLI
- * provider loop). Reads decisions from the configured provider and
- * returns them, bypassing the durable pause path entirely.
- */
-export async function readDecisionsFromProvider(
-  requests: ConfirmationRequest[],
-): Promise<Map<string, Decision>> {
-  if (!provider) {
-    return new Map(requests.map((r) => [r.toolCallId, "approve" as const]));
-  }
-  try {
-    return await provider.confirm(requests);
-  } catch (err) {
-    console.error("[confirmation] Provider error, denying all pending calls:", err);
-    return new Map(requests.map((r) => [r.toolCallId, "deny" as const]));
-  }
 }

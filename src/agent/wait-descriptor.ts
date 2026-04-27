@@ -19,13 +19,12 @@ export type WaitDescriptor =
     };
 
 export type Wait = WaitDescriptor;
-export type WaitKind = WaitDescriptor["kind"];
 
 /**
  * Resolution payload passed to `resumeRun`. The `kind` must match the
  * pending `WaitDescriptor.kind` for the run or the resume is rejected.
  */
-export type WaitResolution =ķ
+export type WaitResolution =
   | {
       kind: "user_approval";
       confirmationId: string;

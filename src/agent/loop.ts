@@ -29,10 +29,48 @@ import {
   emitAnswerTerminal, emitMaxIterationsTerminal, emitFailureTerminal,
 } from "./run-telemetry.ts";
 
+// ── Types ──────────────────────────────────────────────────
+
 interface SessionResources {
   log: Logger;
   dispose: () => Promise<void>;
 }
+
+interface RunContext {
+  systemPrompt: string;
+  memoryEnabled: boolean;
+}
+
+type SettledOutcome =
+  | { status: "fulfilled"; value: { content: string; isError: boolean; durationMs: number; wait?: WaitDescriptor } }
+  | { status: "rejected"; reason: unknown };
+
+interface MemoryContext {
+  systemPrompt: string;
+  messagesSnapshot: LLMMessage[];
+  contextLength: number;
+}
+
+type CycleOutcome =
+  | { kind: "continue" }
+  | { kind: "completed"; text: string | null }
+  | { kind: "waiting"; waitingOn: WaitDescriptor };
+
+interface IterationDeps {
+  state: RunState;
+  ctx: RunContext;
+  provider: LLMProvider;
+  saveMemoryIfChanged: () => Promise<void>;
+  sliceMessages: () => LLMMessage[];
+  runStartTime: number;
+}
+
+export interface LoopResult {
+  exit: RunExit;
+  messages: LLMMessage[];
+}
+
+// ── Session setup ──────────────────────────────────────────
 
 function setupSession(userPrompt: string | unknown, sessionId?: string): SessionResources {
   const md = new MarkdownLogger({ sessionId });
@@ -57,10 +95,7 @@ function setupSession(userPrompt: string | unknown, sessionId?: string): Session
   };
 }
 
-interface RunContext {
-  systemPrompt: string;
-  memoryEnabled: boolean;
-}
+// ── Agent resolution ───────────────────────────────────────
 
 async function resolveAgentForRun(state: RunState): Promise<RunContext> {
   const resolved = await agentsService.resolve(state.assistant);
@@ -73,6 +108,8 @@ async function resolveAgentForRun(state: RunState): Promise<RunContext> {
     memoryEnabled: resolved.memory !== false,
   };
 }
+
+// ── LLM execution ──────────────────────────────────────────
 
 async function executeActPhase(
   actSystemPrompt: string,
@@ -123,9 +160,7 @@ async function executeActPhase(
   return response;
 }
 
-type SettledOutcome =
-  | { status: "fulfilled"; value: { content: string; isError: boolean; durationMs: number; wait?: WaitDescriptor } }
-  | { status: "rejected"; reason: unknown };
+// ── Tool dispatch ──────────────────────────────────────────
 
 function recordDeniedToolCalls(state: RunState, denied: { call: LLMToolCall }[]): void {
   for (const { call } of denied) {
@@ -228,11 +263,7 @@ async function dispatchTools(functionCalls: LLMToolCall[]): Promise<WaitDescript
   return waitingOn;
 }
 
-interface MemoryContext {
-  systemPrompt: string;
-  messagesSnapshot: LLMMessage[];
-  contextLength: number;
-}
+// ── Memory management ──────────────────────────────────────
 
 async function buildCycleContext(
   actSystemPrompt: string,
@@ -272,10 +303,7 @@ function createMemorySaver(state: RunState) {
   };
 }
 
-type CycleOutcome =
-  | { kind: "continue" }
-  | { kind: "completed"; text: string | null }
-  | { kind: "waiting"; waitingOn: WaitDescriptor };
+// ── Cycle & iteration ──────────────────────────────────────
 
 async function runCycle(
   state: RunState,
@@ -299,63 +327,6 @@ async function runCycle(
   const waitingOn = await dispatchTools(functionCalls);
   if (waitingOn) return { kind: "waiting", waitingOn };
   return { kind: "continue" };
-}
-
-async function finalizeTerminal(
-  state: RunState,
-  exit: RunExit,
-  ctx: RunContext,
-  provider: LLMProvider,
-  saveMemoryIfChanged: () => Promise<void>,
-  timing: { runStartTime: number; turnStartTime: number; iterationsRun: number },
-  answerText?: string | null,
-): Promise<void> {
-  if (ctx.memoryEnabled && (exit.kind === "completed" || exit.kind === "exhausted")) {
-    state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
-    await saveMemoryIfChanged();
-  }
-
-  const agentName = state.agentName ?? state.assistant;
-  const runDurationMs = performance.now() - timing.runStartTime;
-  const turnDurationMs = performance.now() - timing.turnStartTime;
-
-  if (exit.kind === "completed") {
-    emitAnswerTerminal({
-      agentName,
-      iterationIndex: timing.iterationsRun - 1,
-      iterationCount: timing.iterationsRun,
-      turnDurationMs, runDurationMs, tokens: state.tokens,
-      answerText: answerText ?? null,
-    });
-  } else if (exit.kind === "exhausted") {
-    emitMaxIterationsTerminal({
-      agentName, maxIterations: config.limits.maxIterations,
-      turnDurationMs, runDurationMs, tokens: state.tokens,
-    });
-  }
-}
-
-function emitRunStartEvents(state: RunState, userPrompt: string | unknown): void {
-  emitRunStarted({
-    assistant: state.assistant,
-    model: state.model,
-    userInput: typeof userPrompt === "string" ? userPrompt : undefined,
-  });
-  emitAgentStarted({
-    agentName: state.agentName ?? state.assistant,
-    model: state.model,
-    task: typeof userPrompt === "string" ? userPrompt : "(structured)",
-    depth: state.depth ?? 0,
-  });
-}
-
-interface IterationDeps {
-  state: RunState;
-  ctx: RunContext;
-  provider: LLMProvider;
-  saveMemoryIfChanged: () => Promise<void>;
-  sliceMessages: () => LLMMessage[];
-  runStartTime: number;
 }
 
 async function runIteration(
@@ -396,10 +367,57 @@ async function runIteration(
   return { continue: true, turnStartTime };
 }
 
-export interface LoopResult {
-  exit: RunExit;
-  messages: LLMMessage[];
+// ── Terminal finalization ──────────────────────────────────
+
+function emitRunStartEvents(state: RunState, userPrompt: string | unknown): void {
+  emitRunStarted({
+    assistant: state.assistant,
+    model: state.model,
+    userInput: typeof userPrompt === "string" ? userPrompt : undefined,
+  });
+  emitAgentStarted({
+    agentName: state.agentName ?? state.assistant,
+    model: state.model,
+    task: typeof userPrompt === "string" ? userPrompt : "(structured)",
+    depth: state.depth ?? 0,
+  });
 }
+
+async function finalizeTerminal(
+  state: RunState,
+  exit: RunExit,
+  ctx: RunContext,
+  provider: LLMProvider,
+  saveMemoryIfChanged: () => Promise<void>,
+  timing: { runStartTime: number; turnStartTime: number; iterationsRun: number },
+  answerText?: string | null,
+): Promise<void> {
+  if (ctx.memoryEnabled && (exit.kind === "completed" || exit.kind === "exhausted")) {
+    state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
+    await saveMemoryIfChanged();
+  }
+
+  const agentName = state.agentName ?? state.assistant;
+  const runDurationMs = performance.now() - timing.runStartTime;
+  const turnDurationMs = performance.now() - timing.turnStartTime;
+
+  if (exit.kind === "completed") {
+    emitAnswerTerminal({
+      agentName,
+      iterationIndex: timing.iterationsRun - 1,
+      iterationCount: timing.iterationsRun,
+      turnDurationMs, runDurationMs, tokens: state.tokens,
+      answerText: answerText ?? null,
+    });
+  } else if (exit.kind === "exhausted") {
+    emitMaxIterationsTerminal({
+      agentName, maxIterations: config.limits.maxIterations,
+      turnDurationMs, runDurationMs, tokens: state.tokens,
+    });
+  }
+}
+
+// ── Public API ─────────────────────────────────────────────
 
 export async function runAgent(
   state: RunState,

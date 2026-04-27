@@ -10,11 +10,14 @@ import { sandbox as defaultFiles } from "../infra/sandbox.ts";
 import { config as defaultConfig } from "../config/index.ts";
 import * as dbOps from "../infra/db/index.ts";
 
-function dateFolderNow(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+// ── Types ──────────────────────────────────────────────────
 
-// ── Message ↔ Item conversion ───────────────────────────────
+type DbItem = {
+  type: string; role: string | null; content: string | null;
+  callId: string | null; name: string | null; arguments: string | null; output: string | null;
+};
+
+// ── Message ↔ Item conversion ──────────────────────────────
 
 function userMessageToItem(runId: string, msg: LLMMessage & { role: "user" }, seq: number): NewItem {
   const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
@@ -59,11 +62,6 @@ function messagesToItems(runId: string, messages: LLMMessage[], startSeq: number
   }
   return result;
 }
-
-type DbItem = {
-  type: string; role: string | null; content: string | null;
-  callId: string | null; name: string | null; arguments: string | null; output: string | null;
-};
 
 function parseUserContent(raw: string | null): string | import("../types/llm.ts").ContentPart[] {
   if (raw === null) return "";
@@ -115,14 +113,13 @@ function itemsToMessages(dbItems: DbItem[]): LLMMessage[] {
       messages.push({ role: "tool", toolCallId: item.callId!, content: item.output ?? "" });
       i++;
     } else {
-      // Skip unexpected items (e.g. orphaned function_call)
       i++;
     }
   }
   return messages;
 }
 
-// ── Session service: 3 internal factory sections ────────────
+// ── Persistence helper ─────────────────────────────────────
 
 function persistMessages(runId: string, msgs: LLMMessage[]): void {
   if (msgs.length === 0) return;
@@ -132,6 +129,8 @@ function persistMessages(runId: string, msgs: LLMMessage[]): void {
   if (items.length === 1) dbOps.appendItem(items[0]);
   else dbOps.appendItems(items);
 }
+
+// ── Factory: Message store ─────────────────────────────────
 
 function createMessageStore() {
   return {
@@ -153,7 +152,9 @@ function createMessageStore() {
   };
 }
 
-function dbSessionToSession(row: { id: string; assistant: string | null; createdAt: number; updatedAt: number }, msgs: LLMMessage[]): Session {
+// ── Factory: Session registry ──────────────────────────────
+
+function dbSessionToSession(row: { id: string; assistant: string | null; createdAt: string; updatedAt: string }, msgs: LLMMessage[]): Session {
   return {
     id: row.id,
     assistant: row.assistant ?? undefined,
@@ -190,6 +191,12 @@ function createSessionRegistry(getMessages: (id: string) => LLMMessage[]) {
     },
     _clearQueues(): void { queues.clear(); },
   };
+}
+
+// ── Factory: Session paths ─────────────────────────────────
+
+function dateFolderNow(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function createSessionPaths(fileService: FileProvider, sessionsDir: string) {
@@ -234,6 +241,8 @@ function createSessionPaths(fileService: FileProvider, sessionsDir: string) {
   };
 }
 
+// ── Composed service ───────────────────────────────────────
+
 function createSessionService(
   fileService: FileProvider = defaultFiles,
   sessionsDir: string = defaultConfig.paths.sessionsDir,
@@ -254,6 +263,8 @@ function createSessionService(
     },
   };
 }
+
+// ── Exports ────────────────────────────────────────────────
 
 export type SessionService = ReturnType<typeof createSessionService>;
 

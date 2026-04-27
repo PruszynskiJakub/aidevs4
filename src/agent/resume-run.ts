@@ -15,6 +15,55 @@ import { runAndPersist } from "./orchestrator.ts";
 import * as dbOps from "../infra/db/index.ts";
 import { randomUUID } from "node:crypto";
 
+// ── Helpers ────────────────────────────────────────────────
+
+function findPendingToolCalls(messages: LLMMessage[]) {
+  const answered = new Set<string>();
+  for (const m of messages) {
+    if (m.role === "tool" && m.toolCallId) {
+      answered.add(m.toolCallId);
+    }
+  }
+
+  // Walk backwards; the most recent assistant message with unanswered
+  // toolCalls is the one we are resuming from.
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== "assistant") continue;
+    const asst = m as LLMAssistantMessage;
+    if (!asst.toolCalls || asst.toolCalls.length === 0) continue;
+    const pending = asst.toolCalls.filter((tc) => !answered.has(tc.id));
+    if (pending.length > 0) return pending;
+  }
+  return [];
+}
+
+function normalizeDecisions(
+  raw: Record<string, "approve" | "deny">,
+): Map<string, Decision> {
+  return new Map(Object.entries(raw));
+}
+
+/** Convert a DB run row to a RunExit for idempotent resume returns. */
+function dbRunToExit(run: DbRun): RunExit {
+  switch (run.status) {
+    case "completed":
+      return { kind: "completed", result: run.result ?? "" };
+    case "failed":
+      return { kind: "failed", error: { message: run.error ?? "unknown" } };
+    case "cancelled":
+      return { kind: "cancelled", reason: run.error ?? "unknown" };
+    case "exhausted":
+      return { kind: "exhausted", cycleCount: run.cycleCount };
+    case "waiting":
+      return { kind: "waiting", waitingOn: JSON.parse(run.waitingOn!) };
+    default:
+      return { kind: "failed", error: { message: `Unexpected status: ${run.status}` } };
+  }
+}
+
+// ── Public API ─────────────────────────────────────────────
+
 /**
  * Resume a run that is in `status='waiting'`. Validates state,
  * appends synthetic tool-result messages for the previously pending
@@ -92,7 +141,6 @@ export async function resumeRun(
       }
     }
   } else if (waitingOn.kind === "child_run" && resolution.kind === "child_run") {
-    // Reserved path — currently no code emits a child_run waiting state.
     for (const call of pending) {
       newMessages.push({
         role: "tool",
@@ -151,50 +199,4 @@ export async function resumeRun(
   };
 
   return runAndPersist(state);
-}
-
-function findPendingToolCalls(messages: LLMMessage[]) {
-  // Collect all toolCall ids that already have a response
-  const answered = new Set<string>();
-  for (const m of messages) {
-    if (m.role === "tool" && m.toolCallId) {
-      answered.add(m.toolCallId);
-    }
-  }
-
-  // Walk backwards; the most recent assistant message with unanswered
-  // toolCalls is the one we are resuming from.
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m.role !== "assistant") continue;
-    const asst = m as LLMAssistantMessage;
-    if (!asst.toolCalls || asst.toolCalls.length === 0) continue;
-    const pending = asst.toolCalls.filter((tc) => !answered.has(tc.id));
-    if (pending.length > 0) return pending;
-  }
-  return [];
-}
-
-function normalizeDecisions(
-  raw: Record<string, "approve" | "deny">,
-): Map<string, Decision> {
-  return new Map(Object.entries(raw));
-}
-
-/** Convert a DB run row to a RunExit for idempotent resume returns. */
-function dbRunToExit(run: DbRun): RunExit {
-  switch (run.status) {
-    case "completed":
-      return { kind: "completed", result: run.result ?? "" };
-    case "failed":
-      return { kind: "failed", error: { message: run.error ?? "unknown" } };
-    case "cancelled":
-      return { kind: "cancelled", reason: run.error ?? "unknown" };
-    case "exhausted":
-      return { kind: "exhausted", cycleCount: run.cycleCount };
-    case "waiting":
-      return { kind: "waiting", waitingOn: JSON.parse(run.waitingOn!) };
-    default:
-      return { kind: "failed", error: { message: `Unexpected status: ${run.status}` } };
-  }
 }

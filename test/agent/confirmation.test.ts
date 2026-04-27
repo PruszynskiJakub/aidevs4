@@ -7,7 +7,6 @@ import { bus } from "../../src/infra/events.ts";
 import { register, reset as resetRegistry } from "../../src/tools/registry.ts";
 import {
   confirmBatch,
-  clearPendingConfirmations,
   takePendingConfirmation,
 } from "../../src/agent/confirmation.ts";
 
@@ -65,7 +64,6 @@ const emittedEvents: Array<{ type: string; data: unknown }> = [];
 let busUnsub: (() => void) | null = null;
 
 beforeEach(() => {
-  clearPendingConfirmations();
   emittedEvents.length = 0;
   if (busUnsub) busUnsub();
   busUnsub = bus.onAny((e) => {
