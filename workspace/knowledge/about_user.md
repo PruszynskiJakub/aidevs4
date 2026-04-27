@@ -10,10 +10,9 @@ should delegate writes to `memory` to keep the format consistent.
 - Email (dev/personal): jpcodetask@gmail.com
 
 ## Possessions
-<!-- Add bullets here, e.g. "- Car: 2025 Volvo XC60, deep navy" -->
 
 ## Preferences
-<!-- Add bullets here, e.g. "- Favorite color: deep navy" -->
+- Favorite color: deep navy
 
 ## People
 <!-- Add bullets here, e.g. "- Accountant: Anna K. at Foo Sp. z o.o." -->
