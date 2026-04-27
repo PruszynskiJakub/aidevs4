@@ -458,11 +458,12 @@
 
 <div class="header">
   <h1>Agent System Architecture</h1>
-  <p>Sessions, Runs, Turns, Tools & Human-in-the-Loop</p>
+  <p>Sessions, Runs, Turns, Tools & Human-in-the-Loop &mdash; reflects <code>src/</code> as of SP-92</p>
 </div>
 
 <div class="tabs">
   <div class="tab active" onclick="switchTab('overview')">Overview</div>
+  <div class="tab" onclick="switchTab('layout')">src/ Layout</div>
   <div class="tab" onclick="switchTab('single')">Single Agent Flow</div>
   <div class="tab" onclick="switchTab('hitl')">Human in the Loop</div>
   <div class="tab" onclick="switchTab('multi')">Multi-Agent Delegation</div>
@@ -487,34 +488,34 @@
       <div class="inner">
         <div class="block block-run">
           <div class="block-label"><span class="dot dot-run"></span> RUN (Root)</div>
-          <div class="block-meta">Single agent execution &mdash; <code>runId: uuid</code><br>States: <code>pending &rarr; running &rarr; waiting | completed | failed | exhausted</code></div>
+          <div class="block-meta">Single agent execution &mdash; <code>runId: uuid</code><br>Statuses: <code>pending &rarr; running &rarr; waiting | completed | failed | cancelled | exhausted</code><br>Loop returns a <code>RunExit</code> union: <code>completed | failed | cancelled | waiting | exhausted</code> (only <code>waiting</code> is non-terminal).</div>
           <div class="inner">
             <div class="block block-turn">
-              <div class="block-label"><span class="dot dot-turn"></span> TURN 0</div>
-              <div class="block-meta">One plan/act cycle. LLM generates &rarr; tools execute &rarr; results appended.</div>
+              <div class="block-label"><span class="dot dot-turn"></span> TURN 0 (iteration 0)</div>
+              <div class="block-meta">One plan/act cycle. <code>runCycle()</code>: LLM generates &rarr; <code>confirmBatch()</code> gates &rarr; <code>dispatchTools()</code> runs in parallel &rarr; results appended.</div>
               <div class="inner">
                 <div class="block block-tool">
                   <div class="block-label"><span class="dot dot-tool"></span> TOOL: web_search</div>
-                  <div class="block-meta"><code>dispatch(name, args) &rarr; ToolResult</code> &mdash; Result appended to messages</div>
+                  <div class="block-meta"><code>dispatch(name, args, callId) &rarr; ToolResult</code> &mdash; Result appended as <code>role:"tool"</code> message</div>
                 </div>
                 <div class="block block-tool">
                   <div class="block-label"><span class="dot dot-tool"></span> TOOL: execute_code</div>
-                  <div class="block-meta">Tools can run in parallel batches within a turn</div>
+                  <div class="block-meta">Approved tools fan out via <code>Promise.allSettled</code></div>
                 </div>
               </div>
             </div>
 
             <div class="block block-turn">
               <div class="block-label"><span class="dot dot-turn"></span> TURN 1</div>
-              <div class="block-meta">LLM sees previous results, decides next action or answers.</div>
+              <div class="block-meta">LLM sees previous tool results, decides next action or answers.</div>
               <div class="inner">
                 <div class="block block-tool">
                   <div class="block-label"><span class="dot dot-tool"></span> TOOL: delegate</div>
-                  <div class="block-meta">Spawns child run &rarr; throws <code>WaitRequested</code></div>
+                  <div class="block-meta">Tool returns <code>{ wait: { kind: "child_run", childRunId } }</code> &mdash; loop bubbles up as <code>RunExit.waiting</code></div>
                 </div>
                 <div class="block" style="background:rgba(239,68,68,0.06);border:2px dashed rgba(239,68,68,0.25);margin-top:8px;padding:14px;">
-                  <div class="block-label"><span class="dot dot-wait"></span> WAIT &mdash; Parent Paused</div>
-                  <div class="block-meta">Run status &rarr; <code>waiting</code>. Persisted: <code>waitingOn: { kind: "child_run", childRunId }</code></div>
+                  <div class="block-label"><span class="dot dot-wait"></span> WAIT &mdash; Parent Parked</div>
+                  <div class="block-meta">Run status &rarr; <code>waiting</code>. Row stores <code>waitingOn</code> JSON. Loop exits cleanly &mdash; no thrown exception.</div>
                 </div>
               </div>
             </div>
@@ -543,7 +544,7 @@
 
         <div class="block block-run" style="margin-top:16px; border-style:dashed;">
           <div class="block-label"><span class="dot dot-run"></span> RUN (Resumed Root)</div>
-          <div class="block-meta">Parent rebuilds state from DB + child result as synthetic tool output</div>
+          <div class="block-meta">Continuation subscriber detects child terminal &rarr; calls <code>resumeRun(parentId, { kind: "child_run", result })</code>. Parent rebuilds state from DB + injects synthetic tool output, then <code>runAndPersist()</code> re-enters the loop.</div>
           <div class="inner">
             <div class="block block-turn">
               <div class="block-label"><span class="dot dot-turn"></span> TURN 2 (continued)</div>
@@ -551,6 +552,146 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ SRC LAYOUT ════════════ -->
+<div class="scene" id="scene-layout">
+  <h3 style="margin-bottom:12px; font-size:1.1rem;">Top-level <code>src/</code> directories</h3>
+  <p style="color:var(--text-dim);font-size:0.88rem;margin-bottom:18px;">Click a directory below to see what lives inside. The shape mirrors the boundaries enforced in <code>CLAUDE.md</code>: <em>agent</em> drives the loop, <em>llm</em> isolates providers, <em>tools</em> are explicitly registered, <em>infra</em> owns side effects, <em>types</em> defines contracts.</p>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;">
+    <div class="block" style="background:var(--surface);border:1px solid rgba(99,102,241,0.4);padding:16px;">
+      <div style="font-weight:700;color:var(--accent);margin-bottom:6px;">agent/</div>
+      <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:8px;">The brain &mdash; orchestration, loop, session, memory.</div>
+      <div style="font-size:0.78rem;font-family:'JetBrains Mono',monospace;color:var(--text);line-height:1.7;">
+        loop.ts &mdash; <span style="color:var(--text-dim);">runAgent / runIteration / runCycle</span><br>
+        orchestrator.ts &mdash; <span style="color:var(--text-dim);">executeRun, runAndPersist, createChildRun, startChildRun</span><br>
+        resume-run.ts &mdash; <span style="color:var(--text-dim);">resumeRun (idempotent, version-locked)</span><br>
+        run-continuation.ts &mdash; <span style="color:var(--text-dim);">subscriber + reconcileOrphanedWaits</span><br>
+        wait-descriptor.ts &mdash; <span style="color:var(--text-dim);">WaitDescriptor / WaitResolution</span><br>
+        run-exit.ts &mdash; <span style="color:var(--text-dim);">RunExit union</span><br>
+        run-telemetry.ts &mdash; <span style="color:var(--text-dim);">emit* helpers for events</span><br>
+        confirmation.ts &mdash; <span style="color:var(--text-dim);">confirmBatch, gate logic, provider hook</span><br>
+        session.ts &mdash; <span style="color:var(--text-dim);">SessionService (messages, output paths)</span><br>
+        agents.ts &mdash; <span style="color:var(--text-dim);">.agent.md loader</span><br>
+        context.ts &mdash; <span style="color:var(--text-dim);">AsyncLocalStorage RunState</span><br>
+        workspace.ts &mdash; <span style="color:var(--text-dim);">workspace context for system prompt</span><br>
+        memory/ &mdash; <span style="color:var(--text-dim);">observer / processor / reflector / persistence</span>
+      </div>
+    </div>
+
+    <div class="block" style="background:var(--surface);border:1px solid rgba(6,182,212,0.4);padding:16px;">
+      <div style="font-weight:700;color:var(--cyan);margin-bottom:6px;">llm/</div>
+      <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:8px;">Provider routing and prompt loading.</div>
+      <div style="font-size:0.78rem;font-family:'JetBrains Mono',monospace;color:var(--text);line-height:1.7;">
+        llm.ts &mdash; <span style="color:var(--text-dim);">provider singleton</span><br>
+        router.ts &mdash; <span style="color:var(--text-dim);">model &rarr; provider routing</span><br>
+        openai.ts / gemini.ts &mdash; <span style="color:var(--text-dim);">adapters</span><br>
+        prompt.ts &mdash; <span style="color:var(--text-dim);">md + YAML loader (no hardcoded prompts)</span><br>
+        errors.ts
+      </div>
+    </div>
+
+    <div class="block" style="background:var(--surface);border:1px solid rgba(245,158,11,0.4);padding:16px;">
+      <div style="font-weight:700;color:var(--amber);margin-bottom:6px;">tools/</div>
+      <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:8px;">Explicit registry of capabilities. Each tool: zod schema + handler.</div>
+      <div style="font-size:0.78rem;font-family:'JetBrains Mono',monospace;color:var(--text);line-height:1.7;">
+        registry.ts &mdash; <span style="color:var(--text-dim);">register, dispatch, getToolMeta, expansion via SEPARATOR (<code>__</code>)</span><br>
+        index.ts &mdash; <span style="color:var(--text-dim);">explicit wiring (no auto-discovery)</span><br>
+        sandbox/ &mdash; <span style="color:var(--text-dim);">code execution bridge + prelude</span><br>
+        &lt;tool_name&gt;.ts &mdash; <span style="color:var(--text-dim);">one file per tool, snake_case</span>
+      </div>
+    </div>
+
+    <div class="block" style="background:var(--surface);border:1px solid rgba(34,197,94,0.4);padding:16px;">
+      <div style="font-weight:700;color:var(--green);margin-bottom:6px;">infra/</div>
+      <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:8px;">I/O, side effects, the outside world.</div>
+      <div style="font-size:0.78rem;font-family:'JetBrains Mono',monospace;color:var(--text);line-height:1.7;">
+        db/ &mdash; <span style="color:var(--text-dim);">SQLite schema (sessions, runs, items, scheduledJobs)</span><br>
+        events.ts &mdash; <span style="color:var(--text-dim);">EventBus + ALS envelope injection</span><br>
+        bootstrap.ts &mdash; <span style="color:var(--text-dim);">startup wiring (continuation, reconcile)</span><br>
+        fs.ts &mdash; <span style="color:var(--text-dim);">sandboxed file service</span><br>
+        guard.ts &mdash; <span style="color:var(--text-dim);">OpenAI moderation gate</span><br>
+        result-store.ts &mdash; <span style="color:var(--text-dim);">tool results indexed by callId</span><br>
+        browser.ts / browser-feedback.ts / browser-interventions.ts<br>
+        condense.ts &mdash; <span style="color:var(--text-dim);">context condensation</span><br>
+        mcp.ts / mcp-oauth.ts &mdash; <span style="color:var(--text-dim);">MCP integration</span><br>
+        scheduler.ts &mdash; <span style="color:var(--text-dim);">scheduled job runner</span><br>
+        serper.ts &mdash; <span style="color:var(--text-dim);">search API client</span><br>
+        sandbox.ts<br>
+        tracing.ts / langfuse-subscriber.ts<br>
+        log/ &mdash; <span style="color:var(--text-dim);">console / markdown / composite / jsonl</span>
+      </div>
+    </div>
+
+    <div class="block" style="background:var(--surface);border:1px solid rgba(236,72,153,0.4);padding:16px;">
+      <div style="font-weight:700;color:var(--pink);margin-bottom:6px;">types/</div>
+      <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:8px;">Shared contracts. Discriminated unions over boolean flags.</div>
+      <div style="font-size:0.78rem;font-family:'JetBrains Mono',monospace;color:var(--text);line-height:1.7;">
+        events.ts &mdash; <span style="color:var(--text-dim);">flat AgentEvent union</span><br>
+        run-state.ts &mdash; <span style="color:var(--text-dim);">in-memory RunState</span><br>
+        db.ts &mdash; <span style="color:var(--text-dim);">DbRun, DbItem rows</span><br>
+        tool.ts / tool-result.ts &mdash; <span style="color:var(--text-dim);">ToolDefinition, ToolResult, Decision</span><br>
+        confirmation.ts &mdash; <span style="color:var(--text-dim);">GateResult, ConfirmationProvider</span><br>
+        llm.ts / assistant.ts / session.ts<br>
+        memory.ts / memory-ops.ts / sandbox.ts / browser.ts<br>
+        moderation.ts / file.ts / serper.ts / mcp.ts / media.ts / logger.ts / prompt.ts / condense.ts
+      </div>
+    </div>
+
+    <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
+      <div style="font-weight:700;color:var(--text);margin-bottom:6px;">utils/</div>
+      <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:8px;">Pure helpers: <code>safeParse</code>, <code>getErrorMessage</code>, ids, tokens, xml, timing, uri.</div>
+    </div>
+
+    <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
+      <div style="font-weight:700;color:var(--text);margin-bottom:6px;">prompts/</div>
+      <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:8px;">Markdown prompts with YAML frontmatter (<code>model</code>, <code>temperature</code>). Loaded by <code>promptService</code>; never hardcoded in <code>.ts</code>.</div>
+    </div>
+
+    <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
+      <div style="font-weight:700;color:var(--text);margin-bottom:6px;">config/</div>
+      <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:8px;">Env, paths, MCP configuration, iteration limits.</div>
+    </div>
+
+    <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
+      <div style="font-weight:700;color:var(--text);margin-bottom:6px;">evals/</div>
+      <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:8px;">Evaluation harness and scenario runners.</div>
+    </div>
+
+    <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
+      <div style="font-weight:700;color:var(--text);margin-bottom:6px;">Entry points (root <code>.ts</code>)</div>
+      <div style="font-size:0.78rem;font-family:'JetBrains Mono',monospace;color:var(--text);line-height:1.7;">
+        cli.ts &mdash; <span style="color:var(--text-dim);">bun run agent</span><br>
+        server.ts &mdash; <span style="color:var(--text-dim);">Hono HTTP server</span><br>
+        slack.ts &mdash; <span style="color:var(--text-dim);">Slack bot</span><br>
+        slack-confirmation.ts &mdash; <span style="color:var(--text-dim);">Slack ConfirmationProvider</span><br>
+        slack-utils.ts
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:24px;">
+    <h3 style="margin-bottom:12px; font-size:1rem;">Persistence (SQLite)</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;">
+      <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:14px;">
+        <div style="font-weight:600;color:var(--accent);font-size:0.85rem;margin-bottom:4px;">sessions</div>
+        <div style="font-size:0.78rem;color:var(--text-dim);">id, rootRunId, assistant, title, timestamps</div>
+      </div>
+      <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:14px;">
+        <div style="font-weight:600;color:var(--cyan);font-size:0.85rem;margin-bottom:4px;">runs</div>
+        <div style="font-size:0.78rem;color:var(--text-dim);">id, sessionId, parentId, rootRunId, status, result, error, waitingOn (JSON), cycleCount, exitKind, version (optimistic lock), template, task, sourceCallId</div>
+      </div>
+      <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:14px;">
+        <div style="font-weight:600;color:var(--green);font-size:0.85rem;margin-bottom:4px;">items</div>
+        <div style="font-size:0.78rem;color:var(--text-dim);">runId, sequence, type, role, content, callId, name, arguments, output &mdash; full transcript per run</div>
+      </div>
+      <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:14px;">
+        <div style="font-weight:600;color:var(--amber);font-size:0.85rem;margin-bottom:4px;">scheduledJobs</div>
+        <div style="font-size:0.78rem;color:var(--text-dim);">deferred run kick-offs</div>
       </div>
     </div>
   </div>
@@ -567,56 +708,63 @@
 
   <div class="flow">
     <div class="step s-session">
-      <div class="step-title">executeRun() <span class="badge badge-action">Entry</span></div>
-      <div class="step-desc">Create/load session, validate agent, moderate input, persist run row as <code>pending</code></div>
+      <div class="step-title">executeRun({ prompt, ... }) <span class="badge badge-action">Entry</span></div>
+      <div class="step-desc"><code>orchestrator.ts</code> &mdash; resolve session via <code>sessionService.getOrCreate()</code>, pick assistant, validate agent, moderate input (emits <code>input.flagged</code> or <code>input.clean</code>).</div>
     </div>
     <div class="step s-session">
-      <div class="step-title">Append User Message <span class="badge badge-action">Persist</span></div>
-      <div class="step-desc">User prompt stored in DB items table, load full message history</div>
+      <div class="step-title">insertRunRow + appendMessage <span class="badge badge-action">Persist</span></div>
+      <div class="step-desc"><code>dbOps.createRun()</code> with parentId, rootRunId; <code>updateRunStatus(runId, { status: "running" })</code>; user prompt appended to <code>items</code>.</div>
+    </div>
+    <div class="step s-session">
+      <div class="step-title">hydrateRunState() <span class="badge badge-action">Build</span></div>
+      <div class="step-desc">Load full <code>items</code> transcript, load persisted memory, build <code>RunState</code> (sessionId, runId, rootRunId, parentRunId, traceId, depth).</div>
     </div>
     <div class="step s-run">
-      <div class="step-title">run.started <span class="badge badge-event">Event</span></div>
-      <div class="step-desc">Run enters the loop. Status: <code>running</code>. Agent resolved, tools loaded.</div>
+      <div class="step-title">runAndPersist(state) &rarr; runAgent(state) <span class="badge badge-event">Event</span></div>
+      <div class="step-desc">Enters <code>loop.ts</code> under <code>runWithContext()</code> (AsyncLocalStorage). Emits <code>run.started</code> + <code>agent.started</code>. Sets up markdown + JSONL log writers.</div>
     </div>
     <div class="step s-turn">
-      <div class="step-title">turn.started (Turn 0) <span class="badge badge-event">Event</span></div>
-      <div class="step-desc">Loop iteration begins. Memory observations processed if enabled.</div>
+      <div class="step-title">runIteration(i = 0) &rarr; turn.started <span class="badge badge-event">Event</span></div>
+      <div class="step-desc"><code>incrementCycleCount()</code> in DB. Iteration index = turn index. Memory <code>processMemory()</code> may compress context if enabled.</div>
     </div>
     <div class="step s-turn">
-      <div class="step-title">generation.started <span class="badge badge-event">Event</span></div>
-      <div class="step-desc">LLM call with full message context + system prompt + tool definitions</div>
+      <div class="step-title">executeActPhase() &rarr; generation.started <span class="badge badge-event">Event</span></div>
+      <div class="step-desc"><code>provider.chatCompletion({ model, messages: [system, ...state.messages], tools })</code>. System prompt prefixed with <code>buildWorkspaceContext()</code>.</div>
     </div>
     <div class="step s-turn">
       <div class="step-title">generation.completed <span class="badge badge-event">Event</span></div>
-      <div class="step-desc">LLM response received. Check: has tool calls? If no &rarr; terminal answer.</div>
+      <div class="step-desc">Token usage accumulated into <code>state.tokens</code>. Assistant message (with toolCalls) pushed to <code>state.messages</code>.</div>
     </div>
     <div class="step s-tool">
-      <div class="step-title">confirmBatch() <span class="badge badge-action">Gate</span></div>
-      <div class="step-desc">Check each tool's <code>confirmIf</code> predicate. Auto-approve if no gate or provider approves.</div>
+      <div class="step-title">confirmBatch(toolCalls) <span class="badge badge-action">Gate</span></div>
+      <div class="step-desc">For each call: lookup <code>getToolMeta(name).confirmIf</code>; auto-approve if no gate. Returns <code>GateResult { approved, denied, waitingOn? }</code>.</div>
     </div>
     <div class="step s-tool">
-      <div class="step-title">tool.called &rarr; dispatch() <span class="badge badge-event">Event</span></div>
-      <div class="step-desc">Parse args via <code>safeParse()</code>, lookup handler in registry, execute. Tools can run in parallel.</div>
+      <div class="step-title">executeApprovedToolCalls() &rarr; tool.called <span class="badge badge-event">Event</span></div>
+      <div class="step-desc"><code>Promise.allSettled</code> over <code>dispatch(name, args, callId)</code>. Emits <code>batch.started</code> when count &gt; 1.</div>
     </div>
     <div class="step s-tool">
       <div class="step-title">tool.succeeded / tool.failed <span class="badge badge-event">Event</span></div>
-      <div class="step-desc">Result appended to messages as function_call_output. Stored in result-store.</div>
+      <div class="step-desc"><code>recordToolOutcome()</code> appends <code>{ role: "tool", toolCallId, content }</code> to messages. Errors caught and serialized inline.</div>
     </div>
     <div class="step s-turn">
-      <div class="step-title">turn.completed (continue) <span class="badge badge-event">Event</span></div>
-      <div class="step-desc">Turn done. Loop increments iteration, starts next turn with updated context.</div>
+      <div class="step-title">turn.completed (outcome: "continue") <span class="badge badge-event">Event</span></div>
+      <div class="step-desc"><code>runCycle()</code> returns <code>{ kind: "continue" }</code>. Loop increments <code>i</code>, starts next iteration.</div>
     </div>
     <div class="step s-turn">
-      <div class="step-title">turn.started (Turn 1) <span class="badge badge-event">Event</span></div>
-      <div class="step-desc">LLM sees tool results from Turn 0. Generates response...</div>
-    </div>
-    <div class="step s-turn">
-      <div class="step-title">finishReason: "stop" <span class="badge badge-action">Terminal</span></div>
-      <div class="step-desc">No tool calls in response &mdash; LLM produced final answer.</div>
+      <div class="step-title">runIteration(i = 1) &rarr; LLM stop <span class="badge badge-action">Terminal</span></div>
+      <div class="step-desc"><code>response.finishReason === "stop"</code> or no toolCalls. <code>runCycle</code> returns <code>{ kind: "completed", text }</code>.</div>
     </div>
     <div class="step s-run">
-      <div class="step-title">run.completed <span class="badge badge-event">Event</span></div>
-      <div class="step-desc">Status: <code>completed</code>. Result persisted. Messages flushed to DB.</div>
+      <div class="step-title">runAgent returns RunExit.completed <span class="badge badge-event">Event</span></div>
+      <div class="step-desc"><code>finalizeTerminal()</code> emits <code>agent.answered</code> + <code>agent.completed</code>. Memory flushed.</div>
+    </div>
+    <div class="step s-run">
+      <div class="step-title">persistRunExit() &rarr; run.completed <span class="badge badge-event">Event</span></div>
+      <div class="step-desc"><code>updateRunStatus(runId, { status: "completed", result, exitKind: "completed" })</code>. Messages flushed via <code>sessionService.appendRun()</code>.</div>
+    </div>
+    <div class="step" style="background:var(--surface);border:1px dashed var(--border);font-size:0.82rem;color:var(--text-dim);">
+      Other terminal exits: <code>RunExit.exhausted</code> (hits <code>config.limits.maxIterations</code>), <code>RunExit.failed</code> (uncaught throw &rarr; <code>run.failed</code>), <code>RunExit.cancelled</code> (operator-initiated).
     </div>
   </div>
 </div>
@@ -634,28 +782,28 @@
   <div class="flow">
     <div class="step s-run">
       <div class="step-title">Run is executing <span class="badge badge-action">Running</span></div>
-      <div class="step-desc">Agent is in Turn N, LLM requested tool calls</div>
+      <div class="step-desc">Agent is in Turn N, LLM responded with tool calls.</div>
     </div>
     <div class="step s-tool">
       <div class="step-title">LLM requests: send_email(...) <span class="badge badge-action">Tool Call</span></div>
-      <div class="step-desc">An irreversible action. Tool has <code>confirmIf: () => true</code></div>
+      <div class="step-desc">Irreversible action. Tool registered with <code>meta.confirmIf: () =&gt; true</code>.</div>
     </div>
     <div class="step s-tool">
-      <div class="step-title">confirmBatch() checks gates <span class="badge badge-action">Gate</span></div>
-      <div class="step-desc">Iterates tool calls, finds <code>send_email</code> requires confirmation</div>
+      <div class="step-title">confirmBatch(calls) <span class="badge badge-action">Gate</span></div>
+      <div class="step-desc">For each call: parse args via <code>safeParse</code>, evaluate <code>confirmIf({ action, args, toolCallId })</code>. <code>send_email</code> needs approval &rarr; cached in <code>pendingConfirmations</code> with new <code>confirmationId</code>.</div>
     </div>
     <div class="step s-wait">
-      <div class="step-title">throw WaitRequested <span class="badge badge-wait">Halt</span></div>
+      <div class="step-title">return GateResult.waitingOn <span class="badge badge-wait">Signal</span></div>
       <div class="step-desc">
-        <code>{ kind: "user_approval", confirmationId: uuid, prompt: "Send email to X?" }</code><br>
-        Pending tool calls stored in memory. Confirmation ID maps to the batch.
+        <strong>SP-92:</strong> No exception. <code>confirmBatch</code> returns <code>{ approved: [...auto], denied: [], waitingOn: { kind: "user_approval", confirmationId, prompt } }</code>.<br>
+        <code>dispatchTools</code> bubbles <code>waitingOn</code> up. <code>runCycle</code> returns <code>{ kind: "waiting", waitingOn }</code>. <code>runIteration</code> returns <code>RunExit { kind: "waiting", waitingOn }</code>.
       </div>
     </div>
     <div class="step s-wait">
-      <div class="step-title">Run status &rarr; waiting <span class="badge badge-wait">Persisted</span></div>
+      <div class="step-title">persistRunExit() &rarr; run.waiting <span class="badge badge-wait">Persisted</span></div>
       <div class="step-desc">
-        DB updated: <code>status = "waiting"</code>, <code>waiting_on = { kind: "user_approval", ... }</code><br>
-        Loop exits cleanly. All state saved to DB. Process can shut down safely.
+        <code>updateRunStatus(runId, { status: "waiting", waitingOn: JSON.stringify(...) })</code>.<br>
+        <code>bus.emit("run.waiting", { waitingOn })</code>. Loop exits cleanly. Process can shut down safely &mdash; all state in SQLite.
       </div>
     </div>
 
@@ -666,34 +814,36 @@
     </div>
 
     <div class="step s-resume">
-      <div class="step-title">Human provides decision <span class="badge badge-resume">Resume</span></div>
-      <div class="step-desc">Via CLI, HTTP API, or Slack. Resolution: <code>{ kind: "user_approval", decisions: [{ toolCallId, approved: true }] }</code></div>
+      <div class="step-title">Human provides decision <span class="badge badge-resume">Resolve</span></div>
+      <div class="step-desc">Surface: CLI provider, HTTP, Slack (<code>slack-confirmation.ts</code>). Resolution: <code>{ kind: "user_approval", confirmationId, decisions: { toolCallId: "approve" | "deny" } }</code>.</div>
     </div>
     <div class="step s-resume">
       <div class="step-title">resumeRun(runId, resolution) <span class="badge badge-resume">Entry</span></div>
       <div class="step-desc">
-        Idempotent entry point. Validates run is in <code>waiting</code> state.<br>
-        Checks <code>resolution.kind</code> matches <code>waitingOn.kind</code>. Optimistic lock check.
+        <code>resume-run.ts</code>. Idempotent: if <code>status !== "waiting"</code>, returns current <code>RunExit</code> as no-op. Asserts <code>resolution.kind === waitingOn.kind</code>.
       </div>
     </div>
     <div class="step s-tool">
-      <div class="step-title">Dispatch approved tools <span class="badge badge-action">Execute</span></div>
+      <div class="step-title">findPendingToolCalls(messages) <span class="badge badge-action">Locate</span></div>
+      <div class="step-desc">Walks transcript backwards to the most recent assistant message whose <code>toolCalls</code> still lack <code>role:"tool"</code> responses.</div>
+    </div>
+    <div class="step s-tool">
+      <div class="step-title">Dispatch approved / synthesize denied <span class="badge badge-action">Execute</span></div>
       <div class="step-desc">
-        Finds pending tool calls in transcript. For each approved call, runs the handler.<br>
-        Denied calls get synthetic "User denied this action" result.
+        For each pending call: <code>"approve"</code> &rarr; <code>dispatch(name, args, callId)</code>. <code>"deny"</code> (or missing) &rarr; synthetic <code>"Error: Tool call denied by operator."</code>.
       </div>
     </div>
     <div class="step s-tool">
       <div class="step-title">Append synthetic tool outputs <span class="badge badge-action">Persist</span></div>
-      <div class="step-desc">Results written as function_call_output items in DB. Run status &rarr; <code>running</code></div>
+      <div class="step-desc"><code>sessionService.appendRun()</code> writes results as <code>items</code>. <code>updateRunStatus({ status: "running", waitingOn: null, expectedVersion })</code> &mdash; optimistic lock guards double-resume.</div>
     </div>
     <div class="step s-run">
       <div class="step-title">run.resumed <span class="badge badge-event">Event</span></div>
-      <div class="step-desc">RunState rebuilt from DB. Loop re-enters at next turn with tool results in context.</div>
+      <div class="step-desc"><code>bus.emit("run.resumed", { resolution })</code>. RunState rehydrated from DB &rarr; <code>runAndPersist(state)</code> re-enters the loop.</div>
     </div>
     <div class="step s-turn">
       <div class="step-title">Loop continues from Turn N+1 <span class="badge badge-action">Continue</span></div>
-      <div class="step-desc">LLM sees the tool results (approved actions ran, denied actions have rejection message). Proceeds normally.</div>
+      <div class="step-desc">LLM sees the tool results (approved ran, denied carry rejection text). Proceeds normally toward the next terminal exit.</div>
     </div>
   </div>
 
@@ -702,19 +852,19 @@
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
       <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
         <div style="font-weight:600;margin-bottom:6px;color:var(--cyan);">Crash-safe</div>
-        <div style="font-size:0.85rem;color:var(--text-dim);">All state persisted to SQLite before waiting. Process can restart &mdash; <code>reconcileOrphanedWaits()</code> at startup finds and resumes stranded runs.</div>
+        <div style="font-size:0.85rem;color:var(--text-dim);">State persisted to SQLite (<code>runs</code>, <code>items</code>) before waiting. <code>reconcileOrphanedWaits()</code> runs at startup from <code>bootstrap.ts</code> and resumes parents whose children already finished.</div>
       </div>
       <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
         <div style="font-weight:600;margin-bottom:6px;color:var(--amber);">Idempotent resume</div>
-        <div style="font-size:0.85rem;color:var(--text-dim);">Optimistic locking (version field) prevents double-resume. Safe to call <code>resumeRun()</code> multiple times.</div>
+        <div style="font-size:0.85rem;color:var(--text-dim);">Optimistic locking via <code>version</code> column &mdash; <code>updateRunStatus({ expectedVersion })</code> rejects stale writes. Re-calling <code>resumeRun</code> on a non-waiting run returns the current <code>RunExit</code> as a no-op.</div>
       </div>
       <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
-        <div style="font-weight:600;margin-bottom:6px;color:var(--green);">Granular decisions</div>
-        <div style="font-size:0.85rem;color:var(--text-dim);">Each tool call in the batch gets its own approve/deny decision. Partial approval is supported.</div>
+        <div style="font-weight:600;margin-bottom:6px;color:var(--green);">Return-value signaling</div>
+        <div style="font-size:0.85rem;color:var(--text-dim);">SP-92: no thrown <code>WaitRequested</code>. Waiting flows back through <code>GateResult &rarr; CycleOutcome &rarr; RunExit</code>. The compiler enforces handling at every level.</div>
       </div>
       <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:16px;">
         <div style="font-weight:600;margin-bottom:6px;color:var(--pink);">Multi-surface</div>
-        <div style="font-size:0.85rem;color:var(--text-dim);">Wait/resume protocol is transport-agnostic. Works from CLI (inline provider), HTTP API, or Slack bot.</div>
+        <div style="font-size:0.85rem;color:var(--text-dim);"><code>setConfirmationProvider()</code> swaps the surface: CLI inline, HTTP API, or <code>slack-confirmation.ts</code>. The wait/resume protocol is transport-agnostic.</div>
       </div>
     </div>
   </div>
@@ -731,6 +881,16 @@
 
   <h3 style="margin-bottom:16px; font-size:1.1rem;">Multi-Agent Delegation with Nested Human-in-the-Loop</h3>
 
+  <div class="block" style="background:var(--surface);border:1px solid var(--border);padding:14px;margin-bottom:18px;font-size:0.85rem;line-height:1.6;">
+    <strong style="color:var(--accent);">Two-step delegation in <code>orchestrator.ts</code>:</strong>
+    <ol style="margin:8px 0 0 24px;color:var(--text-dim);">
+      <li><code>createChildRun(opts)</code> &mdash; fresh sessionId, insert run row (<code>parentId</code>, shared <code>rootRunId</code>), append user prompt. Does <em>not</em> enter the loop.</li>
+      <li>Tool returns <code>{ wait: { kind: "child_run", childRunId } }</code>; loop returns <code>RunExit.waiting</code>; <code>persistRunExit()</code> parks the parent; <code>kickChildRunAsync()</code> fires-and-forgets <code>startChildRun(childRunId)</code>.</li>
+      <li><code>startChildRun</code> hydrates the row to <code>running</code> and re-enters <code>runAndPersist</code> for the child.</li>
+      <li>Child terminal &rarr; <code>run-continuation.ts</code> subscriber catches <code>run.completed</code>/<code>run.failed</code>, calls <code>findRunWaitingOnChild(childRunId)</code>, emits <code>run.child_terminal</code>, then <code>resumeRun(parent, { kind: "child_run", result })</code>.</li>
+    </ol>
+  </div>
+
   <div class="agent-lanes">
     <!-- Orchestrator Lane -->
     <div class="agent-lane">
@@ -742,11 +902,11 @@
         </div>
         <div class="step s-tool" style="font-size:0.82rem;">
           <div class="step-title">delegate("researcher", task) <span class="badge badge-action">Tool</span></div>
-          <div class="step-desc">Creates child run &rarr; <code>WaitRequested</code></div>
+          <div class="step-desc"><code>createChildRun()</code> &rarr; ToolResult <code>{ wait: { kind: "child_run", childRunId } }</code></div>
         </div>
         <div class="step s-wait" style="font-size:0.82rem;">
           <div class="step-title">PARKED <span class="badge badge-wait">Waiting</span></div>
-          <div class="step-desc">waitingOn: child_run A</div>
+          <div class="step-desc">RunExit.waiting bubbled up. <code>kickChildRunAsync()</code> spawns child A.</div>
         </div>
         <div class="step" style="font-size:0.82rem;border-style:dashed;min-height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);">
           ... waiting for child A to complete ...
@@ -761,7 +921,7 @@
         </div>
         <div class="step s-tool" style="font-size:0.82rem;">
           <div class="step-title">delegate("writer", task) <span class="badge badge-action">Tool</span></div>
-          <div class="step-desc">Creates child run B &rarr; <code>WaitRequested</code></div>
+          <div class="step-desc">Creates child run B &rarr; RunExit.waiting + <code>kickChildRunAsync(B)</code></div>
         </div>
         <div class="step s-wait" style="font-size:0.82rem;">
           <div class="step-title">PARKED <span class="badge badge-wait">Waiting</span></div>
@@ -836,7 +996,7 @@
     <div class="flow" style="max-width:700px;">
       <div class="step s-child" style="font-size:0.82rem;">
         <div class="step-title">Child A: tool needs approval</div>
-        <div class="step-desc"><code>throw WaitRequested({ kind: "user_approval" })</code></div>
+        <div class="step-desc"><code>confirmBatch</code> returns <code>GateResult { waitingOn: { kind: "user_approval" } }</code> &rarr; child loop returns <code>RunExit.waiting</code></div>
       </div>
       <div class="step s-wait" style="font-size:0.82rem;">
         <div class="step-title">Child A run &rarr; waiting</div>
@@ -995,7 +1155,7 @@ const scenarios = {
     { action:'add', type:'turn', id:'t0', parent:'r1', color:'green', labelColor:'green', label:'TURN 0', delay:400, event:'turn.started' },
     { action:'add', type:'', id:'gen0', parent:'t0', color:'green', label:'', desc:'LLM: "I need to delegate research..."', delay:600, event:'generation.completed', detail:'tool_calls: [delegate]' },
     { action:'add', type:'tool', id:'dtool', parent:'t0', color:'amber', labelColor:'amber', label:'TOOL: delegate("researcher", ...)', desc:'Creating child run...', delay:600, event:'tool.called', detail:'delegate({agent: "researcher", prompt: "..."})' },
-    { action:'update', id:'dtool', desc:'Child run created → WaitRequested thrown', delay:500, event:'run.delegated', detail:'childRunId: child-abc' },
+    { action:'update', id:'dtool', desc:'createChildRun → ToolResult.wait { kind: "child_run" }', delay:500, event:'run.delegated', detail:'childRunId: child-abc' },
     { action:'add', type:'wait', id:'w1', parent:'r1', color:'red', labelColor:'red', label:'PARKED — WAITING ON CHILD', desc:'waitingOn: { kind: "child_run", childRunId: "child-abc" }', delay:600, event:'run.waiting', detail:'parent parked' },
     { action:'update', id:'r1', status:'waiting', delay:400 },
     { action:'add', type:'child', id:'cr1', parent:'ss', color:'pink', labelColor:'pink', label:'CHILD RUN — Researcher', status:'running', desc:'parentId → orchestrator, own session', pulse:true, delay:800, event:'run.started', detail:'agent: researcher, childRunId: child-abc' },
@@ -1015,7 +1175,7 @@ const scenarios = {
     { action:'add', type:'run', id:'r1', parent:'ss', color:'cyan', labelColor:'cyan', label:'ORCHESTRATOR', status:'running', pulse:true, delay:400, event:'run.started', detail:'root agent' },
     { action:'add', type:'turn', id:'t0', parent:'r1', color:'green', labelColor:'green', label:'TURN 0', delay:300, event:'turn.started' },
     { action:'add', type:'tool', id:'dt1', parent:'t0', color:'amber', labelColor:'amber', label:'delegate("researcher")', delay:400, event:'tool.called' },
-    { action:'update', id:'dt1', desc:'→ WaitRequested(child_run)', delay:400, event:'run.delegated' },
+    { action:'update', id:'dt1', desc:'→ ToolResult.wait { kind: "child_run" }', delay:400, event:'run.delegated' },
     { action:'update', id:'r1', status:'waiting', delay:300, event:'run.waiting', detail:'waiting on child A' },
 
     { action:'add', type:'child', id:'ca', parent:'ss', color:'pink', labelColor:'pink', label:'CHILD A — Researcher', status:'running', pulse:true, delay:600, event:'run.started', detail:'child A spawned' },
@@ -1033,7 +1193,7 @@ const scenarios = {
     { action:'update', id:'r1', status:'running', desc:'Child A result received, orchestrator resumes', delay:700, event:'run.resumed', detail:'auto-resume from continuation subscriber' },
     { action:'add', type:'turn', id:'t1', parent:'r1', color:'green', labelColor:'green', label:'TURN 1', pulse:true, delay:400, event:'turn.started' },
     { action:'add', type:'tool', id:'dt2', parent:'t1', color:'amber', labelColor:'amber', label:'delegate("writer")', delay:400, event:'tool.called' },
-    { action:'update', id:'dt2', desc:'→ WaitRequested(child_run B)', delay:400, event:'run.delegated' },
+    { action:'update', id:'dt2', desc:'→ ToolResult.wait { kind: "child_run B" }', delay:400, event:'run.delegated' },
     { action:'update', id:'r1', status:'waiting', delay:300, event:'run.waiting', detail:'waiting on child B' },
 
     { action:'add', type:'child', id:'cb', parent:'ss', color:'run', labelColor:'cyan', label:'CHILD B — Writer', status:'running', pulse:true, delay:600, event:'run.started', detail:'child B spawned' },
