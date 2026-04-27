@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { ToolResult } from "./tool-result.ts";
+import type { WaitDescriptor } from "../agent/wait-descriptor.ts";
 
 export interface ToolAnnotations {
   readOnlyHint?: boolean;
@@ -52,4 +53,6 @@ export type ToolMeta = Pick<ToolDefinition, "annotations" | "confirmIf">;
 export interface DispatchResult {
   content: string;
   isError: boolean;
+  /** When set, the dispatch layer treats this as a park signal. */
+  wait?: WaitDescriptor;
 }

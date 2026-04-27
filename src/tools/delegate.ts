@@ -4,7 +4,6 @@ import type { ToolResult } from "../types/tool-result.ts";
 import { getRunId, getRootRunId, getTraceId, getDepth, getLogger } from "../agent/context.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 import { createChildRun } from "../agent/orchestrator.ts";
-import { WaitRequested } from "../agent/wait-descriptor.ts";
 import { bus } from "../infra/events.ts";
 import { agentsService } from "../agent/agents.ts";
 
@@ -44,12 +43,12 @@ async function delegate(args: Record<string, unknown>, ctx?: ToolCallContext): P
     task: prompt,
   });
 
-  // Park the parent — the continuation subscriber will resume it
+  // Signal the parent to park — the continuation subscriber will resume it
   // when the child reaches a terminal state.
-  throw new WaitRequested({
-    kind: "child_run",
-    childRunId: child.runId,
-  });
+  return {
+    content: [{ type: "text", text: `Delegated to ${agent} (run ${child.runId})` }],
+    wait: { kind: "child_run", childRunId: child.runId },
+  };
 }
 
 const agents = await agentsService.listAgents();

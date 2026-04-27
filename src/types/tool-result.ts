@@ -1,8 +1,11 @@
 import type { ContentPart, ResourceRef } from "./llm.ts";
+import type { WaitDescriptor } from "../agent/wait-descriptor.ts";
 
 export interface ToolResult {
   content: ContentPart[];
   isError?: boolean;
+  /** When set, the dispatch layer treats this as a park signal. */
+  wait?: WaitDescriptor;
 }
 
 /** Create a ToolResult with a single text part. */

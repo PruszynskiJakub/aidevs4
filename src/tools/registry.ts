@@ -6,7 +6,6 @@ import type { ToolResult } from "../types/tool-result.ts";
 import { safeParse } from "../utils/parse.ts";
 import { estimateTokens } from "../utils/tokens.ts";
 import { resultStore } from "../infra/result-store.ts";
-import { WaitRequested } from "../agent/wait-descriptor.ts";
 
 export const SEPARATOR = "__";
 
@@ -147,10 +146,8 @@ async function tryDispatch(
     const content = serializeContent(result.content);
     const tokens = estimateTokens(content);
     resultStore.complete(toolCallId, result, tokens);
-    return { content, isError: result.isError ?? false };
+    return { content, isError: result.isError ?? false, ...(result.wait && { wait: result.wait }) };
   } catch (err: unknown) {
-    // WaitRequested must propagate to the loop — it's a control signal, not an error
-    if (err instanceof WaitRequested) throw err;
     const message = err instanceof Error ? err.message : String(err);
     const errorResult: ToolResult = { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
     const content = `Error: ${message}`;

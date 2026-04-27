@@ -5,7 +5,6 @@ import type { ConfirmationRequest, ConfirmationProvider, GateResult } from "../t
 import { getToolMeta, SEPARATOR } from "../tools/registry.ts";
 import { bus } from "../infra/events.ts";
 import { safeParse } from "../utils/parse.ts";
-import { WaitRequested } from "./wait-descriptor.ts";
 
 export type { ConfirmationRequest, ConfirmationProvider, GateResult } from "../types/confirmation.ts";
 
@@ -55,8 +54,11 @@ function extractAction(expandedName: string): string {
  * Inspect a batch of tool calls for any that need operator approval.
  * Calls not requiring approval are returned as `approved`. If any
  * call requires approval, this function does NOT block — instead it
- * persists a pending-confirmation record and throws `WaitRequested`,
+ * persists a pending-confirmation record and returns `waitingOn`,
  * which the loop converts into a `waiting` run exit.
+ *
+ * When gated calls exist, `approved` contains only auto-approved calls;
+ * gated calls remain pending in `pendingConfirmations`.
  */
 export async function confirmBatch(calls: LLMToolCall[]): Promise<GateResult> {
   const needsApproval: Array<{ call: LLMToolCall; request: ConfirmationRequest }> = [];
@@ -98,11 +100,15 @@ export async function confirmBatch(calls: LLMToolCall[]): Promise<GateResult> {
     .map((r) => `${r.toolName}(${JSON.stringify(r.args)})`)
     .join("\n");
 
-  throw new WaitRequested({
-    kind: "user_approval",
-    confirmationId,
-    prompt,
-  });
+  return {
+    approved: autoApproved,
+    denied: [],
+    waitingOn: {
+      kind: "user_approval",
+      confirmationId,
+      prompt,
+    },
+  };
 }
 
 /**

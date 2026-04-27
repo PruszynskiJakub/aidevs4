@@ -17,7 +17,7 @@ import { bus } from "../infra/events.ts";
 import { createJsonlWriter } from "../infra/log/jsonl.ts";
 import { attachLoggerListener } from "../infra/log/bridge.ts";
 import { buildWorkspaceContext } from "./workspace.ts";
-import { WaitRequested, type WaitDescriptor } from "./wait-descriptor.ts";
+import type { WaitDescriptor } from "./wait-descriptor.ts";
 import type { RunExit } from "./run-exit.ts";
 import { getErrorMessage } from "../utils/errors.ts";
 import * as dbOps from "../infra/db/index.ts";
@@ -124,7 +124,7 @@ async function executeActPhase(
 }
 
 type SettledOutcome =
-  | { status: "fulfilled"; value: { content: string; isError: boolean; durationMs: number } }
+  | { status: "fulfilled"; value: { content: string; isError: boolean; durationMs: number; wait?: WaitDescriptor } }
   | { status: "rejected"; reason: unknown };
 
 function recordDeniedToolCalls(state: RunState, denied: { call: LLMToolCall }[]): void {
@@ -178,50 +178,54 @@ function recordToolOutcome(
   return "failed";
 }
 
-async function dispatchTools(functionCalls: LLMToolCall[]): Promise<void> {
+async function dispatchTools(functionCalls: LLMToolCall[]): Promise<WaitDescriptor | undefined> {
   const state = requireState();
   const batchId = randomUUID();
   const dispatchTime = Date.now();
 
-  // May throw WaitRequested to pause the run.
-  const { approved, denied } = await confirmBatch(functionCalls);
+  const { approved, denied, waitingOn } = await confirmBatch(functionCalls);
   recordDeniedToolCalls(state, denied);
-  if (approved.length === 0) return;
 
-  if (approved.length > 1) {
-    emitBatchStarted({ batchId, toolCallIds: approved.map((tc) => tc.id), count: approved.length });
-  }
-  for (let idx = 0; idx < approved.length; idx++) {
-    const tc = approved[idx];
-    emitToolCalled({
-      toolCallId: tc.id, name: tc.function.name, args: tc.function.arguments,
-      batchIndex: idx, batchSize: approved.length, startTime: dispatchTime,
-    });
-  }
+  if (approved.length > 0) {
+    if (approved.length > 1) {
+      emitBatchStarted({ batchId, toolCallIds: approved.map((tc) => tc.id), count: approved.length });
+    }
+    for (let idx = 0; idx < approved.length; idx++) {
+      const tc = approved[idx];
+      emitToolCalled({
+        toolCallId: tc.id, name: tc.function.name, args: tc.function.arguments,
+        batchIndex: idx, batchSize: approved.length, startTime: dispatchTime,
+      });
+    }
 
-  const batchStart = performance.now();
-  const settled = await executeApprovedToolCalls(approved);
+    const batchStart = performance.now();
+    const settled = await executeApprovedToolCalls(approved);
 
-  // Propagate WaitRequested before processing other outcomes.
-  for (const outcome of settled) {
-    if (outcome.status === "rejected" && outcome.reason instanceof WaitRequested) {
-      throw outcome.reason;
+    let succeeded = 0, failed = 0;
+    for (let j = 0; j < approved.length; j++) {
+      const result = recordToolOutcome(state, approved[j], settled[j], dispatchTime);
+      if (result === "succeeded") succeeded++; else failed++;
+    }
+
+    if (approved.length > 1) {
+      emitBatchCompleted({
+        batchId, count: approved.length,
+        durationMs: performance.now() - batchStart,
+        succeeded, failed,
+      });
+    }
+
+    // Check for wait descriptors from tool outcomes (e.g. delegate).
+    if (!waitingOn) {
+      for (const outcome of settled) {
+        if (outcome.status === "fulfilled" && outcome.value.wait) {
+          return outcome.value.wait;
+        }
+      }
     }
   }
 
-  let succeeded = 0, failed = 0;
-  for (let j = 0; j < approved.length; j++) {
-    const result = recordToolOutcome(state, approved[j], settled[j], dispatchTime);
-    if (result === "succeeded") succeeded++; else failed++;
-  }
-
-  if (approved.length > 1) {
-    emitBatchCompleted({
-      batchId, count: approved.length,
-      durationMs: performance.now() - batchStart,
-      succeeded, failed,
-    });
-  }
+  return waitingOn;
 }
 
 interface MemoryContext {
@@ -292,12 +296,8 @@ async function runCycle(
   }
 
   const functionCalls = response.toolCalls.filter((tc) => tc.type === "function");
-  try {
-    await dispatchTools(functionCalls);
-  } catch (err) {
-    if (err instanceof WaitRequested) return { kind: "waiting", waitingOn: err.waitingOn };
-    throw err;
-  }
+  const waitingOn = await dispatchTools(functionCalls);
+  if (waitingOn) return { kind: "waiting", waitingOn };
   return { kind: "continue" };
 }
 
@@ -431,9 +431,6 @@ export async function runAgent(
         { runStartTime, turnStartTime: lastTurnStartTime, iterationsRun: config.limits.maxIterations });
       return { exit, messages: sliceMessages() };
     } catch (err) {
-      if (err instanceof WaitRequested) {
-        return { exit: { kind: "waiting", waitingOn: err.waitingOn }, messages: sliceMessages() };
-      }
       emitFailureTerminal({
         agentName: state.agentName ?? state.assistant,
         iterations: state.iteration + 1,

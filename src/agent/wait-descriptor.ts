@@ -37,17 +37,3 @@ export type WaitResolution =ķ
       result: string;
     };
 
-/**
- * Error thrown from tool-dispatch paths (currently confirmation.ts) to
- * signal that the current run must pause. Caught at the orchestrator
- * boundary and converted into `{ kind: 'waiting', waitingOn }`.
- */
-export class WaitRequested extends Error {
-  readonly waitingOn: WaitDescriptor;
-
-  constructor(waitingOn: WaitDescriptor) {
-    super(`Run paused: waiting on ${waitingOn.kind}`);
-    this.name = "WaitRequested";
-    this.waitingOn = waitingOn;
-  }
-}
