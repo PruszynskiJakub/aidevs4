@@ -1,0 +1,2028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP Handling — Architecture Visualization</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #181b24;
+    --surface2: #1e2230;
+    --border: #2a2f3e;
+    --text: #e0e4ed;
+    --text2: #8b93a8;
+    --accent: #6c8cff;
+    --accent2: #4ecdc4;
+    --red: #ff6b6b;
+    --orange: #ffa94d;
+    --green: #69db7c;
+    --purple: #b197fc;
+    --yellow: #ffd43b;
+    --pink: #f783ac;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem;
+  }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: var(--text2);
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+  }
+
+  /* Navigation */
+  .nav {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    padding: 1rem 0;
+    z-index: 100;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav button {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+  }
+
+  .nav button:hover { border-color: var(--accent); color: var(--text); }
+  .nav button.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  /* Sections */
+  .section {
+    display: none;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .section.active { display: block; }
+
+  .section-title {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--accent);
+    display: inline-block;
+  }
+
+  /* Diagram containers */
+  .diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    overflow-x: auto;
+  }
+
+  .diagram-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 1rem;
+  }
+
+  /* SVG styles */
+  svg text { font-family: 'Inter', -apple-system, sans-serif; }
+
+  /* Flow boxes */
+  .flow-box {
+    fill: var(--surface2);
+    stroke: var(--border);
+    stroke-width: 1.5;
+    rx: 8;
+    ry: 8;
+  }
+  .flow-box.ours { stroke: var(--accent); }
+  .flow-box.ref { stroke: var(--accent2); }
+  .flow-box.gap { stroke: var(--red); stroke-dasharray: 5,3; }
+  .flow-box.good { stroke: var(--green); }
+
+  .flow-label {
+    fill: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .flow-detail {
+    fill: var(--text2);
+    font-size: 11px;
+  }
+
+  .flow-arrow {
+    stroke: var(--text2);
+    stroke-width: 1.5;
+    fill: none;
+    marker-end: url(#arrowhead);
+  }
+
+  .flow-arrow.data {
+    stroke: var(--accent);
+    stroke-dasharray: 4,2;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--surface);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-size: 0.8rem;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text2);
+  }
+
+  .legend-swatch {
+    width: 16px;
+    height: 4px;
+    border-radius: 2px;
+  }
+
+  /* Comparison cards */
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  @media (max-width: 800px) {
+    .comparison { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+
+  .card.ours { border-left: 3px solid var(--accent); }
+  .card.ref { border-left: 3px solid var(--accent2); }
+  .card.gap { border-left: 3px solid var(--red); }
+
+  .card-header {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .card-header .tag {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .tag.ours { background: rgba(108,140,255,0.15); color: var(--accent); }
+  .tag.ref { background: rgba(78,205,196,0.15); color: var(--accent2); }
+  .tag.missing { background: rgba(255,107,107,0.15); color: var(--red); }
+  .tag.ok { background: rgba(105,219,124,0.15); color: var(--green); }
+
+  .card pre {
+    background: var(--bg);
+    padding: 0.75rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    overflow-x: auto;
+    color: var(--text2);
+    line-height: 1.5;
+    margin-top: 0.5rem;
+  }
+
+  .card code {
+    background: var(--bg);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    color: var(--orange);
+  }
+
+  .card p, .card li {
+    font-size: 0.85rem;
+    color: var(--text2);
+    margin-bottom: 0.4rem;
+  }
+
+  .card ul {
+    padding-left: 1.2rem;
+    list-style: none;
+  }
+
+  .card ul li::before {
+    content: ">";
+    color: var(--accent);
+    font-weight: bold;
+    margin-right: 0.4rem;
+    margin-left: -1.2rem;
+  }
+
+  /* Explainer blocks */
+  .explainer {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .explainer h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--text);
+  }
+
+  .explainer p {
+    font-size: 0.85rem;
+    color: var(--text2);
+    margin-bottom: 0.5rem;
+  }
+
+  .callout {
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    margin: 0.75rem 0;
+  }
+
+  .callout.warn {
+    background: rgba(255,107,107,0.08);
+    border: 1px solid rgba(255,107,107,0.25);
+    color: var(--red);
+  }
+
+  .callout.info {
+    background: rgba(108,140,255,0.08);
+    border: 1px solid rgba(108,140,255,0.25);
+    color: var(--accent);
+  }
+
+  .callout.tip {
+    background: rgba(105,219,124,0.08);
+    border: 1px solid rgba(105,219,124,0.25);
+    color: var(--green);
+  }
+
+  /* Implementation checklist */
+  .checklist {
+    list-style: none;
+    padding: 0;
+  }
+
+  .checklist li {
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .checklist li:last-child { border-bottom: none; }
+
+  .priority {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    min-width: 3.5rem;
+    text-align: center;
+  }
+  .priority.high { background: rgba(255,107,107,0.2); color: var(--red); }
+  .priority.med { background: rgba(255,169,77,0.2); color: var(--orange); }
+  .priority.low { background: rgba(105,219,124,0.2); color: var(--green); }
+
+  /* Sequence diagram styles */
+  .seq-line {
+    stroke: var(--text2);
+    stroke-width: 1;
+    stroke-dasharray: 3,3;
+  }
+
+  .seq-actor {
+    fill: var(--surface2);
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    rx: 6;
+  }
+
+  .seq-msg {
+    stroke: var(--text2);
+    stroke-width: 1.2;
+    marker-end: url(#arrowhead);
+  }
+
+  .seq-msg.error { stroke: var(--red); }
+  .seq-msg.success { stroke: var(--green); }
+
+  .seq-label {
+    font-size: 10.5px;
+    fill: var(--text);
+  }
+
+  .seq-note {
+    fill: rgba(108,140,255,0.08);
+    stroke: var(--accent);
+    stroke-width: 1;
+    rx: 4;
+  }
+
+  .seq-note-text {
+    fill: var(--accent);
+    font-size: 10px;
+  }
+
+  /* Animated highlight */
+  @keyframes pulse-border {
+    0%, 100% { stroke-opacity: 0.4; }
+    50% { stroke-opacity: 1; }
+  }
+  .pulse { animation: pulse-border 2s ease-in-out infinite; }
+
+  /* Table styles */
+  .matrix {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .matrix th {
+    background: var(--surface2);
+    padding: 0.6rem 0.8rem;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+    color: var(--text);
+  }
+
+  .matrix td {
+    padding: 0.5rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text2);
+    vertical-align: top;
+  }
+
+  .matrix tr:hover td { background: rgba(108,140,255,0.04); }
+
+  .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+  }
+  .status-dot.yes { background: var(--green); }
+  .status-dot.no { background: var(--red); }
+  .status-dot.partial { background: var(--orange); }
+
+  /* Tabs within a section */
+  .inner-tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+  }
+
+  .inner-tabs button {
+    padding: 0.4rem 0.75rem;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: all 0.2s;
+  }
+
+  .inner-tabs button:hover { color: var(--text); }
+  .inner-tabs button.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .inner-panel { display: none; }
+  .inner-panel.active { display: block; }
+</style>
+</head>
+<body>
+
+<h1>MCP Handling Architecture</h1><p class="subtitle">Our implementation (aidevs4) vs. Wonderlands reference — CLI + Hono server + Slack bot — what, why, and how to close the gaps</p>
+
+<nav class="nav" id="mainNav">
+  <button class="active" data-section="overview">Big Picture</button>
+  <button data-section="threat">Threat Model</button>
+  <button data-section="lifecycle">Lifecycle</button>
+  <button data-section="tools">Tool Flow</button>
+  <button data-section="security">Safety & Limits</button>
+  <button data-section="errors">Error Handling</button>
+  <button data-section="oauth">OAuth</button>
+  <button data-section="status">Server Status</button>
+  <button data-section="plan">Implementation Plan</button>
+</nav>
+
+<!-- ============================================================ -->
+<!-- SECTION 1: BIG PICTURE                                       -->
+<!-- ============================================================ -->
+<section class="section active" id="overview">
+  <h2 class="section-title">The Big Picture</h2>
+
+  <div class="explainer">
+    <h3>What is MCP?</h3>
+    <p>MCP (Model Context Protocol) lets your agent talk to <strong>external tool servers</strong>. Instead of coding every tool in TypeScript, you connect to MCP servers that expose tools over a standard protocol. Think of it like USB for AI tools — plug in a server, and the agent can use its tools.</p>
+    <p>Each MCP server can expose many tools (e.g., a "gmail" server might expose <code>send_email</code>, <code>search_inbox</code>, <code>read_thread</code>). Your agent discovers these tools at startup and uses them like any other tool.</p>
+    <div class="callout warn">Our agent runs in <strong>3 deployment modes</strong> — CLI (<code>src/cli.ts</code>), Hono HTTP server (<code>src/server.ts</code>), and Slack bot (<code>src/slack.ts</code>). All three share the <strong>exact same</strong> MCP initialization via <code>bootstrap.initServices()</code>. This means MCP tools exposed to the CLI are equally exposed to Slack users and HTTP API callers. The threat model is NOT "local CLI" — it's "network-accessible service".</div>
+  </div>
+
+  <div class="diagram">
+    <div class="diagram-title">End-to-end MCP data flow</div>
+    <svg width="1100" height="520" viewBox="0 0 1100 520">
+      <defs>
+        <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#8b93a8"/>
+        </marker>
+        <marker id="arrowgreen" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#69db7c"/>
+        </marker>
+        <marker id="arrowred" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#ff6b6b"/>
+        </marker>
+      </defs>
+
+      <!-- Config file -->
+      <rect x="20" y="30" width="160" height="50" class="flow-box good"/>
+      <text x="100" y="52" text-anchor="middle" class="flow-label">mcp.json</text>
+      <text x="100" y="68" text-anchor="middle" class="flow-detail">Server definitions</text>
+
+      <!-- Arrow: config -> service -->
+      <line x1="180" y1="55" x2="230" y2="55" class="flow-arrow"/>
+
+      <!-- McpService -->
+      <rect x="230" y="20" width="200" height="70" class="flow-box ours"/>
+      <text x="330" y="45" text-anchor="middle" class="flow-label">createMcpService()</text>
+      <text x="330" y="62" text-anchor="middle" class="flow-detail">src/infra/mcp.ts</text>
+      <text x="330" y="78" text-anchor="middle" class="flow-detail">connect → registerTools → disconnect</text>
+
+      <!-- Arrow: service -> transports -->
+      <line x1="430" y1="55" x2="490" y2="55" class="flow-arrow"/>
+
+      <!-- Transport layer -->
+      <rect x="490" y="10" width="180" height="90" class="flow-box ours"/>
+      <text x="580" y="35" text-anchor="middle" class="flow-label">createTransport()</text>
+      <text x="580" y="55" text-anchor="middle" class="flow-detail">stdio: subprocess</text>
+      <text x="580" y="70" text-anchor="middle" class="flow-detail">sse: Server-Sent Events</text>
+      <text x="580" y="85" text-anchor="middle" class="flow-detail">http: StreamableHTTP</text>
+
+      <!-- Arrow: transport -> MCP servers -->
+      <line x1="670" y1="55" x2="730" y2="55" class="flow-arrow"/>
+
+      <!-- External MCP servers -->
+      <rect x="730" y="10" width="180" height="90" rx="12" ry="12" fill="#1e2230" stroke="#ffa94d" stroke-width="2" stroke-dasharray="0"/>
+      <text x="820" y="38" text-anchor="middle" class="flow-label" fill="#ffa94d">MCP Servers</text>
+      <text x="820" y="56" text-anchor="middle" class="flow-detail">(external processes)</text>
+      <text x="820" y="72" text-anchor="middle" class="flow-detail">gmail, filesystem,</text>
+      <text x="820" y="86" text-anchor="middle" class="flow-detail">database, search...</text>
+
+      <!-- Phase labels -->
+      <text x="100" y="130" text-anchor="middle" fill="#6c8cff" font-size="12" font-weight="600">PHASE 1: CONFIG</text>
+      <text x="330" y="130" text-anchor="middle" fill="#6c8cff" font-size="12" font-weight="600">PHASE 2: CONNECT</text>
+      <text x="580" y="130" text-anchor="middle" fill="#6c8cff" font-size="12" font-weight="600">PHASE 3: TRANSPORT</text>
+      <text x="820" y="130" text-anchor="middle" fill="#ffa94d" font-size="12" font-weight="600">EXTERNAL</text>
+
+      <!-- ===== Registration flow (lower half) ===== -->
+
+      <!-- listTools() -->
+      <rect x="490" y="170" width="180" height="50" class="flow-box ours"/>
+      <text x="580" y="192" text-anchor="middle" class="flow-label">client.listTools()</text>
+      <text x="580" y="208" text-anchor="middle" class="flow-detail">Discover all tools from server</text>
+
+      <!-- Arrow: connect -> listTools -->
+      <path d="M 330 90 L 330 195 L 490 195" fill="none" class="flow-arrow"/>
+
+      <!-- Arrow: listTools -> normalize -->
+      <line x1="580" y1="220" x2="580" y2="250" class="flow-arrow"/>
+
+      <!-- Normalize + Register -->
+      <rect x="440" y="250" width="280" height="65" class="flow-box ours"/>
+      <text x="580" y="273" text-anchor="middle" class="flow-label">Normalize & Register</text>
+      <text x="580" y="290" text-anchor="middle" class="flow-detail">mcp_{server}_{tool} naming</text>
+      <text x="580" y="305" text-anchor="middle" class="flow-detail">registerRaw() with strict: false</text>
+
+      <!-- Arrow: register -> tool registry -->
+      <path d="M 440 282 L 250 282" fill="none" class="flow-arrow"/>
+
+      <!-- Tool Registry -->
+      <rect x="50" y="255" width="200" height="55" class="flow-box good"/>
+      <text x="150" y="278" text-anchor="middle" class="flow-label">Tool Registry</text>
+      <text x="150" y="295" text-anchor="middle" class="flow-detail">src/tools/registry.ts</text>
+
+      <!-- ===== Execution flow ===== -->
+      <text x="550" y="355" text-anchor="middle" fill="#4ecdc4" font-size="12" font-weight="600">PHASE 4: RUNTIME EXECUTION</text>
+
+      <!-- Agent calls tool -->
+      <rect x="20" y="370" width="160" height="50" class="flow-box good"/>
+      <text x="100" y="392" text-anchor="middle" class="flow-label">Agent (LLM)</text>
+      <text x="100" y="407" text-anchor="middle" class="flow-detail">Calls mcp_gmail_send</text>
+
+      <!-- Arrow: agent -> dispatch -->
+      <line x1="180" y1="395" x2="240" y2="395" class="flow-arrow"/>
+
+      <!-- Dispatch -->
+      <rect x="240" y="370" width="170" height="50" class="flow-box ours"/>
+      <text x="325" y="392" text-anchor="middle" class="flow-label">dispatch()</text>
+      <text x="325" y="407" text-anchor="middle" class="flow-detail">Parse name, find handler</text>
+
+      <!-- Arrow: dispatch -> handler -->
+      <line x1="410" y1="395" x2="470" y2="395" class="flow-arrow"/>
+
+      <!-- MCP Handler -->
+      <rect x="470" y="370" width="200" height="50" class="flow-box ours"/>
+      <text x="570" y="390" text-anchor="middle" class="flow-label">MCP Tool Handler</text>
+      <text x="570" y="407" text-anchor="middle" class="flow-detail">client.callTool() + timeout</text>
+
+      <!-- Arrow: handler -> server -->
+      <line x1="670" y1="395" x2="730" y2="395" class="flow-arrow"/>
+
+      <!-- Server execution -->
+      <rect x="730" y="370" width="180" height="50" rx="10" fill="#1e2230" stroke="#ffa94d" stroke-width="1.5"/>
+      <text x="820" y="392" text-anchor="middle" class="flow-label" fill="#ffa94d">Server executes</text>
+      <text x="820" y="407" text-anchor="middle" class="flow-detail">Returns content[]</text>
+
+      <!-- Arrow: response back -->
+      <path d="M 820 420 L 820 465 L 570 465" fill="none" stroke="#69db7c" stroke-width="1.5" marker-end="url(#arrowgreen)"/>
+
+      <!-- mapMcpContent -->
+      <rect x="440" y="445" width="260" height="55" class="flow-box ours"/>
+      <text x="570" y="466" text-anchor="middle" class="flow-label">mapMcpContent()</text>
+      <text x="570" y="484" text-anchor="middle" class="flow-detail">text | image | resource → ContentPart[]</text>
+
+      <!-- Arrow: back to agent -->
+      <path d="M 440 472 L 100 472 L 100 420" fill="none" stroke="#69db7c" stroke-width="1.5" marker-end="url(#arrowgreen)"/>
+
+      <!-- Missing pieces (red dashed) -->
+      <rect x="920" y="170" width="160" height="50" class="flow-box gap" class="pulse"/>
+      <text x="1000" y="190" text-anchor="middle" class="flow-label" fill="#ff6b6b">Size Limits</text>
+      <text x="1000" y="206" text-anchor="middle" class="flow-detail" fill="#ff6b6b">32KB / 128KB max</text>
+
+      <rect x="920" y="240" width="160" height="50" class="flow-box gap"/>
+      <text x="1000" y="260" text-anchor="middle" class="flow-label" fill="#ff6b6b">Schema Validation</text>
+      <text x="1000" y="276" text-anchor="middle" class="flow-detail" fill="#ff6b6b">CallToolResultSchema</text>
+
+      <rect x="920" y="310" width="160" height="50" class="flow-box gap"/>
+      <text x="1000" y="330" text-anchor="middle" class="flow-label" fill="#ff6b6b">Error Classification</text>
+      <text x="1000" y="346" text-anchor="middle" class="flow-detail" fill="#ff6b6b">timeout/auth/validation</text>
+
+      <rect x="920" y="380" width="160" height="50" class="flow-box gap"/>
+      <text x="1000" y="400" text-anchor="middle" class="flow-label" fill="#ff6b6b">Server Status</text>
+      <text x="1000" y="416" text-anchor="middle" class="flow-detail" fill="#ff6b6b">ready/degraded/auth</text>
+
+      <text x="1000" y="460" text-anchor="middle" fill="#ff6b6b" font-size="12" font-weight="600">MISSING PIECES</text>
+    </svg>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background: var(--accent)"></div> Our code (exists)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background: var(--green)"></div> Shared/good</div>
+    <div class="legend-item"><div class="legend-swatch" style="background: var(--orange)"></div> External (MCP server)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background: var(--red); border: 1px dashed var(--red)"></div> Gap (we need to add)</div>
+  </div>
+
+  <!-- Feature matrix -->
+  <div class="diagram">
+    <div class="diagram-title">Feature-by-feature comparison</div>
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th>Ours (aidevs4)</th>
+          <th>Wonderlands</th>
+          <th>Why it matters</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Transport types</strong></td>
+          <td><span class="status-dot yes"></span>stdio, SSE, HTTP</td>
+          <td><span class="status-dot yes"></span>stdio, StreamableHTTP</td>
+          <td>We actually support more transports (SSE extra). This is fine.</td>
+        </tr>
+        <tr>
+          <td><strong>Output size limits</strong></td>
+          <td><span class="status-dot no"></span>None</td>
+          <td><span class="status-dot yes"></span>32KB/block, 128KB total</td>
+          <td>A buggy server can blow up context window and cost. Critical safety gap.</td>
+        </tr>
+        <tr>
+          <td><strong>Response schema validation</strong></td>
+          <td><span class="status-dot no"></span>None</td>
+          <td><span class="status-dot yes"></span>CallToolResultSchema</td>
+          <td>Malformed responses cause silent crashes instead of clean errors.</td>
+        </tr>
+        <tr>
+          <td><strong>Error classification</strong></td>
+          <td><span class="status-dot no"></span>All errors = generic text</td>
+          <td><span class="status-dot yes"></span>timeout/auth/validation/provider</td>
+          <td>Agent can't reason about retries or tell user "server timed out".</td>
+        </tr>
+        <tr>
+          <td><strong>Server status model</strong></td>
+          <td><span class="status-dot no"></span>Binary (connected/not)</td>
+          <td><span class="status-dot yes"></span>4 states with transitions</td>
+          <td>Can't tell if server connected but tools failed to discover.</td>
+        </tr>
+        <tr>
+          <td><strong>Tool fingerprinting</strong></td>
+          <td><span class="status-dot no"></span>None</td>
+          <td><span class="status-dot yes"></span>SHA256 per tool</td>
+          <td>Silent schema changes go undetected — supply chain risk.</td>
+        </tr>
+        <tr>
+          <td><strong>Tracing metadata</strong></td>
+          <td><span class="status-dot no"></span>None</td>
+          <td><span class="status-dot yes"></span>W3C traceparent + Langfuse</td>
+          <td>MCP calls are black boxes in traces. Already use Langfuse.</td>
+        </tr>
+        <tr>
+          <td><strong>Binary content guard</strong></td>
+          <td><span class="status-dot no"></span>Passes through</td>
+          <td><span class="status-dot yes"></span>Rejects inline binary</td>
+          <td>Base64 images can be megabytes — burns tokens.</td>
+        </tr>
+        <tr>
+          <td><strong>OAuth</strong></td>
+          <td><span class="status-dot partial"></span>File-based, PKCE, plaintext</td>
+          <td><span class="status-dot yes"></span>DB + encrypted, 5 auth modes</td>
+          <td>Tokens stored as plaintext on server filesystem — exposed to any process. Encrypt at rest.</td>
+        </tr>
+        <tr>
+          <td><strong>Per-entry-point tool filtering</strong></td>
+          <td><span class="status-dot no"></span>All tools available everywhere</td>
+          <td><span class="status-dot yes"></span>allowedTenantIds + tool profiles</td>
+          <td>Slack users can trigger filesystem/email tools. Need allow-lists per mode.</td>
+        </tr>
+        <tr>
+          <td><strong>Structured content → file</strong></td>
+          <td><span class="status-dot yes"></span>Token-based threshold</td>
+          <td><span class="status-dot partial"></span>Different approach</td>
+          <td>Our approach is actually good! Offloads large JSON to files.</td>
+        </tr>
+        <tr>
+          <td><strong>Sampling handler</strong></td>
+          <td><span class="status-dot yes"></span>Implemented</td>
+          <td><span class="status-dot no"></span>Not shown</td>
+          <td>We handle server→client sampling requests. This is a strength.</td>
+        </tr>
+        <tr>
+          <td><strong>Retry with backoff</strong></td>
+          <td><span class="status-dot yes"></span>2 retries, linear backoff</td>
+          <td><span class="status-dot partial"></span>Reconnect via refresh</td>
+          <td>Both handle transient failures. Our auto-retry is more proactive.</td>
+        </tr>
+        <tr>
+          <td><strong>Stale process cleanup</strong></td>
+          <td><span class="status-dot partial"></span>pgrep-based (fragile)</td>
+          <td><span class="status-dot yes"></span>Explicit lifecycle</td>
+          <td>Our pgrep can kill unrelated processes. PID tracking is safer.</td>
+        </tr>
+        <tr>
+          <td><strong>HTTP session termination</strong></td>
+          <td><span class="status-dot yes"></span>terminateSession()</td>
+          <td><span class="status-dot yes"></span>terminateSession()</td>
+          <td>Both properly clean up HTTP transport sessions.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 1.5: THREAT MODEL                                    -->
+<!-- ============================================================ -->
+<section class="section" id="threat">
+  <h2 class="section-title">Threat Model — Three Entry Points, One MCP Pool</h2>
+
+  <div class="explainer">
+    <h3>Why this changes everything</h3>
+    <p>The previous version of this audit assumed a local CLI-only deployment. In reality, our agent has <strong>three entry points</strong> with very different trust boundaries. All three share a single <code>bootstrap.initServices()</code> call that connects all MCP servers and registers all tools once — there is no per-request or per-mode isolation.</p>
+    <p>This means a Slack user typing <code>@agent send an email</code> triggers the same <code>mcp_gmail_send</code> tool as the developer running <code>bun run agent</code> locally. The blast radius of every MCP gap scales to the least-trusted entry point.</p>
+  </div>
+
+  <div class="diagram">
+    <div class="diagram-title">Entry points → shared MCP pool → external servers</div>
+    <svg width="1100" height="560" viewBox="0 0 1100 560">
+      <defs>
+        <marker id="arrowThreat" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#8b93a8"/>
+        </marker>
+      </defs>
+
+      <!-- CLI entry -->
+      <rect x="20" y="40" width="180" height="80" rx="10" fill="var(--surface2)" stroke="var(--green)" stroke-width="2"/>
+      <text x="110" y="65" text-anchor="middle" fill="var(--green)" font-size="13" font-weight="600">CLI</text>
+      <text x="110" y="83" text-anchor="middle" fill="var(--text2)" font-size="10">src/cli.ts</text>
+      <text x="110" y="98" text-anchor="middle" fill="var(--text2)" font-size="10">Local stdin / readline</text>
+      <text x="110" y="113" text-anchor="middle" fill="var(--green)" font-size="9">Trusted: operator at keyboard</text>
+
+      <!-- Server entry -->
+      <rect x="20" y="160" width="180" height="100" rx="10" fill="var(--surface2)" stroke="var(--orange)" stroke-width="2"/>
+      <text x="110" y="185" text-anchor="middle" fill="var(--orange)" font-size="13" font-weight="600">Hono Server</text>
+      <text x="110" y="203" text-anchor="middle" fill="var(--text2)" font-size="10">src/server.ts</text>
+      <text x="110" y="218" text-anchor="middle" fill="var(--text2)" font-size="10">POST /chat, POST /resume</text>
+      <text x="110" y="233" text-anchor="middle" fill="var(--orange)" font-size="9">Semi-trusted: Bearer token</text>
+      <text x="110" y="248" text-anchor="middle" fill="var(--red)" font-size="9">(API_SECRET is optional!)</text>
+
+      <!-- Slack entry -->
+      <rect x="20" y="300" width="180" height="100" rx="10" fill="var(--surface2)" stroke="var(--red)" stroke-width="2"/>
+      <text x="110" y="325" text-anchor="middle" fill="var(--red)" font-size="13" font-weight="600">Slack Bot</text>
+      <text x="110" y="343" text-anchor="middle" fill="var(--text2)" font-size="10">src/slack.ts</text>
+      <text x="110" y="358" text-anchor="middle" fill="var(--text2)" font-size="10">@mentions, DMs</text>
+      <text x="110" y="373" text-anchor="middle" fill="var(--red)" font-size="9">Least trusted: any workspace</text>
+      <text x="110" y="388" text-anchor="middle" fill="var(--red)" font-size="9">member can trigger</text>
+
+      <!-- Arrows to bootstrap -->
+      <line x1="200" y1="80" x2="290" y2="210" stroke="var(--text2)" stroke-width="1.2" marker-end="url(#arrowThreat)"/>
+      <line x1="200" y1="210" x2="290" y2="210" stroke="var(--text2)" stroke-width="1.2" marker-end="url(#arrowThreat)"/>
+      <line x1="200" y1="350" x2="290" y2="210" stroke="var(--text2)" stroke-width="1.2" marker-end="url(#arrowThreat)"/>
+
+      <!-- Bootstrap -->
+      <rect x="290" y="175" width="200" height="70" rx="10" fill="var(--surface2)" stroke="var(--accent)" stroke-width="2"/>
+      <text x="390" y="200" text-anchor="middle" fill="var(--accent)" font-size="12" font-weight="600">bootstrap.initServices()</text>
+      <text x="390" y="218" text-anchor="middle" fill="var(--text2)" font-size="10">src/infra/bootstrap.ts</text>
+      <text x="390" y="235" text-anchor="middle" fill="var(--text2)" font-size="10">Identical path for all 3 modes</text>
+
+      <!-- Arrow to MCP -->
+      <line x1="490" y1="210" x2="560" y2="210" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrowThreat)"/>
+
+      <!-- MCP Service (shared) -->
+      <rect x="560" y="155" width="200" height="110" rx="10" fill="var(--surface2)" stroke="var(--yellow)" stroke-width="2.5"/>
+      <text x="660" y="180" text-anchor="middle" fill="var(--yellow)" font-size="12" font-weight="600">MCP Service</text>
+      <text x="660" y="198" text-anchor="middle" fill="var(--text2)" font-size="10">SINGLE SHARED INSTANCE</text>
+      <text x="660" y="216" text-anchor="middle" fill="var(--text2)" font-size="10">All servers connected once</text>
+      <text x="660" y="234" text-anchor="middle" fill="var(--text2)" font-size="10">All tools registered globally</text>
+      <text x="660" y="252" text-anchor="middle" fill="var(--text2)" font-size="10">No per-request isolation</text>
+
+      <!-- Arrows to external servers -->
+      <line x1="760" y1="185" x2="830" y2="90" stroke="var(--text2)" stroke-width="1.2" marker-end="url(#arrowThreat)"/>
+      <line x1="760" y1="210" x2="830" y2="210" stroke="var(--text2)" stroke-width="1.2" marker-end="url(#arrowThreat)"/>
+      <line x1="760" y1="235" x2="830" y2="330" stroke="var(--text2)" stroke-width="1.2" marker-end="url(#arrowThreat)"/>
+
+      <!-- External servers -->
+      <rect x="830" y="60" width="160" height="55" rx="8" fill="var(--surface2)" stroke="var(--orange)" stroke-width="1.5"/>
+      <text x="910" y="82" text-anchor="middle" fill="var(--orange)" font-size="11" font-weight="600">Gmail MCP</text>
+      <text x="910" y="100" text-anchor="middle" fill="var(--text2)" font-size="9">send_email, search_inbox</text>
+      <text x="910" y="112" text-anchor="middle" fill="var(--red)" font-size="8">destructive actions!</text>
+
+      <rect x="830" y="180" width="160" height="55" rx="8" fill="var(--surface2)" stroke="var(--orange)" stroke-width="1.5"/>
+      <text x="910" y="202" text-anchor="middle" fill="var(--orange)" font-size="11" font-weight="600">Filesystem MCP</text>
+      <text x="910" y="220" text-anchor="middle" fill="var(--text2)" font-size="9">read, write, delete files</text>
+      <text x="910" y="232" text-anchor="middle" fill="var(--red)" font-size="8">no path sandboxing!</text>
+
+      <rect x="830" y="300" width="160" height="55" rx="8" fill="var(--surface2)" stroke="var(--orange)" stroke-width="1.5"/>
+      <text x="910" y="322" text-anchor="middle" fill="var(--orange)" font-size="11" font-weight="600">Database MCP</text>
+      <text x="910" y="340" text-anchor="middle" fill="var(--text2)" font-size="9">query, insert, update</text>
+      <text x="910" y="352" text-anchor="middle" fill="var(--red)" font-size="8">full DB access!</text>
+
+      <!-- Attack scenario box -->
+      <rect x="20" y="430" width="1060" height="110" rx="10" fill="rgba(255,107,107,0.05)" stroke="var(--red)" stroke-width="1.5"/>
+      <text x="550" y="455" text-anchor="middle" fill="var(--red)" font-size="14" font-weight="700">Attack Scenarios (why this matters)</text>
+
+      <text x="40" y="480" fill="var(--text2)" font-size="11">
+        <tspan x="40" dy="0" fill="var(--red)" font-weight="600">Slack prompt injection:</tspan>
+        <tspan> A workspace member sends @agent a message containing hidden instructions.</tspan>
+      </text>
+      <text x="40" y="498" fill="var(--text2)" font-size="11">
+        <tspan fill="var(--text2)">The LLM follows those instructions and calls mcp_gmail_send or mcp_filesystem_write. No size limits = context poisoning. No error classification = silent failures.</tspan>
+      </text>
+      <text x="40" y="518" fill="var(--text2)" font-size="11">
+        <tspan x="40" dy="0" fill="var(--red)" font-weight="600">Open HTTP server:</tspan>
+        <tspan> If API_SECRET is unset, POST /chat is unauthenticated. Anyone on the network can call MCP tools through the agent.</tspan>
+      </text>
+    </svg>
+  </div>
+
+  <!-- Trust comparison table -->
+  <div class="diagram">
+    <div class="diagram-title">Trust boundaries per entry point</div>
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th style="color: var(--green)">CLI</th>
+          <th style="color: var(--orange)">Hono Server</th>
+          <th style="color: var(--red)">Slack Bot</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Who can trigger</strong></td>
+          <td>Developer at keyboard</td>
+          <td>Anyone with Bearer token (or anyone, if API_SECRET unset)</td>
+          <td>Any workspace member via @mention or DM</td>
+        </tr>
+        <tr>
+          <td><strong>Auth mechanism</strong></td>
+          <td>None (local process)</td>
+          <td>Optional Bearer token (<code>API_SECRET</code> env var)</td>
+          <td>Slack webhook signing (SLACK_BOT_TOKEN + SLACK_APP_TOKEN)</td>
+        </tr>
+        <tr>
+          <td><strong>Input trust level</strong></td>
+          <td><span class="status-dot yes"></span>High — operator controls input</td>
+          <td><span class="status-dot partial"></span>Medium — authenticated but remote</td>
+          <td><span class="status-dot no"></span>Low — any member, prompt injection risk</td>
+        </tr>
+        <tr>
+          <td><strong>Confirmation UX</strong></td>
+          <td>Interactive readline prompt</td>
+          <td>Waiting state → caller must POST /resume</td>
+          <td>Interactive Slack buttons in thread</td>
+        </tr>
+        <tr>
+          <td><strong>MCP tool access</strong></td>
+          <td>All registered tools</td>
+          <td>All registered tools (same pool)</td>
+          <td>All registered tools (same pool)</td>
+        </tr>
+        <tr>
+          <td><strong>Session isolation</strong></td>
+          <td>One run per invocation</td>
+          <td>Per sessionId, parallelized via queue</td>
+          <td>Per Slack thread (teamId:channelId:threadTs)</td>
+        </tr>
+        <tr>
+          <td><strong>MCP request isolation</strong></td>
+          <td><span class="status-dot no"></span>None — shared clients</td>
+          <td><span class="status-dot no"></span>None — shared clients</td>
+          <td><span class="status-dot no"></span>None — shared clients</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="comparison">
+    <div class="card gap">
+      <div class="card-header">What this means for MCP safety <span class="tag missing">Critical</span></div>
+      <ul>
+        <li><strong>Size limits</strong> are now CRITICAL, not just nice-to-have. A Slack message triggering a tool that returns 5MB of data could blow up the context for all concurrent users.</li>
+        <li><strong>Error classification</strong> matters more — Slack users see confusing generic errors instead of "server timed out, retrying".</li>
+        <li><strong>Server status</strong> prevents wasted LLM calls — don't send a tool call to a degraded server just because it's in the Map.</li>
+        <li><strong>OAuth tokens</strong> stored as plaintext are now accessible to any process on the server, not just the local developer. Consider encryption.</li>
+        <li><strong>The sampling handler</strong> (where MCP servers can ask our LLM to generate text) is now invocable by any MCP server triggered by any Slack user — this is a cost amplification vector.</li>
+      </ul>
+    </div>
+    <div class="card ref">
+      <div class="card-header">Wonderlands addresses this with <span class="tag ref">Reference</span></div>
+      <ul>
+        <li><strong>Per-tenant scoping</strong> — each tenant only sees their MCP servers and tools</li>
+        <li><strong>Tool profile assignments</strong> — tools are explicitly assigned to profiles, not globally available</li>
+        <li><strong>Confirmation gates</strong> with fingerprint approval — destructive tools require human confirmation per-schema-version</li>
+        <li><strong>Token encryption</strong> at rest with <code>MCP_SECRET_ENCRYPTION_KEY</code></li>
+        <li><strong>In-flight correlation</strong> — tracks which tenant/run triggered which MCP call</li>
+        <li><strong>allowedTenantIds</strong> whitelist on static servers — not all servers available to all tenants</li>
+      </ul>
+      <div class="callout info">We don't need multi-tenancy, but we DO need: (1) output size limits to protect shared context, (2) per-entry-point tool filtering (e.g. Slack shouldn't access filesystem tools), and (3) token encryption since this isn't just a local CLI anymore.</div>
+    </div>
+  </div>
+
+  <div class="explainer">
+    <h3>The initialization path (all three modes)</h3>
+    <pre>
+// All three entry points call the same bootstrap:
+
+// src/cli.ts:
+await initServices();        // ← calls initMcpTools()
+await executeRun(prompt);
+
+// src/server.ts:
+await initServices();        // ← same call, same MCP pool
+app.post("/chat", handler);  // every HTTP request uses the pool
+
+// src/slack.ts:
+await initServices();        // ← same call, same MCP pool
+app.message(handler);        // every Slack message uses the pool
+
+// src/infra/bootstrap.ts:
+export async function initServices() {
+  initTracing();
+  attachLangfuseSubscriber(bus);
+  registerContinuationSubscriber();
+  await initMcpTools();     // connects ALL MCP servers, registers ALL tools
+  // ...
+}
+    </pre>
+    <p>There is zero differentiation. A potential improvement: <strong>tool allow-lists per entry point</strong> — e.g., Slack gets a restricted subset of MCP tools, while CLI gets everything.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 2: LIFECYCLE                                         -->
+<!-- ============================================================ -->
+<section class="section" id="lifecycle">
+  <h2 class="section-title">Server Lifecycle</h2>
+
+  <div class="explainer">
+    <h3>How does a connection live and die?</h3>
+    <p>An MCP server connection goes through distinct phases: <strong>load config</strong> → <strong>create transport</strong> → <strong>connect client</strong> → <strong>discover tools</strong> → <strong>ready for calls</strong> → <strong>disconnect</strong>. Each phase can fail, and how we handle those failures determines reliability.</p>
+  </div>
+
+  <div class="diagram">
+    <div class="diagram-title">Connection lifecycle — sequence diagram</div>
+    <svg width="1050" height="680" viewBox="0 0 1050 680">
+      <defs>
+        <marker id="arrowhead2" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#8b93a8"/>
+        </marker>
+      </defs>
+
+      <!-- Actors -->
+      <rect x="50" y="20" width="110" height="35" class="seq-actor"/>
+      <text x="105" y="43" text-anchor="middle" class="flow-label" font-size="12">Bootstrap</text>
+      <line x1="105" y1="55" x2="105" y2="660" class="seq-line"/>
+
+      <rect x="220" y="20" width="120" height="35" class="seq-actor"/>
+      <text x="280" y="43" text-anchor="middle" class="flow-label" font-size="12">McpService</text>
+      <line x1="280" y1="55" x2="280" y2="660" class="seq-line"/>
+
+      <rect x="410" y="20" width="110" height="35" class="seq-actor"/>
+      <text x="465" y="43" text-anchor="middle" class="flow-label" font-size="12">Transport</text>
+      <line x1="465" y1="55" x2="465" y2="660" class="seq-line"/>
+
+      <rect x="590" y="20" width="120" height="35" class="seq-actor"/>
+      <text x="650" y="43" text-anchor="middle" class="flow-label" font-size="12">MCP Server</text>
+      <line x1="650" y1="55" x2="650" y2="660" class="seq-line"/>
+
+      <rect x="780" y="20" width="120" height="35" class="seq-actor"/>
+      <text x="840" y="43" text-anchor="middle" class="flow-label" font-size="12">Tool Registry</text>
+      <line x1="840" y1="55" x2="840" y2="660" class="seq-line"/>
+
+      <!-- Step 1: initServices -->
+      <line x1="105" y1="85" x2="275" y2="85" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="190" y="80" text-anchor="middle" class="seq-label">initMcpTools()</text>
+
+      <!-- Step 2: load config -->
+      <line x1="280" y1="115" x2="280" y2="115" class="seq-msg"/>
+      <rect x="225" y="100" width="110" height="24" rx="4" fill="rgba(108,140,255,0.1)" stroke="var(--accent)" stroke-width="1"/>
+      <text x="280" y="116" text-anchor="middle" class="seq-label" fill="var(--accent)" font-size="10">loadMcpConfig()</text>
+
+      <!-- Step 3: kill stale -->
+      <rect x="170" y="140" width="220" height="24" class="seq-note"/>
+      <text x="280" y="156" text-anchor="middle" class="seq-note-text">killStaleMcpRemoteProcesses()</text>
+
+      <!-- Gap callout -->
+      <rect x="920" y="137" width="120" height="30" rx="4" fill="rgba(255,107,107,0.1)" stroke="var(--red)" stroke-width="1"/>
+      <text x="980" y="155" text-anchor="middle" fill="var(--red)" font-size="9" font-weight="600">GAP: pgrep fragile</text>
+      <line x1="390" y1="152" x2="920" y2="152" stroke="var(--red)" stroke-width="0.5" stroke-dasharray="3,3"/>
+
+      <!-- Step 4: create transport -->
+      <line x1="280" y1="185" x2="460" y2="185" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="370" y="180" text-anchor="middle" class="seq-label">createTransport(config)</text>
+
+      <!-- Step 5: connect -->
+      <line x1="465" y1="215" x2="645" y2="215" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="555" y="210" text-anchor="middle" class="seq-label">client.connect(transport)</text>
+
+      <!-- Step 5b: retry box -->
+      <rect x="300" y="235" width="330" height="70" rx="6" fill="none" stroke="var(--orange)" stroke-width="1" stroke-dasharray="4,2"/>
+      <text x="465" y="255" text-anchor="middle" fill="var(--orange)" font-size="10" font-weight="600">On failure: retry up to 2x with backoff (1s, 2s)</text>
+      <text x="465" y="272" text-anchor="middle" fill="var(--text2)" font-size="10">If UnauthorizedError + OAuth configured → browser auth flow</text>
+      <text x="465" y="289" text-anchor="middle" fill="var(--text2)" font-size="10">After OAuth: create fresh client+transport → reconnect</text>
+
+      <!-- Step 6: discover tools -->
+      <line x1="280" y1="325" x2="645" y2="325" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="462" y="320" text-anchor="middle" class="seq-label">client.listTools()</text>
+
+      <!-- Response: tool list -->
+      <line x1="645" y1="350" x2="285" y2="350" class="seq-msg success" marker-end="url(#arrowgreen)"/>
+      <text x="462" y="345" text-anchor="middle" class="seq-label" fill="var(--green)">{ tools: [...] }</text>
+
+      <!-- Gap callout: no pagination -->
+      <rect x="920" y="327" width="120" height="30" rx="4" fill="rgba(255,169,77,0.1)" stroke="var(--orange)" stroke-width="1"/>
+      <text x="980" y="340" text-anchor="middle" fill="var(--orange)" font-size="9" font-weight="600">NOTE: no pagination</text>
+      <text x="980" y="353" text-anchor="middle" fill="var(--text2)" font-size="8">Ref uses cursors</text>
+      <line x1="645" y1="340" x2="920" y2="340" stroke="var(--orange)" stroke-width="0.5" stroke-dasharray="3,3"/>
+
+      <!-- Step 7: normalize each tool -->
+      <rect x="200" y="370" width="160" height="24" rx="4" fill="rgba(108,140,255,0.1)" stroke="var(--accent)" stroke-width="1"/>
+      <text x="280" y="386" text-anchor="middle" class="seq-note-text" font-size="10">For each tool:</text>
+
+      <!-- Step 7a: name normalization -->
+      <rect x="200" y="400" width="280" height="24" rx="4" fill="rgba(108,140,255,0.05)" stroke="var(--border)" stroke-width="1"/>
+      <text x="340" y="416" text-anchor="middle" class="seq-label" font-size="10">name = mcp_{normalize(server)}_{normalize(tool)}</text>
+
+      <!-- Gap: no fingerprint -->
+      <rect x="920" y="400" width="120" height="30" rx="4" fill="rgba(255,107,107,0.1)" stroke="var(--red)" stroke-width="1"/>
+      <text x="980" y="413" text-anchor="middle" fill="var(--red)" font-size="9" font-weight="600">GAP: no fingerprint</text>
+      <text x="980" y="426" text-anchor="middle" fill="var(--text2)" font-size="8">Ref uses SHA256</text>
+      <line x1="480" y1="412" x2="920" y2="412" stroke="var(--red)" stroke-width="0.5" stroke-dasharray="3,3"/>
+
+      <!-- Step 7b: register -->
+      <line x1="280" y1="445" x2="835" y2="445" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="560" y="440" text-anchor="middle" class="seq-label">registerRaw(name, schema, handler)  [strict: false]</text>
+
+      <!-- Step 8: ready -->
+      <rect x="200" y="475" width="160" height="24" rx="4" fill="rgba(105,219,124,0.15)" stroke="var(--green)" stroke-width="1"/>
+      <text x="280" y="491" text-anchor="middle" fill="var(--green)" font-size="10" font-weight="600">Server "connected"</text>
+
+      <!-- Gap: should be "ready" status -->
+      <rect x="920" y="475" width="120" height="30" rx="4" fill="rgba(255,107,107,0.1)" stroke="var(--red)" stroke-width="1"/>
+      <text x="980" y="488" text-anchor="middle" fill="var(--red)" font-size="9" font-weight="600">GAP: no status</text>
+      <text x="980" y="501" text-anchor="middle" fill="var(--text2)" font-size="8">Should be "ready"</text>
+      <line x1="360" y1="487" x2="920" y2="487" stroke="var(--red)" stroke-width="0.5" stroke-dasharray="3,3"/>
+
+      <!-- Step 9: agent calls tool (runtime) -->
+      <text x="465" y="530" text-anchor="middle" fill="var(--purple)" font-size="11" font-weight="600">... runtime execution (tool calls happen here) ...</text>
+
+      <!-- Step 10: disconnect -->
+      <line x1="105" y1="560" x2="275" y2="560" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="190" y="555" text-anchor="middle" class="seq-label">shutdownMcp()</text>
+
+      <line x1="280" y1="585" x2="460" y2="585" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="370" y="580" text-anchor="middle" class="seq-label">terminateSession() [HTTP]</text>
+
+      <line x1="280" y1="610" x2="645" y2="610" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="462" y="605" text-anchor="middle" class="seq-label">client.close()</text>
+
+      <rect x="200" y="630" width="160" height="24" rx="4" fill="rgba(108,140,255,0.1)" stroke="var(--accent)" stroke-width="1"/>
+      <text x="280" y="646" text-anchor="middle" class="seq-note-text" font-size="10">servers.clear(); connected = false</text>
+    </svg>
+  </div>
+
+  <div class="comparison">
+    <div class="card ours">
+      <div class="card-header">Our Lifecycle <span class="tag ours">Current</span></div>
+      <ul>
+        <li>Binary state: a server is either in the <code>servers</code> Map or it's not</li>
+        <li>If <code>connect()</code> fails, server is silently skipped (warning logged)</li>
+        <li>If <code>listTools()</code> fails, no tools registered but server stays "connected"</li>
+        <li>No way to query server health after startup</li>
+        <li>Hot-reload support via global <code>__mcpService</code></li>
+      </ul>
+    </div>
+    <div class="card ref">
+      <div class="card-header">Wonderlands Lifecycle <span class="tag ref">Reference</span></div>
+      <ul>
+        <li>4-state model: <code>connecting</code> → <code>ready</code> | <code>degraded</code> | <code>authorization_required</code></li>
+        <li>Each state carries <code>lastError</code> for diagnostics</li>
+        <li>Status checked before every tool call — no calls to degraded servers</li>
+        <li>Paginated tool discovery (cursor-based) for large tool sets</li>
+        <li>Explicit <code>refreshServer()</code> for reconnection</li>
+        <li>Persists discovery state and errors to DB</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 3: TOOL EXECUTION FLOW                               -->
+<!-- ============================================================ -->
+<section class="section" id="tools">
+  <h2 class="section-title">Tool Execution Flow</h2>
+
+  <div class="explainer">
+    <h3>What happens when the LLM calls an MCP tool?</h3>
+    <p>When the agent's LLM output says "call <code>mcp_gmail_send</code> with args {...}", the runtime needs to: find the right MCP server, forward the call, enforce a timeout, validate the response, normalize the content format, and return it to the LLM. Each of these steps is a place where things can go wrong.</p>
+  </div>
+
+  <div class="diagram">
+    <div class="diagram-title">Tool call pipeline — ours vs. ideal</div>
+    <svg width="1050" height="580" viewBox="0 0 1050 580">
+      <defs>
+        <marker id="arrowdown" markerWidth="8" markerHeight="6" refX="3" refY="6" orient="auto">
+          <polygon points="0 0, 6 0, 3 6" fill="#8b93a8"/>
+        </marker>
+        <marker id="arrowdown-red" markerWidth="8" markerHeight="6" refX="3" refY="6" orient="auto">
+          <polygon points="0 0, 6 0, 3 6" fill="#ff6b6b"/>
+        </marker>
+      </defs>
+
+      <!-- LEFT: Our pipeline -->
+      <text x="200" y="25" text-anchor="middle" fill="var(--accent)" font-size="14" font-weight="700">OUR PIPELINE</text>
+
+      <!-- Step 1 -->
+      <rect x="80" y="40" width="240" height="40" class="flow-box ours"/>
+      <text x="200" y="57" text-anchor="middle" class="flow-label" font-size="12">1. dispatch("mcp_gmail_send", args)</text>
+      <text x="200" y="72" text-anchor="middle" class="flow-detail">Registry finds handler by name</text>
+      <line x1="200" y1="80" x2="200" y2="100" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 2 -->
+      <rect x="80" y="100" width="240" height="40" class="flow-box ours"/>
+      <text x="200" y="117" text-anchor="middle" class="flow-label" font-size="12">2. handler(parsedArgs)</text>
+      <text x="200" y="132" text-anchor="middle" class="flow-detail">Closure captures server reference</text>
+      <line x1="200" y1="140" x2="200" y2="160" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 3 -->
+      <rect x="80" y="160" width="240" height="50" class="flow-box ours"/>
+      <text x="200" y="177" text-anchor="middle" class="flow-label" font-size="12">3. client.callTool(name, args)</text>
+      <text x="200" y="192" text-anchor="middle" class="flow-detail">AbortSignal.timeout(30s)</text>
+      <text x="200" y="204" text-anchor="middle" class="flow-detail" fill="var(--red)">No result schema validation!</text>
+      <line x1="200" y1="210" x2="200" y2="230" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 4 -->
+      <rect x="80" y="230" width="240" height="50" class="flow-box ours"/>
+      <text x="200" y="248" text-anchor="middle" class="flow-label" font-size="12">4. mapMcpContent(result.content)</text>
+      <text x="200" y="263" text-anchor="middle" class="flow-detail">text → TextPart, image → ImagePart</text>
+      <text x="200" y="275" text-anchor="middle" class="flow-detail" fill="var(--red)">No size limits!</text>
+      <line x1="200" y1="280" x2="200" y2="300" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 5 -->
+      <rect x="80" y="300" width="240" height="45" class="flow-box ours"/>
+      <text x="200" y="318" text-anchor="middle" class="flow-label" font-size="12">5. handleStructuredContent()</text>
+      <text x="200" y="335" text-anchor="middle" class="flow-detail">Big JSON → file + ResourceRef</text>
+      <line x1="200" y1="345" x2="200" y2="365" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 6 -->
+      <rect x="80" y="365" width="240" height="40" class="flow-box ours"/>
+      <text x="200" y="382" text-anchor="middle" class="flow-label" font-size="12">6. catch → toolError(message)</text>
+      <text x="200" y="397" text-anchor="middle" class="flow-detail" fill="var(--red)">All errors identical!</text>
+      <line x1="200" y1="405" x2="200" y2="425" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 7 -->
+      <rect x="100" y="425" width="200" height="35" class="flow-box good"/>
+      <text x="200" y="447" text-anchor="middle" class="flow-label" font-size="12">Return ToolResult</text>
+
+      <!-- RIGHT: Ideal pipeline -->
+      <text x="700" y="25" text-anchor="middle" fill="var(--accent2)" font-size="14" font-weight="700">IDEAL PIPELINE (what to build)</text>
+
+      <!-- Step 1 -->
+      <rect x="560" y="40" width="280" height="40" class="flow-box ref"/>
+      <text x="700" y="57" text-anchor="middle" class="flow-label" font-size="12">1. dispatch("mcp_gmail_send", args)</text>
+      <text x="700" y="72" text-anchor="middle" class="flow-detail">Same — registry lookup</text>
+      <line x1="700" y1="80" x2="700" y2="100" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 2: status check (NEW) -->
+      <rect x="560" y="100" width="280" height="45" class="flow-box ref"/>
+      <text x="700" y="117" text-anchor="middle" class="flow-label" font-size="12" fill="var(--green)">2. Check server status</text>
+      <text x="700" y="132" text-anchor="middle" class="flow-detail">Is server "ready"?</text>
+      <text x="700" y="142" text-anchor="middle" class="flow-detail">If degraded → return typed error immediately</text>
+      <line x1="700" y1="145" x2="700" y2="165" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 3: validate args (NEW) -->
+      <rect x="560" y="165" width="280" height="40" class="flow-box ref"/>
+      <text x="700" y="182" text-anchor="middle" class="flow-label" font-size="12" fill="var(--green)">3. Validate args shape</text>
+      <text x="700" y="197" text-anchor="middle" class="flow-detail">Must be object (not array, not null)</text>
+      <line x1="700" y1="205" x2="700" y2="225" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 4 -->
+      <rect x="560" y="225" width="280" height="50" class="flow-box ref"/>
+      <text x="700" y="242" text-anchor="middle" class="flow-label" font-size="12">4. client.callTool(name, args,</text>
+      <text x="700" y="257" text-anchor="middle" class="flow-label" font-size="12" fill="var(--green)">   CallToolResultSchema)</text>
+      <text x="700" y="270" text-anchor="middle" class="flow-detail">Schema validates response structure!</text>
+      <line x1="700" y1="275" x2="700" y2="295" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 5: normalize + size limits -->
+      <rect x="560" y="295" width="280" height="55" class="flow-box ref"/>
+      <text x="700" y="312" text-anchor="middle" class="flow-label" font-size="12" fill="var(--green)">5. normalizeResult() + size limits</text>
+      <text x="700" y="328" text-anchor="middle" class="flow-detail">Reject binary inline (images, audio)</text>
+      <text x="700" y="340" text-anchor="middle" class="flow-detail">32KB per resource, 128KB total</text>
+      <line x1="700" y1="350" x2="700" y2="370" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 6: structured content -->
+      <rect x="560" y="370" width="280" height="40" class="flow-box ref"/>
+      <text x="700" y="387" text-anchor="middle" class="flow-label" font-size="12">6. handleStructuredContent()</text>
+      <text x="700" y="402" text-anchor="middle" class="flow-detail">Same as ours — this is good</text>
+      <line x1="700" y1="410" x2="700" y2="430" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 7: classified errors -->
+      <rect x="560" y="430" width="280" height="55" class="flow-box ref"/>
+      <text x="700" y="447" text-anchor="middle" class="flow-label" font-size="12" fill="var(--green)">7. Classified error handling</text>
+      <text x="700" y="463" text-anchor="middle" class="flow-detail">StreamableHTTPError → timeout or provider</text>
+      <text x="700" y="475" text-anchor="middle" class="flow-detail">McpError → validation, not_found, timeout</text>
+      <line x1="700" y1="485" x2="700" y2="505" class="flow-arrow" marker-end="url(#arrowdown)"/>
+
+      <!-- Step 8 -->
+      <rect x="600" y="505" width="200" height="35" class="flow-box good"/>
+      <text x="700" y="527" text-anchor="middle" class="flow-label" font-size="12">Return typed ToolResult</text>
+
+      <!-- Connecting arrows between pipelines (showing what's added) -->
+      <line x1="340" y1="180" x2="540" y2="245" stroke="var(--green)" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arrowgreen)"/>
+      <line x1="340" y1="255" x2="540" y2="320" stroke="var(--green)" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arrowgreen)"/>
+      <line x1="340" y1="385" x2="540" y2="455" stroke="var(--green)" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arrowgreen)"/>
+
+      <!-- Annotations -->
+      <text x="440" y="215" text-anchor="middle" fill="var(--green)" font-size="9" font-weight="600">add schema</text>
+      <text x="440" y="290" text-anchor="middle" fill="var(--green)" font-size="9" font-weight="600">add limits</text>
+      <text x="440" y="420" text-anchor="middle" fill="var(--green)" font-size="9" font-weight="600">classify errors</text>
+    </svg>
+  </div>
+
+  <div class="explainer">
+    <h3>The key insight: untrusted boundary</h3>
+    <p>MCP servers are <strong>external processes</strong>. They might be buggy, compromised, or just poorly written. The response they send is like user input — you must validate it before trusting it. Our current code trusts everything: no size checks, no schema validation, no type guards. The ideal pipeline treats the response as adversarial.</p>
+    <div class="callout warn">Think of it like an HTTP API: you wouldn't take a random JSON response and pass it straight to your frontend without validation. Same principle applies here — the MCP server is the API, and our agent is the consumer.</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 4: SAFETY & LIMITS                                   -->
+<!-- ============================================================ -->
+<section class="section" id="security">
+  <h2 class="section-title">Safety & Size Limits</h2>
+
+  <div class="explainer">
+    <h3>Why size limits matter</h3>
+    <p>LLMs have a <strong>context window</strong> (a maximum amount of text they can process at once). Every character in a tool response eats into that budget. If an MCP server returns 5MB of text, it will either: (a) blow the context limit and crash, (b) cost a fortune in tokens, or (c) push important earlier context out of the window. Size limits are not optional — they're a circuit breaker.</p>
+  </div>
+
+  <div class="comparison">
+    <div class="card gap">
+      <div class="card-header">Our mapMcpContent() <span class="tag missing">No limits</span></div>
+      <pre>// src/infra/mcp.ts:57
+function mapMcpContent(content: unknown[]): ContentPart[] {
+  return (content as Record&lt;string, unknown&gt;[])
+    .map((item): ContentPart =&gt; {
+      const type = item.type as string;
+      if (type === "text") {
+        return { type: "text", text: item.text as string };
+        //                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        // No size check! Could be megabytes.
+      }
+      if (type === "image") {
+        return {
+          type: "image",
+          data: item.data as string,  // No size check!
+          mimeType: item.mimeType as string,
+        };
+      }
+      // ... resource handling ...
+      return { type: "text", text: JSON.stringify(item) };
+      //  Unknown type → JSON stringify, also no limit
+    });
+}</pre>
+      <div class="callout warn">Every content block passes through with zero size enforcement. A single tool call could return a 50MB response and it would be forwarded to the LLM verbatim.</div>
+    </div>
+
+    <div class="card ref">
+      <div class="card-header">Wonderlands normalize-result.ts <span class="tag ref">With limits</span></div>
+      <pre>// adapters/mcp/normalize-result.ts
+const MAX_RESOURCE_TEXT_BYTES = 32_768;   // 32KB per block
+const MAX_TOOL_OUTPUT_BYTES  = 131_072;   // 128KB total
+
+const normalizeContentBlock = (block) =&gt; {
+  switch (block.type) {
+    case 'text':
+      return ok({ text: block.text, type: 'text' });
+
+    case 'resource':
+      if ('blob' in block.resource) {
+        return err({ message: 'inline binary not supported',
+                     type: 'validation' });
+      }
+      if (Buffer.byteLength(block.resource.text, 'utf8')
+            &gt; MAX_RESOURCE_TEXT_BYTES) {
+        return err({ message: 'resource exceeds size limit',
+                     type: 'capacity' });
+      }
+      return ok({ resource: { ... }, type: 'resource' });
+
+    case 'audio':
+    case 'image':
+      return err({ message: `unsupported ${block.type}`,
+                   type: 'validation' });
+  }
+};
+
+// After normalizing all blocks, check total:
+if (Buffer.byteLength(JSON.stringify(output), 'utf8')
+      &gt; MAX_TOOL_OUTPUT_BYTES) {
+  return err({ message: 'result exceeds output limit',
+               type: 'capacity' });
+}</pre>
+      <div class="callout tip">Two-layer defense: per-block limit (32KB) catches individual huge items, total limit (128KB) catches many-small-items attacks. Binary content is rejected outright since it's not useful for text-based LLMs.</div>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <div class="diagram-title">Size limit defense layers — what to implement</div>
+    <svg width="900" height="320" viewBox="0 0 900 320">
+      <!-- Layer 1: Per-block -->
+      <rect x="30" y="30" width="250" height="260" rx="10" fill="none" stroke="var(--red)" stroke-width="2"/>
+      <text x="155" y="55" text-anchor="middle" fill="var(--red)" font-size="13" font-weight="600">Layer 1: Per-Block</text>
+
+      <rect x="55" y="75" width="200" height="40" rx="6" fill="rgba(105,219,124,0.1)" stroke="var(--green)" stroke-width="1"/>
+      <text x="155" y="92" text-anchor="middle" fill="var(--text)" font-size="11" font-weight="600">text</text>
+      <text x="155" y="107" text-anchor="middle" fill="var(--text2)" font-size="10">Pass (text is usually small)</text>
+
+      <rect x="55" y="125" width="200" height="40" rx="6" fill="rgba(255,107,107,0.1)" stroke="var(--red)" stroke-width="1"/>
+      <text x="155" y="142" text-anchor="middle" fill="var(--text)" font-size="11" font-weight="600">resource (text)</text>
+      <text x="155" y="157" text-anchor="middle" fill="var(--red)" font-size="10">Reject if > 32KB</text>
+
+      <rect x="55" y="175" width="200" height="40" rx="6" fill="rgba(255,107,107,0.1)" stroke="var(--red)" stroke-width="1"/>
+      <text x="155" y="192" text-anchor="middle" fill="var(--text)" font-size="11" font-weight="600">resource (blob)</text>
+      <text x="155" y="207" text-anchor="middle" fill="var(--red)" font-size="10">Reject entirely</text>
+
+      <rect x="55" y="225" width="200" height="40" rx="6" fill="rgba(255,107,107,0.1)" stroke="var(--red)" stroke-width="1"/>
+      <text x="155" y="242" text-anchor="middle" fill="var(--text)" font-size="11" font-weight="600">image / audio</text>
+      <text x="155" y="257" text-anchor="middle" fill="var(--red)" font-size="10">Reject (not useful for LLM)</text>
+
+      <!-- Arrow -->
+      <line x1="280" y1="160" x2="330" y2="160" class="flow-arrow" marker-end="url(#arrowhead)"/>
+
+      <!-- Layer 2: Total output -->
+      <rect x="330" y="60" width="250" height="200" rx="10" fill="none" stroke="var(--orange)" stroke-width="2"/>
+      <text x="455" y="85" text-anchor="middle" fill="var(--orange)" font-size="13" font-weight="600">Layer 2: Total Output</text>
+
+      <rect x="355" y="105" width="200" height="50" rx="6" fill="rgba(255,169,77,0.1)" stroke="var(--orange)" stroke-width="1"/>
+      <text x="455" y="125" text-anchor="middle" fill="var(--text)" font-size="11" font-weight="600">Sum all blocks</text>
+      <text x="455" y="145" text-anchor="middle" fill="var(--orange)" font-size="10">Reject if total > 128KB</text>
+
+      <rect x="355" y="170" width="200" height="50" rx="6" fill="rgba(108,140,255,0.1)" stroke="var(--accent)" stroke-width="1"/>
+      <text x="455" y="190" text-anchor="middle" fill="var(--text)" font-size="11" font-weight="600">structuredContent</text>
+      <text x="455" y="210" text-anchor="middle" fill="var(--accent)" font-size="10">Big → write to file (we have this!)</text>
+
+      <!-- Arrow -->
+      <line x1="580" y1="160" x2="630" y2="160" class="flow-arrow" marker-end="url(#arrowhead)"/>
+
+      <!-- Layer 3: Safe result -->
+      <rect x="630" y="90" width="230" height="140" rx="10" fill="none" stroke="var(--green)" stroke-width="2"/>
+      <text x="745" y="115" text-anchor="middle" fill="var(--green)" font-size="13" font-weight="600">Layer 3: Safe Result</text>
+
+      <rect x="655" y="130" width="180" height="35" rx="6" fill="rgba(105,219,124,0.1)" stroke="var(--green)" stroke-width="1"/>
+      <text x="745" y="152" text-anchor="middle" fill="var(--green)" font-size="11">ContentPart[] (validated)</text>
+
+      <rect x="655" y="175" width="180" height="35" rx="6" fill="rgba(105,219,124,0.1)" stroke="var(--green)" stroke-width="1"/>
+      <text x="745" y="197" text-anchor="middle" fill="var(--green)" font-size="11">Safe for LLM context</text>
+    </svg>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 5: ERROR HANDLING                                    -->
+<!-- ============================================================ -->
+<section class="section" id="errors">
+  <h2 class="section-title">Error Handling</h2>
+
+  <div class="explainer">
+    <h3>Why error classification matters</h3>
+    <p>When a tool call fails, the agent needs to decide: <strong>should I retry?</strong> With our current code, every error looks the same — a generic string. The agent (and the user) can't tell if the server timed out (retry makes sense), if auth expired (need to re-authorize), or if the arguments were wrong (retry is pointless). The Wonderlands approach classifies errors into distinct types so each can be handled appropriately.</p>
+  </div>
+
+  <div class="comparison">
+    <div class="card gap">
+      <div class="card-header">Our Error Handling <span class="tag missing">All errors identical</span></div>
+      <pre>// src/infra/mcp.ts:319-321
+} catch (err) {
+  return toolError(
+    `Error calling MCP tool "${tool.name}"` +
+    ` on "${serverName}": ${errorMessage(err)}`
+  );
+}</pre>
+      <p>Every error — timeout, auth failure, invalid params, server crash — becomes the same <code>toolError(string)</code>. The LLM sees "Error calling MCP tool X: some message" and has to guess what went wrong from the message text.</p>
+    </div>
+
+    <div class="card ref">
+      <div class="card-header">Wonderlands Error Handling <span class="tag ref">Classified</span></div>
+      <pre>// adapters/mcp/errors.ts
+export const toMcpDomainError = (serverId, error) =&gt; {
+  // HTTP-level errors
+  if (error instanceof StreamableHTTPError) {
+    if (error.code === 408 || error.code === 504)
+      return { type: 'timeout', message: '...' };
+    return { type: 'provider', message: '...' };
+  }
+
+  // MCP protocol errors
+  if (error instanceof McpError) {
+    switch (error.code) {
+      case ErrorCode.RequestTimeout:
+        return { type: 'timeout', ... };
+      case ErrorCode.InvalidParams:
+        return { type: 'validation', ... };
+      case ErrorCode.MethodNotFound:
+        return { type: 'not_found', ... };
+      default:
+        return { type: 'provider', ... };
+    }
+  }
+
+  // Generic JS errors
+  if (error instanceof Error) {
+    if (/timed? out/i.test(error.message))
+      return { type: 'timeout', ... };
+    return { type: 'provider', ... };
+  }
+
+  return { type: 'provider', message: 'Unknown' };
+};</pre>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <div class="diagram-title">Error classification tree — what to implement</div>
+    <svg width="900" height="350" viewBox="0 0 900 350">
+      <!-- Root -->
+      <rect x="350" y="10" width="180" height="35" class="flow-box ours"/>
+      <text x="440" y="32" text-anchor="middle" class="flow-label" font-size="12">catch (error)</text>
+
+      <!-- Branch: StreamableHTTPError -->
+      <line x1="350" y1="45" x2="120" y2="80" stroke="var(--text2)" stroke-width="1.2"/>
+      <rect x="20" y="80" width="200" height="40" rx="6" fill="rgba(108,140,255,0.1)" stroke="var(--accent)" stroke-width="1"/>
+      <text x="120" y="97" text-anchor="middle" class="flow-label" font-size="11">StreamableHTTPError</text>
+      <text x="120" y="113" text-anchor="middle" class="flow-detail">HTTP transport failed</text>
+
+      <!-- Sub-branch: 408/504 -->
+      <line x1="70" y1="120" x2="70" y2="150" stroke="var(--text2)" stroke-width="1"/>
+      <rect x="10" y="150" width="120" height="35" rx="5" fill="rgba(255,169,77,0.15)" stroke="var(--orange)" stroke-width="1"/>
+      <text x="70" y="172" text-anchor="middle" fill="var(--orange)" font-size="10" font-weight="600">408/504 → timeout</text>
+
+      <!-- Sub-branch: other -->
+      <line x1="170" y1="120" x2="170" y2="150" stroke="var(--text2)" stroke-width="1"/>
+      <rect x="135" y="150" width="120" height="35" rx="5" fill="rgba(177,151,252,0.15)" stroke="var(--purple)" stroke-width="1"/>
+      <text x="195" y="172" text-anchor="middle" fill="var(--purple)" font-size="10" font-weight="600">other → provider</text>
+
+      <!-- Branch: McpError -->
+      <line x1="440" y1="45" x2="440" y2="80" stroke="var(--text2)" stroke-width="1.2"/>
+      <rect x="340" y="80" width="200" height="40" rx="6" fill="rgba(108,140,255,0.1)" stroke="var(--accent)" stroke-width="1"/>
+      <text x="440" y="97" text-anchor="middle" class="flow-label" font-size="11">McpError</text>
+      <text x="440" y="113" text-anchor="middle" class="flow-detail">MCP protocol error</text>
+
+      <!-- Sub-branches -->
+      <line x1="370" y1="120" x2="340" y2="150" stroke="var(--text2)" stroke-width="1"/>
+      <rect x="270" y="150" width="140" height="35" rx="5" fill="rgba(255,169,77,0.15)" stroke="var(--orange)" stroke-width="1"/>
+      <text x="340" y="172" text-anchor="middle" fill="var(--orange)" font-size="10" font-weight="600">RequestTimeout</text>
+      <text x="340" y="182" text-anchor="middle" fill="var(--text2)" font-size="9">→ timeout</text>
+
+      <line x1="440" y1="120" x2="440" y2="150" stroke="var(--text2)" stroke-width="1"/>
+      <rect x="420" y="150" width="140" height="35" rx="5" fill="rgba(255,107,107,0.15)" stroke="var(--red)" stroke-width="1"/>
+      <text x="490" y="172" text-anchor="middle" fill="var(--red)" font-size="10" font-weight="600">InvalidParams</text>
+      <text x="490" y="182" text-anchor="middle" fill="var(--text2)" font-size="9">→ validation</text>
+
+      <line x1="510" y1="120" x2="570" y2="150" stroke="var(--text2)" stroke-width="1"/>
+      <rect x="560" y="150" width="130" height="35" rx="5" fill="rgba(177,151,252,0.15)" stroke="var(--purple)" stroke-width="1"/>
+      <text x="625" y="172" text-anchor="middle" fill="var(--purple)" font-size="10" font-weight="600">MethodNotFound</text>
+      <text x="625" y="182" text-anchor="middle" fill="var(--text2)" font-size="9">→ not_found</text>
+
+      <!-- Branch: generic Error -->
+      <line x1="530" y1="45" x2="760" y2="80" stroke="var(--text2)" stroke-width="1.2"/>
+      <rect x="660" y="80" width="200" height="40" rx="6" fill="rgba(108,140,255,0.1)" stroke="var(--accent)" stroke-width="1"/>
+      <text x="760" y="97" text-anchor="middle" class="flow-label" font-size="11">Generic Error</text>
+      <text x="760" y="113" text-anchor="middle" class="flow-detail">JS runtime error</text>
+
+      <line x1="710" y1="120" x2="710" y2="150" stroke="var(--text2)" stroke-width="1"/>
+      <rect x="650" y="150" width="120" height="35" rx="5" fill="rgba(255,169,77,0.15)" stroke="var(--orange)" stroke-width="1"/>
+      <text x="710" y="168" text-anchor="middle" fill="var(--orange)" font-size="10" font-weight="600">"timed out"</text>
+      <text x="710" y="178" text-anchor="middle" fill="var(--text2)" font-size="9">→ timeout</text>
+
+      <line x1="810" y1="120" x2="810" y2="150" stroke="var(--text2)" stroke-width="1"/>
+      <rect x="780" y="150" width="100" height="35" rx="5" fill="rgba(177,151,252,0.15)" stroke="var(--purple)" stroke-width="1"/>
+      <text x="830" y="172" text-anchor="middle" fill="var(--purple)" font-size="10" font-weight="600">other</text>
+      <text x="830" y="182" text-anchor="middle" fill="var(--text2)" font-size="9">→ provider</text>
+
+      <!-- What each type means -->
+      <text x="450" y="240" text-anchor="middle" fill="var(--text)" font-size="13" font-weight="600">What the agent does with each type:</text>
+
+      <rect x="30" y="260" width="200" height="60" rx="6" fill="rgba(255,169,77,0.08)" stroke="var(--orange)" stroke-width="1"/>
+      <text x="130" y="280" text-anchor="middle" fill="var(--orange)" font-size="11" font-weight="600">timeout</text>
+      <text x="130" y="298" text-anchor="middle" fill="var(--text2)" font-size="10">Retry makes sense.</text>
+      <text x="130" y="311" text-anchor="middle" fill="var(--text2)" font-size="10">Server might recover.</text>
+
+      <rect x="250" y="260" width="200" height="60" rx="6" fill="rgba(255,107,107,0.08)" stroke="var(--red)" stroke-width="1"/>
+      <text x="350" y="280" text-anchor="middle" fill="var(--red)" font-size="11" font-weight="600">validation</text>
+      <text x="350" y="298" text-anchor="middle" fill="var(--text2)" font-size="10">Fix arguments first.</text>
+      <text x="350" y="311" text-anchor="middle" fill="var(--text2)" font-size="10">Retry is pointless.</text>
+
+      <rect x="470" y="260" width="200" height="60" rx="6" fill="rgba(177,151,252,0.08)" stroke="var(--purple)" stroke-width="1"/>
+      <text x="570" y="280" text-anchor="middle" fill="var(--purple)" font-size="11" font-weight="600">provider</text>
+      <text x="570" y="298" text-anchor="middle" fill="var(--text2)" font-size="10">Server-side issue.</text>
+      <text x="570" y="311" text-anchor="middle" fill="var(--text2)" font-size="10">Inform user, try alt tool.</text>
+
+      <rect x="690" y="260" width="200" height="60" rx="6" fill="rgba(247,131,172,0.08)" stroke="var(--pink)" stroke-width="1"/>
+      <text x="790" y="280" text-anchor="middle" fill="var(--pink)" font-size="11" font-weight="600">not_found</text>
+      <text x="790" y="298" text-anchor="middle" fill="var(--text2)" font-size="10">Tool doesn't exist on server.</text>
+      <text x="790" y="311" text-anchor="middle" fill="var(--text2)" font-size="10">Maybe server restarted.</text>
+    </svg>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 6: OAUTH                                             -->
+<!-- ============================================================ -->
+<section class="section" id="oauth">
+  <h2 class="section-title">OAuth Flow</h2>
+
+  <div class="explainer">
+    <h3>How do MCP servers authenticate?</h3>
+    <p>Some MCP servers (like Gmail) need OAuth to access user data. The flow: our agent tries to connect → server says "unauthorized" → we open a browser for the user to log in → browser redirects back to our local callback server with an auth code → we exchange the code for tokens → reconnect. Tokens are saved to disk so you only authenticate once.</p>
+    <div class="callout warn">Since our agent runs as a <strong>Hono server and Slack bot</strong> (not just CLI), OAuth tokens stored as plaintext JSON on the server filesystem are a real concern. Any process on that machine, or any vulnerability that allows file reads, exposes access tokens to Gmail and other services. Wonderlands encrypts tokens at rest with <code>MCP_SECRET_ENCRYPTION_KEY</code> — we should do the same.</div>
+  </div>
+
+  <div class="diagram">
+    <div class="diagram-title">OAuth authorization code flow (our implementation)</div>
+    <svg width="1000" height="520" viewBox="0 0 1000 520">
+      <!-- Actors -->
+      <rect x="40" y="10" width="100" height="30" class="seq-actor"/>
+      <text x="90" y="30" text-anchor="middle" class="flow-label" font-size="11">McpService</text>
+      <line x1="90" y1="40" x2="90" y2="500" class="seq-line"/>
+
+      <rect x="220" y="10" width="100" height="30" class="seq-actor"/>
+      <text x="270" y="30" text-anchor="middle" class="flow-label" font-size="11">Transport</text>
+      <line x1="270" y1="40" x2="270" y2="500" class="seq-line"/>
+
+      <rect x="400" y="10" width="120" height="30" class="seq-actor"/>
+      <text x="460" y="30" text-anchor="middle" class="flow-label" font-size="11">MCP Server</text>
+      <line x1="460" y1="40" x2="460" y2="500" class="seq-line"/>
+
+      <rect x="580" y="10" width="120" height="30" class="seq-actor"/>
+      <text x="640" y="30" text-anchor="middle" class="flow-label" font-size="11">Callback Server</text>
+      <line x1="640" y1="40" x2="640" y2="500" class="seq-line"/>
+
+      <rect x="760" y="10" width="100" height="30" class="seq-actor"/>
+      <text x="810" y="30" text-anchor="middle" class="flow-label" font-size="11">Browser</text>
+      <line x1="810" y1="40" x2="810" y2="500" class="seq-line"/>
+
+      <!-- Step 1: try connect -->
+      <line x1="90" y1="70" x2="265" y2="70" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="178" y="65" text-anchor="middle" class="seq-label">client.connect(transport)</text>
+
+      <line x1="270" y1="95" x2="455" y2="95" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="362" y="90" text-anchor="middle" class="seq-label">HTTP request</text>
+
+      <!-- Step 2: unauthorized -->
+      <line x1="455" y1="120" x2="95" y2="120" class="seq-msg error" marker-end="url(#arrowred)"/>
+      <text x="275" y="115" text-anchor="middle" class="seq-label" fill="var(--red)">throws UnauthorizedError</text>
+
+      <!-- Step 3: cleanup -->
+      <rect x="40" y="138" width="100" height="20" rx="4" fill="rgba(108,140,255,0.1)" stroke="var(--accent)" stroke-width="1"/>
+      <text x="90" y="152" text-anchor="middle" fill="var(--accent)" font-size="9">client.close()</text>
+
+      <!-- Step 4: start callback server -->
+      <line x1="90" y1="175" x2="635" y2="175" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="362" y="170" text-anchor="middle" class="seq-label">waitForOAuthCallback(port: 8090)</text>
+
+      <rect x="585" y="185" width="110" height="20" rx="4" fill="rgba(105,219,124,0.1)" stroke="var(--green)" stroke-width="1"/>
+      <text x="640" y="199" text-anchor="middle" fill="var(--green)" font-size="9">listening on :8090</text>
+
+      <!-- Step 5: open browser -->
+      <line x1="90" y1="225" x2="805" y2="225" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="448" y="220" text-anchor="middle" class="seq-label">open browser → authorization URL</text>
+      <text x="448" y="235" text-anchor="middle" class="flow-detail">(via redirectToAuthorization in OAuthProvider)</text>
+
+      <!-- Step 6: user authorizes -->
+      <rect x="760" y="250" width="100" height="25" rx="4" fill="rgba(255,213,59,0.1)" stroke="var(--yellow)" stroke-width="1"/>
+      <text x="810" y="267" text-anchor="middle" fill="var(--yellow)" font-size="9">User logs in</text>
+
+      <!-- Step 7: redirect to callback -->
+      <line x1="810" y1="295" x2="645" y2="295" class="seq-msg success" marker-end="url(#arrowgreen)"/>
+      <text x="728" y="290" text-anchor="middle" class="seq-label" fill="var(--green)">redirect → /callback?code=xyz</text>
+
+      <!-- Step 8: callback returns code -->
+      <line x1="640" y1="320" x2="95" y2="320" class="seq-msg success" marker-end="url(#arrowgreen)"/>
+      <text x="362" y="315" text-anchor="middle" class="seq-label" fill="var(--green)">resolve({ code: "xyz" })</text>
+
+      <!-- Step 9: finish auth -->
+      <line x1="90" y1="350" x2="265" y2="350" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="178" y="345" text-anchor="middle" class="seq-label">transport.finishAuth(code)</text>
+
+      <!-- Step 10: tokens saved -->
+      <rect x="40" y="365" width="180" height="20" rx="4" fill="rgba(108,140,255,0.1)" stroke="var(--accent)" stroke-width="1"/>
+      <text x="130" y="379" text-anchor="middle" fill="var(--accent)" font-size="9">Tokens saved to data/mcp-oauth/{name}/</text>
+
+      <!-- Step 11: fresh connect -->
+      <rect x="40" y="400" width="180" height="20" rx="4" fill="rgba(105,219,124,0.1)" stroke="var(--green)" stroke-width="1"/>
+      <text x="130" y="414" text-anchor="middle" fill="var(--green)" font-size="9">Create fresh client + transport</text>
+
+      <line x1="90" y1="435" x2="265" y2="435" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="178" y="430" text-anchor="middle" class="seq-label">freshClient.connect(freshTransport)</text>
+
+      <line x1="270" y1="455" x2="455" y2="455" class="seq-msg" marker-end="url(#arrowhead2)"/>
+      <text x="362" y="450" text-anchor="middle" class="seq-label">HTTP (now with tokens)</text>
+
+      <line x1="455" y1="475" x2="95" y2="475" class="seq-msg success" marker-end="url(#arrowgreen)"/>
+      <text x="275" y="470" text-anchor="middle" class="seq-label" fill="var(--green)">Connected!</text>
+
+      <!-- Timeout annotation -->
+      <rect x="690" y="175" width="90" height="110" rx="4" fill="none" stroke="var(--orange)" stroke-width="1" stroke-dasharray="3,3"/>
+      <text x="735" y="195" text-anchor="middle" fill="var(--orange)" font-size="8">5 min timeout</text>
+      <text x="735" y="207" text-anchor="middle" fill="var(--text2)" font-size="8">for user to</text>
+      <text x="735" y="219" text-anchor="middle" fill="var(--text2)" font-size="8">complete login</text>
+
+      <!-- File storage annotation -->
+      <rect x="850" y="365" width="140" height="70" rx="4" fill="rgba(108,140,255,0.05)" stroke="var(--border)" stroke-width="1"/>
+      <text x="920" y="385" text-anchor="middle" fill="var(--text2)" font-size="9">data/mcp-oauth/gmail/</text>
+      <text x="920" y="398" text-anchor="middle" fill="var(--text2)" font-size="9">  tokens.json</text>
+      <text x="920" y="411" text-anchor="middle" fill="var(--text2)" font-size="9">  client-info.json</text>
+      <text x="920" y="424" text-anchor="middle" fill="var(--text2)" font-size="9">  verifier.txt</text>
+    </svg>
+  </div>
+
+  <div class="comparison">
+    <div class="card gap">
+      <div class="card-header">Our OAuth <span class="tag missing">Needs encryption</span></div>
+      <ul>
+        <li>File-based storage in <code>data/mcp-oauth/{server}/</code></li>
+        <li>PKCE support (code verifier saved to disk)</li>
+        <li>Browser auto-open (macOS/Linux/Windows)</li>
+        <li>5-minute timeout on callback</li>
+        <li>Tokens stored as <strong>plaintext JSON</strong> — exposed to any server process</li>
+        <li>Single auth mode: Authorization Code</li>
+        <li>Browser OAuth doesn't work headlessly (server/Slack modes)</li>
+      </ul>
+    </div>
+    <div class="card ref">
+      <div class="card-header">Wonderlands OAuth <span class="tag ref">Production-grade</span></div>
+      <ul>
+        <li>DB-backed with <strong>encryption</strong> (AES via secretBox)</li>
+        <li>5 auth modes: bearer, auth code, client credentials, private key JWT, static JWT</li>
+        <li>Per-tenant/per-account credential scoping</li>
+        <li>15-minute TTL on authorization state (auto-cleanup)</li>
+        <li>Discovery state caching</li>
+        <li>Token check before connect — skip OAuth if tokens exist</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 7: SERVER STATUS MODEL                               -->
+<!-- ============================================================ -->
+<section class="section" id="status">
+  <h2 class="section-title">Server Status Model</h2>
+
+  <div class="explainer">
+    <h3>Why a status model?</h3>
+    <p>Currently, we track servers with a binary flag: either they're in the <code>servers</code> Map (connected) or not. This means we can't distinguish between "server connected but tool discovery failed" and "server fully ready". The Wonderlands model uses 4 distinct states with transitions, making failures visible and actionable.</p>
+  </div>
+
+  <div class="diagram">
+    <div class="diagram-title">Server status state machine — what to implement</div>
+    <svg width="900" height="400" viewBox="0 0 900 400">
+      <!-- States -->
+      <!-- Disconnected (initial) -->
+      <circle cx="100" cy="200" r="40" fill="var(--surface2)" stroke="var(--text2)" stroke-width="2"/>
+      <text x="100" y="197" text-anchor="middle" fill="var(--text2)" font-size="11" font-weight="600">(none)</text>
+      <text x="100" y="212" text-anchor="middle" fill="var(--text2)" font-size="9">not in map</text>
+
+      <!-- Connecting -->
+      <rect x="220" y="170" width="140" height="60" rx="30" fill="var(--surface2)" stroke="var(--yellow)" stroke-width="2"/>
+      <text x="290" y="197" text-anchor="middle" fill="var(--yellow)" font-size="12" font-weight="600">connecting</text>
+      <text x="290" y="213" text-anchor="middle" fill="var(--text2)" font-size="9">transport starting</text>
+
+      <!-- Ready -->
+      <rect x="440" y="90" width="140" height="60" rx="30" fill="var(--surface2)" stroke="var(--green)" stroke-width="2.5"/>
+      <text x="510" y="117" text-anchor="middle" fill="var(--green)" font-size="12" font-weight="600">ready</text>
+      <text x="510" y="133" text-anchor="middle" fill="var(--text2)" font-size="9">tools discovered</text>
+
+      <!-- Degraded -->
+      <rect x="440" y="200" width="140" height="60" rx="30" fill="var(--surface2)" stroke="var(--red)" stroke-width="2"/>
+      <text x="510" y="227" text-anchor="middle" fill="var(--red)" font-size="12" font-weight="600">degraded</text>
+      <text x="510" y="243" text-anchor="middle" fill="var(--text2)" font-size="9">lastError set</text>
+
+      <!-- Auth Required -->
+      <rect x="440" y="310" width="180" height="60" rx="30" fill="var(--surface2)" stroke="var(--pink)" stroke-width="2"/>
+      <text x="530" y="337" text-anchor="middle" fill="var(--pink)" font-size="12" font-weight="600">authorization_required</text>
+      <text x="530" y="353" text-anchor="middle" fill="var(--text2)" font-size="9">needs OAuth</text>
+
+      <!-- Transitions -->
+      <!-- none → connecting -->
+      <line x1="140" y1="200" x2="218" y2="200" class="flow-arrow" marker-end="url(#arrowhead)"/>
+      <text x="179" y="192" text-anchor="middle" fill="var(--text2)" font-size="9">connect()</text>
+
+      <!-- connecting → ready -->
+      <path d="M 360 180 Q 400 140 440 120" fill="none" class="flow-arrow" marker-end="url(#arrowhead)"/>
+      <text x="385" y="140" text-anchor="middle" fill="var(--green)" font-size="9">success</text>
+
+      <!-- connecting → degraded -->
+      <line x1="360" y1="210" x2="438" y2="225" class="flow-arrow" marker-end="url(#arrowhead)"/>
+      <text x="395" y="210" text-anchor="middle" fill="var(--red)" font-size="9">error</text>
+
+      <!-- connecting → auth_required -->
+      <path d="M 330 230 Q 380 300 440 335" fill="none" class="flow-arrow" marker-end="url(#arrowhead)"/>
+      <text x="360" y="290" text-anchor="middle" fill="var(--pink)" font-size="9">401 / UnauthorizedError</text>
+
+      <!-- refresh loops -->
+      <path d="M 580 120 Q 700 120 700 200 Q 700 180 580 210" fill="none" stroke="var(--text2)" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arrowhead)"/>
+      <text x="720" y="165" text-anchor="middle" fill="var(--text2)" font-size="9">refresh()</text>
+
+      <path d="M 580 230 Q 660 230 660 170 Q 660 150 580 130" fill="none" stroke="var(--green)" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arrowgreen)"/>
+      <text x="680" y="180" text-anchor="middle" fill="var(--green)" font-size="9">retry ok</text>
+
+      <!-- auth_required → connecting (after OAuth) -->
+      <path d="M 530 310 Q 530 280 440 260" fill="none" stroke="var(--text2)" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arrowhead)"/>
+      <text x="510" y="278" text-anchor="middle" fill="var(--text2)" font-size="8">after OAuth</text>
+
+      <!-- Tool call check -->
+      <rect x="700" y="80" width="180" height="80" rx="8" fill="rgba(105,219,124,0.05)" stroke="var(--green)" stroke-width="1"/>
+      <text x="790" y="103" text-anchor="middle" fill="var(--green)" font-size="11" font-weight="600">Before tool call:</text>
+      <text x="790" y="122" text-anchor="middle" fill="var(--text2)" font-size="10">if status !== 'ready'</text>
+      <text x="790" y="137" text-anchor="middle" fill="var(--text2)" font-size="10">  → return typed error</text>
+      <text x="790" y="152" text-anchor="middle" fill="var(--text2)" font-size="10">  (don't even try)</text>
+    </svg>
+  </div>
+
+  <div class="comparison">
+    <div class="card gap">
+      <div class="card-header">What to add to ConnectedServer <span class="tag missing">Implement</span></div>
+      <pre>// src/infra/mcp.ts — update the interface:
+
+type McpServerStatus =
+  | 'connecting'
+  | 'ready'
+  | 'degraded'
+  | 'authorization_required';
+
+interface ConnectedServer {
+  client: Client;
+  transport: Transport;
+  config: McpServerConfig;
+  status: McpServerStatus;     // NEW
+  lastError: string | null;    // NEW
+}
+
+// In the handler, before calling the server:
+if (srv.status !== 'ready') {
+  return toolError(
+    `MCP server "${serverName}" is ${srv.status}` +
+    (srv.lastError ? `: ${srv.lastError}` : '')
+  );
+}</pre>
+    </div>
+    <div class="card ref">
+      <div class="card-header">Wonderlands ConnectedServerState <span class="tag ref">Reference</span></div>
+      <pre>// adapters/mcp/gateway.ts:65-76
+
+interface ConnectedServerState {
+  client: Client | null;
+  connectionKey: string;
+  discoveredToolCount: number;
+  inFlight: Map&lt;string, InFlightCorrelation&gt;;
+  lastError: string | null;
+  registeredToolCount: number;
+  registration: ServerRegistration;
+  scope: TenantScope | null;
+  status: McpServerStatus;
+  transport: StdioClientTransport
+    | StreamableHTTPClientTransport | null;
+}</pre>
+      <p>They also track <code>inFlight</code> tool calls per-server for correlation/observability, and <code>discoveredToolCount</code> vs <code>registeredToolCount</code> to detect partial failures.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 8: IMPLEMENTATION PLAN                               -->
+<!-- ============================================================ -->
+<section class="section" id="plan">
+  <h2 class="section-title">Implementation Plan</h2>
+
+  <div class="explainer">
+    <h3>Prioritized roadmap</h3>
+    <p>Each item is ordered by impact-to-effort ratio. The first three are small changes with big safety wins. The later items add polish and resilience.</p>
+  </div>
+
+  <div class="diagram">
+    <div class="diagram-title">Implementation priority matrix</div>
+    <svg width="800" height="440" viewBox="0 0 800 440">
+      <!-- Axes -->
+      <line x1="100" y1="390" x2="780" y2="390" stroke="var(--text2)" stroke-width="1.5"/>
+      <line x1="100" y1="390" x2="100" y2="30" stroke="var(--text2)" stroke-width="1.5"/>
+
+      <text x="440" y="430" text-anchor="middle" fill="var(--text2)" font-size="12">Implementation Effort →</text>
+      <text x="60" y="210" text-anchor="middle" fill="var(--text2)" font-size="12" transform="rotate(-90 60 210)">Safety Impact →</text>
+
+      <!-- Grid lines -->
+      <line x1="100" y1="210" x2="780" y2="210" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="3,3"/>
+      <line x1="440" y1="30" x2="440" y2="390" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="3,3"/>
+
+      <!-- Quadrant labels -->
+      <text x="270" y="55" text-anchor="middle" fill="var(--green)" font-size="11" font-weight="600" opacity="0.5">HIGH IMPACT / LOW EFFORT</text>
+      <text x="270" y="70" text-anchor="middle" fill="var(--green)" font-size="10" opacity="0.3">Do these first!</text>
+
+      <text x="610" y="55" text-anchor="middle" fill="var(--orange)" font-size="11" font-weight="600" opacity="0.5">HIGH IMPACT / HIGH EFFORT</text>
+      <text x="610" y="70" text-anchor="middle" fill="var(--orange)" font-size="10" opacity="0.3">Plan carefully</text>
+
+      <!-- Items as bubbles -->
+      <!-- 1. Size limits (high impact, low effort) -->
+      <circle cx="200" cy="95" r="35" fill="rgba(255,107,107,0.15)" stroke="var(--red)" stroke-width="2"/>
+      <text x="200" y="90" text-anchor="middle" fill="var(--red)" font-size="10" font-weight="600">Size</text>
+      <text x="200" y="103" text-anchor="middle" fill="var(--red)" font-size="10" font-weight="600">Limits</text>
+
+      <!-- 2. Schema validation (high impact, low effort) -->
+      <circle cx="300" cy="110" r="28" fill="rgba(255,107,107,0.15)" stroke="var(--red)" stroke-width="2"/>
+      <text x="300" y="106" text-anchor="middle" fill="var(--red)" font-size="9" font-weight="600">Schema</text>
+      <text x="300" y="119" text-anchor="middle" fill="var(--red)" font-size="9" font-weight="600">Valid.</text>
+
+      <!-- 3. Tool allow-lists (NEW - high impact, medium effort) -->
+      <circle cx="380" cy="90" r="33" fill="rgba(255,107,107,0.15)" stroke="var(--red)" stroke-width="2"/>
+      <text x="380" y="83" text-anchor="middle" fill="var(--red)" font-size="9" font-weight="600">Tool</text>
+      <text x="380" y="96" text-anchor="middle" fill="var(--red)" font-size="9" font-weight="600">Allow-</text>
+      <text x="380" y="109" text-anchor="middle" fill="var(--red)" font-size="9" font-weight="600">Lists</text>
+
+      <!-- 4. Error classification (high impact, medium effort) -->
+      <circle cx="470" cy="130" r="30" fill="rgba(255,169,77,0.15)" stroke="var(--orange)" stroke-width="2"/>
+      <text x="470" y="126" text-anchor="middle" fill="var(--orange)" font-size="10" font-weight="600">Error</text>
+      <text x="470" y="139" text-anchor="middle" fill="var(--orange)" font-size="10" font-weight="600">Classify</text>
+
+      <!-- 5. Token encryption (NEW - medium impact, medium effort) -->
+      <circle cx="540" cy="170" r="28" fill="rgba(255,169,77,0.15)" stroke="var(--orange)" stroke-width="2"/>
+      <text x="540" y="166" text-anchor="middle" fill="var(--orange)" font-size="9" font-weight="600">Token</text>
+      <text x="540" y="179" text-anchor="middle" fill="var(--orange)" font-size="9" font-weight="600">Encrypt</text>
+
+      <!-- 6. Server status (medium impact, medium effort) -->
+      <circle cx="450" cy="220" r="26" fill="rgba(177,151,252,0.15)" stroke="var(--purple)" stroke-width="2"/>
+      <text x="450" y="216" text-anchor="middle" fill="var(--purple)" font-size="9" font-weight="600">Server</text>
+      <text x="450" y="229" text-anchor="middle" fill="var(--purple)" font-size="9" font-weight="600">Status</text>
+
+      <!-- 7. Fingerprinting (medium impact for multi-mode) -->
+      <circle cx="340" cy="230" r="24" fill="rgba(177,151,252,0.15)" stroke="var(--purple)" stroke-width="1.5"/>
+      <text x="340" y="226" text-anchor="middle" fill="var(--purple)" font-size="9" font-weight="600">Finger-</text>
+      <text x="340" y="239" text-anchor="middle" fill="var(--purple)" font-size="9" font-weight="600">print</text>
+
+      <!-- 8. Tracing (lower impact, low effort) -->
+      <circle cx="200" cy="290" r="22" fill="rgba(105,219,124,0.15)" stroke="var(--green)" stroke-width="1.5"/>
+      <text x="200" y="294" text-anchor="middle" fill="var(--green)" font-size="9" font-weight="600">Tracing</text>
+
+      <!-- 9. Sampling controls (NEW - medium impact, low effort) -->
+      <circle cx="290" cy="300" r="24" fill="rgba(105,219,124,0.15)" stroke="var(--green)" stroke-width="1.5"/>
+      <text x="290" y="295" text-anchor="middle" fill="var(--green)" font-size="8" font-weight="600">Sampling</text>
+      <text x="290" y="308" text-anchor="middle" fill="var(--green)" font-size="8" font-weight="600">Controls</text>
+
+      <!-- 10. PID tracking (low impact, low effort) -->
+      <circle cx="160" cy="350" r="18" fill="rgba(108,140,255,0.15)" stroke="var(--accent)" stroke-width="1"/>
+      <text x="160" y="354" text-anchor="middle" fill="var(--accent)" font-size="9" font-weight="600">PIDs</text>
+
+      <!-- Annotations for new items -->
+      <text x="380" y="135" text-anchor="middle" fill="var(--red)" font-size="8">NEW: Slack safety</text>
+      <text x="545" y="205" text-anchor="middle" fill="var(--orange)" font-size="8">NEW: server deploy</text>
+      <text x="290" y="335" text-anchor="middle" fill="var(--green)" font-size="8">NEW: cost control</text>
+    </svg>
+  </div>
+
+  <div class="card" style="border-left: 3px solid var(--accent);">
+    <div class="card-header">Step-by-step implementation guide</div>
+    <ol class="checklist">
+      <li>
+        <span class="priority high">HIGH</span>
+        <div>
+          <strong>Add output size limits</strong> — in <code>mapMcpContent()</code> (mcp.ts:57)<br>
+          <span style="color: var(--text2)">Add <code>MAX_RESOURCE_TEXT_BYTES = 32_768</code> and <code>MAX_TOOL_OUTPUT_BYTES = 131_072</code> constants. Check each content block size. Reject inline binary (blob) resources. Check total output size after mapping all blocks. Critical for server/Slack where responses affect shared context. ~30 lines.</span>
+        </div>
+      </li>
+      <li>
+        <span class="priority high">HIGH</span>
+        <div>
+          <strong>Validate responses with CallToolResultSchema</strong> — in handler (mcp.ts:299)<br>
+          <span style="color: var(--text2)">Import <code>CallToolResultSchema</code> from <code>@modelcontextprotocol/sdk/types.js</code>. Pass it as the second argument to <code>client.callTool()</code>. The SDK will validate the response structure before returning it. One-line change.</span>
+        </div>
+      </li>
+      <li>
+        <span class="priority high">HIGH</span>
+        <div>
+          <strong>Per-entry-point tool allow-lists</strong> — in <code>mcp.json</code> config + <code>registerTools()</code><br>
+          <span style="color: var(--text2)">Add an <code>allowedModes?: ("cli" | "server" | "slack")[]</code> field to <code>McpServerConfig</code>. During <code>registerTools()</code>, skip servers not allowed for the current mode (pass mode from entry point through bootstrap). This prevents Slack users from triggering filesystem or database MCP tools. Default: all modes. ~25 lines.</span>
+        </div>
+      </li>
+      <li>
+        <span class="priority med">MED</span>
+        <div>
+          <strong>Create error classifier</strong> — new file <code>src/infra/mcp-errors.ts</code><br>
+          <span style="color: var(--text2)">Import <code>StreamableHTTPError</code> from the SDK. Import <code>McpError</code> and <code>ErrorCode</code>. Write a <code>classifyMcpError(serverName, error)</code> function that returns <code>{ type: 'timeout'|'validation'|'provider'|'not_found', message: string }</code>. Use in the handler's catch block. Especially important for Slack where users see confusing errors. ~40 lines.</span>
+        </div>
+      </li>
+      <li>
+        <span class="priority med">MED</span>
+        <div>
+          <strong>Add server status model</strong> — update <code>ConnectedServer</code> interface (mcp.ts:22)<br>
+          <span style="color: var(--text2)">Add <code>status: McpServerStatus</code> and <code>lastError: string | null</code> fields. Set status during connect flow: 'connecting' → 'ready' or 'degraded' or 'authorization_required'. Check status before tool calls. ~20 lines.</span>
+        </div>
+      </li>
+      <li>
+        <span class="priority med">MED</span>
+        <div>
+          <strong>Encrypt OAuth tokens at rest</strong> — in <code>src/infra/mcp-oauth.ts</code><br>
+          <span style="color: var(--text2)">Add a <code>MCP_SECRET_KEY</code> env var. Use Node's <code>crypto.createCipheriv()</code> / <code>createDecipheriv()</code> (AES-256-GCM) to encrypt <code>tokens.json</code> and <code>client-info.json</code> before writing. This is no longer just a CLI — the server filesystem is shared. Follow Wonderlands pattern from <code>stored-oauth.ts</code>. ~50 lines.</span>
+        </div>
+      </li>
+      <li>
+        <span class="priority med">MED</span>
+        <div>
+          <strong>Add tool fingerprinting</strong> — in <code>registerTools()</code> (mcp.ts:278)<br>
+          <span style="color: var(--text2)">SHA256 hash of <code>JSON.stringify(canonicalize({ name, description, inputSchema }))</code>. Log a warning when a tool's fingerprint changes between runs. Especially important since 3 modes share the same pool — a compromised server affects all entry points. ~25 lines.</span>
+        </div>
+      </li>
+      <li>
+        <span class="priority low">LOW</span>
+        <div>
+          <strong>Pass Langfuse trace context</strong> — in handler (mcp.ts:299)<br>
+          <span style="color: var(--text2)">Get current trace/span from Langfuse. Pass as <code>_meta: { traceparent: "00-{traceId}-{spanId}-01" }</code> in the callTool request. Helps trace slow MCP calls across server/Slack sessions. ~10 lines.</span>
+        </div>
+      </li>
+      <li>
+        <span class="priority low">LOW</span>
+        <div>
+          <strong>Sampling handler cost controls</strong> — in <code>setupSamplingHandler()</code> (mcp.ts:162)<br>
+          <span style="color: var(--text2)">MCP servers can request LLM completions via the sampling handler. Add: max token limit, rate limiting (e.g., 10 calls/minute per server), and a budget ceiling. Without this, any MCP server can trigger unlimited LLM costs through any entry point. ~30 lines.</span>
+        </div>
+      </li>
+      <li>
+        <span class="priority low">LOW</span>
+        <div>
+          <strong>Replace pgrep with PID tracking</strong> — in connect flow (mcp.ts:120)<br>
+          <span style="color: var(--text2)">Remove <code>killStaleMcpRemoteProcesses()</code>. Rely on <code>client.close()</code> for lifecycle management. If needed, store PIDs in a file and only kill those specific processes.</span>
+        </div>
+      </li>
+    </ol>
+  </div>
+
+  <div class="explainer" style="margin-top: 1.5rem;">
+    <h3>What NOT to copy from Wonderlands</h3>
+    <p>Not everything in the reference applies to our multi-mode agent:</p>
+    <ul style="padding-left: 1.2rem; margin-top: 0.5rem;">
+      <li style="color: var(--text2); font-size: 0.85rem; margin-bottom: 0.3rem;">Multi-tenant scoping (tenantId, accountId) — we're single-operator, multiple entry points</li>
+      <li style="color: var(--text2); font-size: 0.85rem; margin-bottom: 0.3rem;">Database persistence of server definitions — config file is fine</li>
+      <li style="color: var(--text2); font-size: 0.85rem; margin-bottom: 0.3rem;">HTTP API routes for server CRUD — we manage via mcp.json</li>
+      <li style="color: var(--text2); font-size: 0.85rem; margin-bottom: 0.3rem;">5 OAuth modes — auth code + bearer is sufficient</li>
+    </ul>
+    <h3 style="margin-top: 1rem;">What we DO need (updated for server/Slack reality)</h3>
+    <ul style="padding-left: 1.2rem; margin-top: 0.5rem;">
+      <li style="color: var(--red); font-size: 0.85rem; margin-bottom: 0.3rem;">Token encryption at rest — this IS a server now, not just local CLI</li>
+      <li style="color: var(--red); font-size: 0.85rem; margin-bottom: 0.3rem;">Per-entry-point tool allow-lists — Slack should NOT access filesystem tools</li>
+      <li style="color: var(--red); font-size: 0.85rem; margin-bottom: 0.3rem;">Confirmation gates for destructive MCP tools (especially from Slack/HTTP)</li>
+      <li style="color: var(--orange); font-size: 0.85rem; margin-bottom: 0.3rem;">Sampling handler cost controls — MCP servers can trigger LLM calls via any entry point</li>
+    </ul>
+    <div class="callout warn">The previous version said "skip token encryption, filesystem IS the trust boundary." That was wrong — our agent is a network-accessible service. Every safety gap scales to the least-trusted entry point (Slack).</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- JavaScript: Tab navigation                                   -->
+<!-- ============================================================ -->
+<script>
+  // Main navigation
+  const nav = document.getElementById('mainNav');
+  nav.addEventListener('click', (e) => {
+    if (e.target.tagName !== 'BUTTON') return;
+    const sectionId = e.target.dataset.section;
+
+    // Update buttons
+    nav.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+
+    // Update sections
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.getElementById(sectionId).classList.add('active');
+  });
+
+  // Inner tabs (if any)
+  document.querySelectorAll('.inner-tabs').forEach(tabBar => {
+    tabBar.addEventListener('click', (e) => {
+      if (e.target.tagName !== 'BUTTON') return;
+      const panelId = e.target.dataset.panel;
+      const container = tabBar.parentElement;
+
+      tabBar.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+
+      container.querySelectorAll('.inner-panel').forEach(p => p.classList.remove('active'));
+      container.querySelector(`#${panelId}`).classList.add('active');
+    });
+  });
+</script>
+
+</body>
+</html>
