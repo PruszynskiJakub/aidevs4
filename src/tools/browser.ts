@@ -10,6 +10,7 @@ import { browserPool, type BrowserSession } from "../infra/browser.ts";
 import { sessionService } from "../agent/session.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength, errorMessage } from "../utils/parse.ts";
+import { resolveHubPlaceholders } from "../utils/hub-fetch.ts";
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -311,15 +312,11 @@ async function click(payload: { css_selector?: string; text?: string }): Promise
   return handlePostAction(session, page, urlBefore, "browser__click");
 }
 
-function resolveValuePlaceholders(value: string): string {
-  return value.replace(/\{\{hub_api_key\}\}/g, config.hub.apiKey);
-}
-
 async function typeText(payload: { selector: string; value: string; press_enter: boolean }): Promise<ToolResult> {
   assertMaxLength(payload.selector, "selector", 500);
   assertMaxLength(payload.value, "value", 5000);
 
-  const resolvedValue = resolveValuePlaceholders(payload.value);
+  const resolvedValue = resolveHubPlaceholders(payload.value, config.hub.apiKey);
 
   const session = getSession();
   const page = await session.getPage();

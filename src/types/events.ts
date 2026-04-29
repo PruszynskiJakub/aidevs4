@@ -1,4 +1,4 @@
-import type { Wait, WaitResolution } from "../agent/wait-descriptor.ts";
+import type { Wait, WaitResolution } from "./wait.ts";
 
 // ── Shared payload types ───────────────────────────────────
 

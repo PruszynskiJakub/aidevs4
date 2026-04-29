@@ -17,9 +17,9 @@ import { bus } from "../infra/events.ts";
 import { createJsonlWriter } from "../infra/log/jsonl.ts";
 import { attachLoggerListener } from "../infra/log/bridge.ts";
 import { buildWorkspaceContext } from "./workspace.ts";
-import type { WaitDescriptor } from "./wait-descriptor.ts";
+import type { WaitDescriptor } from "../types/wait.ts";
 import type { RunExit } from "./run-exit.ts";
-import { getErrorMessage } from "../utils/errors.ts";
+import { errorMessage } from "../utils/parse.ts";
 import * as dbOps from "../infra/db/index.ts";
 import {
   emitRunStarted, emitAgentStarted, emitTurnStarted, emitTurnCompleted,
@@ -203,7 +203,7 @@ function recordToolOutcome(
     return isError ? "failed" : "succeeded";
   }
 
-  const errorMsg = getErrorMessage(outcome.reason);
+  const errorMsg = errorMessage(outcome.reason);
   emitToolFailed({ ...base, durationMs: 0, error: errorMsg });
   state.messages.push({
     role: "tool",
@@ -454,7 +454,7 @@ export async function runAgent(
         iterations: state.iteration + 1,
         runDurationMs: performance.now() - runStartTime,
         tokens: state.tokens,
-        error: getErrorMessage(err),
+        error: errorMessage(err),
       });
       throw err;
     } finally {

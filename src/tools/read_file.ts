@@ -1,10 +1,10 @@
-import { createHash } from "crypto";
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import { sandbox as files } from "../infra/sandbox.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
+import { md5 } from "../utils/hash.ts";
 
 async function read_file(args: Record<string, unknown>): Promise<ToolResult> {
   validateKeys(args);
@@ -24,7 +24,7 @@ async function read_file(args: Record<string, unknown>): Promise<ToolResult> {
   await files.checkFileSize(filePath);
 
   const content = await files.readText(filePath);
-  const checksum = createHash("md5").update(content).digest("hex");
+  const checksum = md5(content);
   const allLines = content.split("\n");
   const totalLines = allLines.length;
 

@@ -1,4 +1,11 @@
 /**
+ * Replace {{hub_api_key}} (and similar) template placeholders in a string.
+ */
+export function resolveHubPlaceholders(value: string, apiKey: string): string {
+  return value.replace(/\{\{hub_api_key\}\}/g, apiKey);
+}
+
+/**
  * Coerce unknown response value to string for tool result text or error messages.
  */
 export function stringify(value: unknown): string {

@@ -1,4 +1,4 @@
-import type { WaitDescriptor } from "./wait-descriptor.ts";
+import type { WaitDescriptor } from "../types/wait.ts";
 
 /**
  * The typed union of outcomes for a single `executeRun()` attempt.

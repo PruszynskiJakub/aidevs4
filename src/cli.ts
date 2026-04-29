@@ -5,7 +5,7 @@ import { initServices, shutdownServices, installSignalHandlers } from "./infra/b
 import { takePendingConfirmation } from "./agent/confirmation.ts";
 import * as dbOps from "./infra/db/index.ts";
 import type { RunExit } from "./agent/run-exit.ts";
-import type { WaitDescriptor } from "./agent/wait-descriptor.ts";
+import type { WaitDescriptor } from "./types/wait.ts";
 import type { ExecuteRunResult } from "./agent/orchestrator.ts";
 import type { Decision } from "./types/tool.ts";
 import * as readline from "node:readline/promises";

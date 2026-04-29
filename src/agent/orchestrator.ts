@@ -13,7 +13,7 @@ import type { RunExit } from "./run-exit.ts";
 import { emptyMemoryState } from "../types/memory.ts";
 import { loadState } from "./memory/persistence.ts";
 import { resumeRun } from "./resume-run.ts";
-import { getErrorMessage } from "../utils/errors.ts";
+import { errorMessage } from "../utils/parse.ts";
 import * as dbOps from "../infra/db/index.ts";
 
 // ── Types ──────────────────────────────────────────────────
@@ -164,7 +164,7 @@ function persistRunExit(runId: string, exit: RunExit): void {
 
 function kickChildRunAsync(parentRunId: string, childRunId: string): void {
   startChildRun(childRunId).catch((err) => {
-    const errMsg = getErrorMessage(err);
+    const errMsg = errorMessage(err);
     log.error(`[orchestrator] Child run ${childRunId} failed to start: ${errMsg}`);
     resumeRun(parentRunId, {
       kind: "child_run",
@@ -172,7 +172,7 @@ function kickChildRunAsync(parentRunId: string, childRunId: string): void {
       result: `Child run failed to start: ${errMsg}`,
     }).catch((resumeErr) => {
       log.error(
-        `[orchestrator] Failed to resume parent ${parentRunId} after child start failure: ${getErrorMessage(resumeErr)}`,
+        `[orchestrator] Failed to resume parent ${parentRunId} after child start failure: ${errorMessage(resumeErr)}`,
       );
     });
   });
@@ -231,7 +231,7 @@ export async function runAndPersist(state: RunState): Promise<ExecuteRunResult> 
 
     return { exit, sessionId, runId };
   } catch (err) {
-    const errorMsg = getErrorMessage(err);
+    const errorMsg = errorMessage(err);
     dbOps.updateRunStatus(runId, { status: "failed", error: errorMsg, exitKind: "failed" });
     return {
       exit: { kind: "failed", error: { message: errorMsg, cause: err } },

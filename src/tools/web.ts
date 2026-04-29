@@ -6,6 +6,7 @@ import { sandbox as files } from "../infra/sandbox.ts";
 import { sessionService } from "../agent/session.ts";
 import { config } from "../config";
 import { safeFilename, assertMaxLength } from "../utils/parse.ts";
+import { resolveHubPlaceholders } from "../utils/hub-fetch.ts";
 import { inferCategory, inferMimeType } from "../utils/media-types.ts";
 import { condense } from "../infra/condense.ts";
 import { scrapeUrl } from "../infra/serper.ts";
@@ -26,7 +27,7 @@ async function download(payload: { url: string; filename: string }): Promise<Too
   assertMaxLength(payload.filename, "filename", 255);
   safeFilename(payload.filename);
 
-  const resolvedUrl = payload.url.replace("{{hub_api_key}}", config.hub.apiKey);
+  const resolvedUrl = resolveHubPlaceholders(payload.url, config.hub.apiKey);
 
   let parsed: URL;
   try {

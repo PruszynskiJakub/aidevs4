@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { LLMChatResponse, LLMProvider, LLMToolCall, LLMMessage, LLMAssistantMessage } from "../../src/types/llm.ts";
 import type { RunState } from "../../src/types/run-state.ts";
 import type { RunExit } from "../../src/agent/run-exit.ts";
-import type { WaitResolution } from "../../src/agent/wait-descriptor.ts";
+import type { WaitResolution } from "../../src/types/wait.ts";
 import { emptyMemoryState } from "../../src/types/memory.ts";
 
 // Install our own stub registry before loading any agent/loop modules.

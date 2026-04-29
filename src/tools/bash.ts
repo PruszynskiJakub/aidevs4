@@ -1,22 +1,12 @@
-import { join, resolve } from "path";
+import { resolve } from "path";
 import { $ } from "bun";
 import { z } from "zod";
-import { config } from "../config/index.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
-import { getSessionId } from "../agent/context.ts";
+import { getSessionWorkingDir } from "../agent/session.ts";
 
 const MAX_OUTPUT = 20_000;
-
-function getBashCwd(): string {
-  const sessionId = getSessionId();
-  if (sessionId) {
-    const dateFolder = new Date().toISOString().slice(0, 10);
-    return resolve(join(config.paths.sessionsDir, dateFolder, sessionId));
-  }
-  return resolve(config.paths.sessionsDir);
-}
 
 /**
  * Extract paths that appear as write targets (after >, >>, tee, etc.)
@@ -48,7 +38,7 @@ async function bash(args: Record<string, unknown>): Promise<ToolResult> {
   const rawTimeout = typeof args.timeout === "number" ? args.timeout : 30_000;
   const timeout = Math.max(1000, Math.min(120_000, Math.round(rawTimeout)));
 
-  const cwd = getBashCwd();
+  const cwd = getSessionWorkingDir();
   assertWritesInSessionDir(command, cwd);
 
   const shellPromise = $`bash -c ${command}`.cwd(cwd).quiet().nothrow();

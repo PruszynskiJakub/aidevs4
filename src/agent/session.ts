@@ -199,6 +199,18 @@ function dateFolderNow(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * Resolve the working directory for the current session.
+ * Used by tools that need a per-session CWD (bash, execute_code).
+ */
+export function getSessionWorkingDir(): string {
+  const sessionId = getSessionId();
+  if (sessionId) {
+    return resolve(join(defaultConfig.paths.sessionsDir, dateFolderNow(), sessionId));
+  }
+  return resolve(defaultConfig.paths.sessionsDir);
+}
+
 function createSessionPaths(fileService: FileProvider, sessionsDir: string) {
   let fallbackSessionId: string | undefined;
 

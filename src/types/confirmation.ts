@@ -1,6 +1,6 @@
 import type { LLMToolCall } from "./llm.ts";
 import type { Decision } from "./tool.ts";
-import type { WaitDescriptor } from "../agent/wait-descriptor.ts";
+import type { WaitDescriptor } from "./wait.ts";
 
 export interface ConfirmationRequest {
   toolCallId: string;

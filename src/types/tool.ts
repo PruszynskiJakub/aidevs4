@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { ToolResult } from "./tool-result.ts";
-import type { WaitDescriptor } from "../agent/wait-descriptor.ts";
+import type { WaitDescriptor } from "./wait.ts";
 
 export interface ToolAnnotations {
   readOnlyHint?: boolean;

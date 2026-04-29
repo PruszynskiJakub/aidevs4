@@ -1,6 +1,6 @@
 import { resolve } from "path";
 import matter from "gray-matter";
-import type { AgentConfig } from "../types/assistant.ts";
+import type { AgentConfig } from "../types/agent.ts";
 import type { LLMTool } from "../types/llm.ts";
 import * as fs from "../infra/fs.ts";
 import { config } from "../config/index.ts";

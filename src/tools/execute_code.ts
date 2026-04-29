@@ -5,7 +5,7 @@ import { config } from "../config/index.ts";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
-import { getSessionId } from "../agent/context.ts";
+import { getSessionWorkingDir } from "../agent/session.ts";
 import { startBridge, type BridgeHandle } from "./sandbox/bridge.ts";
 import { generatePrelude } from "./sandbox/prelude.ts";
 
@@ -52,15 +52,6 @@ function sanitizeOutput(
   return sanitized;
 }
 
-function getSessionDir(): string {
-  const sessionId = getSessionId();
-  if (sessionId) {
-    const dateFolder = new Date().toISOString().slice(0, 10);
-    return resolve(join(config.paths.sessionsDir, dateFolder, sessionId));
-  }
-  return resolve(config.paths.sessionsDir);
-}
-
 async function executeCode(args: Record<string, unknown>): Promise<ToolResult> {
   const code = args.code;
   const description = args.description;
@@ -81,7 +72,7 @@ async function executeCode(args: Record<string, unknown>): Promise<ToolResult> {
     typeof args.timeout === "number" ? args.timeout : DEFAULT_TIMEOUT;
   const timeout = Math.max(1000, Math.min(MAX_TIMEOUT, Math.round(rawTimeout)));
 
-  const sessionDir = getSessionDir();
+  const sessionDir = getSessionWorkingDir();
   const projectRoot = resolve(config.paths.projectRoot);
 
   await fs.fsMkdir(sessionDir);

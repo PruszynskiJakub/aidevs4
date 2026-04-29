@@ -1,5 +1,5 @@
 import type { ContentPart, ResourceRef } from "./llm.ts";
-import type { WaitDescriptor } from "../agent/wait-descriptor.ts";
+import type { WaitDescriptor } from "./wait.ts";
 
 export interface ToolResult {
   content: ContentPart[];

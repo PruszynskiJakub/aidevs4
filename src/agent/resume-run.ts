@@ -1,6 +1,6 @@
 import type { LLMMessage, LLMAssistantMessage } from "../types/llm.ts";
 import type { RunState } from "../types/run-state.ts";
-import type { WaitDescriptor, WaitResolution } from "./wait-descriptor.ts";
+import type { WaitDescriptor, WaitResolution } from "../types/wait.ts";
 import type { ExecuteRunResult } from "./orchestrator.ts";
 import type { RunExit } from "./run-exit.ts";
 import type { Decision } from "../types/tool.ts";

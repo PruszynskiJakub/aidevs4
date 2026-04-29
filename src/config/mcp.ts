@@ -1,10 +1,7 @@
-import { join } from "path";
-import { WORKSPACE_DIR } from "./paths.ts";
+import { MCP_CONFIG_PATH } from "./paths.ts";
 import type { McpServerConfig, McpConfig } from "../types/mcp.ts";
 
 export type { McpStdioServer, McpHttpServer, McpServerConfig, McpConfig } from "../types/mcp.ts";
-
-const MCP_CONFIG_PATH = join(WORKSPACE_DIR, "system", "mcp.json");
 
 let cached: McpConfig | null = null;
 

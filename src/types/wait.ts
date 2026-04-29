@@ -8,11 +8,6 @@ export type WaitDescriptor =
       confirmationId: string;
       prompt: string;
     }
-  /**
-   * Reserved placeholder for async child-run delegation. Not triggered
-   * by any code path in this spec — the descriptor exists so resume
-   * logic and persistence formats are future-proof.
-   */
   | {
       kind: "child_run";
       childRunId: string;

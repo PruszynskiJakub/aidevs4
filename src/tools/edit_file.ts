@@ -1,16 +1,12 @@
-import { createHash } from "crypto";
 import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import { sandbox as files } from "../infra/sandbox.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
+import { md5 } from "../utils/hash.ts";
 
 const MAX_STRING_LENGTH = 64 * 1024; // 64 KB
-
-function md5(text: string): string {
-  return createHash("md5").update(text).digest("hex");
-}
 
 function countOccurrences(haystack: string, needle: string): number {
   let count = 0;

@@ -3,7 +3,7 @@ import { resumeRun } from "./resume-run.ts";
 import * as dbOps from "../infra/db/index.ts";
 import type { AgentEvent } from "../types/events.ts";
 import type { DbRun } from "../types/db.ts";
-import type { WaitDescriptor } from "./wait-descriptor.ts";
+import type { WaitDescriptor } from "../types/wait.ts";
 
 /**
  * Register the global continuation subscriber. Called once at process
