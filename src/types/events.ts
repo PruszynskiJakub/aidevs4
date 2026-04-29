@@ -107,6 +107,12 @@ export interface EventBus {
   clear(): void;
 }
 
+import { DomainError } from "./errors.ts";
+
 export const assertNever = (x: never): never => {
-  throw new Error(`Unhandled event variant: ${JSON.stringify(x)}`);
+  throw new DomainError({
+    type: "validation",
+    message: "Unhandled event variant",
+    internalMessage: `Unhandled event variant: ${JSON.stringify(x)}`,
+  });
 };

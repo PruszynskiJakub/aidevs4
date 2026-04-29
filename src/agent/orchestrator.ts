@@ -1,6 +1,4 @@
 import { runAgent } from "./loop.ts";
-import { sessionService } from "./session.ts";
-import { agentsService } from "./agents.ts";
 import { log } from "../infra/log/logger.ts";
 import { moderateInput, assertNotFlagged } from "../infra/guard.ts";
 import { bus } from "../infra/events.ts";
@@ -15,6 +13,8 @@ import { loadState } from "./memory/persistence.ts";
 import { resumeRun } from "./resume-run.ts";
 import { errorMessage } from "../utils/parse.ts";
 import * as dbOps from "../infra/db/index.ts";
+import { createRuntime, type Runtime } from "../runtime.ts";
+import { DomainError } from "../types/errors.ts";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -98,8 +98,8 @@ function insertRunRow(opts: RunRowOpts): void {
   });
 }
 
-async function hydrateRunState(opts: HydrateOpts): Promise<RunState> {
-  const messages: LLMMessage[] = sessionService.getMessages(opts.sessionId, opts.runId);
+async function hydrateRunState(opts: HydrateOpts, runtime: Runtime): Promise<RunState> {
+  const messages: LLMMessage[] = runtime.sessions.getMessages(opts.sessionId, opts.runId);
   const persisted = await loadState(opts.sessionId);
   return {
     sessionId: opts.sessionId,
@@ -162,8 +162,8 @@ function persistRunExit(runId: string, exit: RunExit): void {
   }
 }
 
-function kickChildRunAsync(parentRunId: string, childRunId: string): void {
-  startChildRun(childRunId).catch((err) => {
+function kickChildRunAsync(parentRunId: string, childRunId: string, runtime: Runtime): void {
+  startChildRun(childRunId, runtime).catch((err) => {
     const errMsg = errorMessage(err);
     log.error(`[orchestrator] Child run ${childRunId} failed to start: ${errMsg}`);
     resumeRun(parentRunId, {
@@ -180,15 +180,18 @@ function kickChildRunAsync(parentRunId: string, childRunId: string): void {
 
 // ── Public API ─────────────────────────────────────────────
 
-export async function executeRun(opts: ExecuteRunOpts): Promise<ExecuteRunResult> {
+export async function executeRun(
+  opts: ExecuteRunOpts,
+  runtime: Runtime = createRuntime(),
+): Promise<ExecuteRunResult> {
   const sessionId = opts.sessionId ?? randomSessionId();
-  const session = sessionService.getOrCreate(sessionId);
+  const session = runtime.sessions.getOrCreate(sessionId);
   const assistantName = pickAssistantName(session, sessionId, opts.assistant);
 
-  await agentsService.get(assistantName);
+  await runtime.agents.get(assistantName);
   await moderateAndAssert(opts.prompt);
 
-  if (!session.assistant) sessionService.setAssistant(sessionId, assistantName);
+  if (!session.assistant) runtime.sessions.setAssistant(sessionId, assistantName);
 
   const runId = randomUUID();
   const traceId = opts.parentTraceId ?? randomUUID();
@@ -200,15 +203,15 @@ export async function executeRun(opts: ExecuteRunOpts): Promise<ExecuteRunResult
   if (!opts.parentRunId) dbOps.setRootRun(sessionId, runId);
   dbOps.updateRunStatus(runId, { status: "running" });
 
-  sessionService.appendMessage(sessionId, runId, { role: "user", content: opts.prompt });
+  runtime.sessions.appendMessage(sessionId, runId, { role: "user", content: opts.prompt });
 
   const state = await hydrateRunState({
     runId, sessionId, assistantName, rootRunId,
     parentRunId: opts.parentRunId, traceId, depth,
     model: opts.model ?? "", tools: [],
-  });
+  }, runtime);
 
-  return runAndPersist(state);
+  return runAndPersist(state, runtime);
 }
 
 /**
@@ -216,17 +219,20 @@ export async function executeRun(opts: ExecuteRunOpts): Promise<ExecuteRunResult
  * Shared by `executeRun` and `resumeRun` so both entry points apply
  * the same terminal-exit persistence rules.
  */
-export async function runAndPersist(state: RunState): Promise<ExecuteRunResult> {
+export async function runAndPersist(
+  state: RunState,
+  runtime: Runtime = createRuntime(),
+): Promise<ExecuteRunResult> {
   const runId = state.runId!;
   const sessionId = state.sessionId;
 
   try {
-    const { exit, messages } = await runAgent(state);
-    sessionService.appendRun(sessionId, runId, messages);
+    const { exit, messages } = await runAgent(state, undefined, runtime);
+    runtime.sessions.appendRun(sessionId, runId, messages);
     persistRunExit(runId, exit);
 
     if (exit.kind === "waiting" && exit.waitingOn.kind === "child_run") {
-      kickChildRunAsync(runId, exit.waitingOn.childRunId);
+      kickChildRunAsync(runId, exit.waitingOn.childRunId, runtime);
     }
 
     return { exit, sessionId, runId };
@@ -246,14 +252,14 @@ export async function runAndPersist(state: RunState): Promise<ExecuteRunResult> 
  * the loop. Returns the child runId. The caller is responsible for
  * starting execution (typically via startChildRun after the parent parks).
  */
-export async function createChildRun(opts: CreateChildRunOpts): Promise<{
-  runId: string;
-  sessionId: string;
-}> {
+export async function createChildRun(
+  opts: CreateChildRunOpts,
+  runtime: Runtime = createRuntime(),
+): Promise<{ runId: string; sessionId: string }> {
   const sessionId = randomSessionId();
-  sessionService.getOrCreate(sessionId);
+  runtime.sessions.getOrCreate(sessionId);
 
-  await agentsService.get(opts.assistant);
+  await runtime.agents.get(opts.assistant);
   await moderateAndAssert(opts.prompt);
 
   const runId = randomUUID();
@@ -263,7 +269,7 @@ export async function createChildRun(opts: CreateChildRunOpts): Promise<{
     sourceCallId: opts.sourceCallId,
     assistantName: opts.assistant, prompt: opts.prompt,
   });
-  sessionService.appendMessage(sessionId, runId, { role: "user", content: opts.prompt });
+  runtime.sessions.appendMessage(sessionId, runId, { role: "user", content: opts.prompt });
 
   return { runId, sessionId };
 }
@@ -272,13 +278,20 @@ export async function createChildRun(opts: CreateChildRunOpts): Promise<{
  * Load a pending run from DB and enter the loop. Used to start
  * child runs after the parent has parked, and by the reconciliation sweep.
  */
-export async function startChildRun(runId: string): Promise<ExecuteRunResult> {
+export async function startChildRun(
+  runId: string,
+  runtime: Runtime = createRuntime(),
+): Promise<ExecuteRunResult> {
   const run = dbOps.getRun(runId);
-  if (!run) throw new Error(`Unknown run: ${runId}`);
+  if (!run) throw new DomainError({
+    type: "not_found",
+    message: "Run not found",
+    internalMessage: `Unknown run: ${runId}`,
+  });
 
   dbOps.updateRunStatus(runId, { status: "running" });
 
-  const resolved = await agentsService.resolve(run.template);
+  const resolved = await runtime.agents.resolve(run.template);
   const state = await hydrateRunState({
     runId,
     sessionId: run.sessionId,
@@ -289,7 +302,7 @@ export async function startChildRun(runId: string): Promise<ExecuteRunResult> {
     depth: run.parentId ? 1 : 0,
     model: resolved.model,
     tools: resolved.tools,
-  });
+  }, runtime);
 
-  return runAndPersist(state);
+  return runAndPersist(state, runtime);
 }

@@ -3,6 +3,7 @@ import matter from "gray-matter";
 import * as fs from "../infra/fs.ts";
 import { config } from "../config/index.ts";
 import type { PromptResult } from "../types/prompt.ts";
+import { DomainError } from "../types/errors.ts";
 
 export type { PromptResult } from "../types/prompt.ts";
 
@@ -18,7 +19,7 @@ export function createPromptService(promptsDir = config.paths.promptsDir) {
 
       const rendered = content.trim().replace(/\{\{(\w+)\}\}/g, (match, key) => {
         if (!variables || !(key in variables)) {
-          throw new Error(`Missing placeholder variable: {{${key}}}`);
+          throw new DomainError({ type: "validation", message: `Missing placeholder variable: {{${key}}}` });
         }
         return variables[key];
       });

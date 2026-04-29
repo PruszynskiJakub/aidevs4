@@ -5,19 +5,20 @@ import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import { sandbox as files } from "../infra/sandbox.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
+import { DomainError } from "../types/errors.ts";
 
 async function write_file(args: Record<string, unknown>): Promise<ToolResult> {
   validateKeys(args);
 
   const filePath = args.file_path as string;
   if (!filePath || typeof filePath !== "string") {
-    throw new Error("file_path is required and must be a non-empty string");
+    throw new DomainError({ type: "validation", message: "file_path is required and must be a non-empty string" });
   }
   assertMaxLength(filePath, "file_path", 1024);
 
   const content = args.content;
   if (typeof content !== "string") {
-    throw new Error("content is required and must be a string");
+    throw new DomainError({ type: "validation", message: "content is required and must be a string" });
   }
 
   // Auto-create parent directories

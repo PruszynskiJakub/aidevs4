@@ -11,6 +11,7 @@ import { sessionService } from "../agent/session.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength, errorMessage } from "../utils/parse.ts";
 import { resolveHubPlaceholders } from "../utils/hub-fetch.ts";
+import { DomainError } from "../types/errors.ts";
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -243,7 +244,7 @@ async function evaluate(payload: { expression: string }): Promise<ToolResult> {
     const evaluateTimeout = config.browser.timeouts.evaluate;
     let timer: ReturnType<typeof setTimeout>;
     const timeoutPromise = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`Evaluate timed out after ${evaluateTimeout}ms`)), evaluateTimeout);
+      timer = setTimeout(() => reject(new DomainError({ type: "timeout", message: `Evaluate timed out after ${evaluateTimeout}ms` })), evaluateTimeout);
     });
     try {
       result = await Promise.race([page.evaluate(payload.expression), timeoutPromise]);
@@ -254,7 +255,7 @@ async function evaluate(payload: { expression: string }): Promise<ToolResult> {
     const msg = errorMessage(err);
     const parts = [`Evaluate error: ${msg}`];
     appendFeedback(parts, session, "browser__evaluate", "fail", msg);
-    throw new Error(parts.join("\n"));
+    throw new DomainError({ type: "provider", message: parts.join("\n"), cause: err });
   }
 
   let serialized: string;
@@ -282,10 +283,10 @@ async function click(payload: { css_selector?: string; text?: string }): Promise
   const hasText = payload.text !== undefined && payload.text !== "";
 
   if (hasCss && hasText) {
-    throw new Error("Provide exactly one of css_selector or text, not both");
+    throw new DomainError({ type: "validation", message: "Provide exactly one of css_selector or text, not both" });
   }
   if (!hasCss && !hasText) {
-    throw new Error("Provide exactly one of css_selector or text");
+    throw new DomainError({ type: "validation", message: "Provide exactly one of css_selector or text" });
   }
 
   if (hasCss) assertMaxLength(payload.css_selector!, "css_selector", 500);
@@ -305,7 +306,7 @@ async function click(payload: { css_selector?: string; text?: string }): Promise
     const msg = errorMessage(err);
     const parts = [`Click failed: ${msg}`];
     appendFeedback(parts, session, "browser__click", "fail", msg);
-    throw new Error(parts.join("\n"));
+    throw new DomainError({ type: "provider", message: parts.join("\n"), cause: err });
   }
 
   await page.waitForTimeout(config.browser.timeouts.settleAfterClick);
@@ -331,7 +332,7 @@ async function typeText(payload: { selector: string; value: string; press_enter:
     const msg = errorMessage(err);
     const parts = [`Type failed: ${msg}`];
     appendFeedback(parts, session, "browser__type_text", "fail", msg);
-    throw new Error(parts.join("\n"));
+    throw new DomainError({ type: "provider", message: parts.join("\n"), cause: err });
   }
 
   await page.waitForTimeout(config.browser.timeouts.settleAfterType);
@@ -394,7 +395,7 @@ async function browserHandler(args: Record<string, unknown>): Promise<ToolResult
     case "take_screenshot":
       return takeScreenshot(payload as { full_page: boolean });
     default:
-      throw new Error(`Unknown browser action: ${action}`);
+      throw new DomainError({ type: "validation", message: `Unknown browser action: ${action}` });
   }
 }
 

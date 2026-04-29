@@ -5,6 +5,7 @@ import type { LLMTool } from "../types/llm.ts";
 import * as fs from "../infra/fs.ts";
 import { config } from "../config/index.ts";
 import { getTools, getToolsByName } from "../tools/registry.ts";
+import { DomainError } from "../types/errors.ts";
 
 const AGENTS_DIR = config.paths.agentsDir;
 
@@ -14,11 +15,19 @@ import type { ResolvedAgent, AgentSummary } from "../types/agent.ts";
 function stringArray(data: Record<string, unknown>, field: string, filename: string): string[] | undefined {
   if (data[field] === undefined) return undefined;
   if (!Array.isArray(data[field])) {
-    throw new Error(`Invalid agent "${filename}": "${field}" must be an array`);
+    throw new DomainError({
+      type: "validation",
+      message: `Agent definition has invalid "${field}" — must be an array`,
+      internalMessage: `Invalid agent "${filename}": "${field}" must be an array`,
+    });
   }
   for (const item of data[field] as unknown[]) {
     if (typeof item !== "string") {
-      throw new Error(`Invalid agent "${filename}": "${field}" items must be strings`);
+      throw new DomainError({
+        type: "validation",
+        message: `Agent definition has invalid "${field}" — items must be strings`,
+        internalMessage: `Invalid agent "${filename}": "${field}" items must be strings`,
+      });
     }
   }
   return data[field] as string[];
@@ -27,12 +36,20 @@ function stringArray(data: Record<string, unknown>, field: string, filename: str
 function validate(data: Record<string, unknown>, body: string, filename: string): AgentConfig {
   for (const field of ["name", "model"] as const) {
     if (typeof data[field] !== "string" || (data[field] as string).trim() === "") {
-      throw new Error(`Invalid agent "${filename}": missing required field "${field}"`);
+      throw new DomainError({
+        type: "validation",
+        message: `Agent definition is missing required field "${field}"`,
+        internalMessage: `Invalid agent "${filename}": missing required field "${field}"`,
+      });
     }
   }
 
   if (!body.trim()) {
-    throw new Error(`Invalid agent "${filename}": markdown body (system prompt) is empty`);
+    throw new DomainError({
+      type: "validation",
+      message: `Agent definition has empty system prompt`,
+      internalMessage: `Invalid agent "${filename}": markdown body (system prompt) is empty`,
+    });
   }
 
   const tools = stringArray(data, "tools", filename);
@@ -98,7 +115,11 @@ export function makeAgentsService() {
     async get(name: string): Promise<AgentConfig> {
       const filePath = resolve(AGENTS_DIR, `${name}.agent.md`);
       if (!(await fs.exists(filePath))) {
-        throw new Error(`Unknown agent: "${name}". File not found: ${name}.agent.md`);
+        throw new DomainError({
+          type: "not_found",
+          message: `Unknown agent: "${name}"`,
+          internalMessage: `Agent file not found: ${name}.agent.md at ${filePath}`,
+        });
       }
       return loadOne(name);
     },

@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "async_hooks";
 import type { RunState } from "../types/run-state.ts";
 import type { Logger } from "../types/logger.ts"; // used by RunContext
+import { DomainError } from "../types/errors.ts";
 
 interface RunContext {
   state: RunState;
@@ -25,7 +26,7 @@ export function getState(): RunState | undefined {
 
 export function requireState(): RunState {
   const state = getState();
-  if (!state) throw new Error("No active run state context");
+  if (!state) throw new DomainError({ type: "validation", message: "No active run state context" });
   return state;
 }
 
@@ -35,7 +36,7 @@ export function getLogger(): Logger | undefined {
 
 export function requireLogger(): Logger {
   const log = getLogger();
-  if (!log) throw new Error("No active logger context");
+  if (!log) throw new DomainError({ type: "validation", message: "No active logger context" });
   return log;
 }
 
@@ -47,7 +48,7 @@ export function getSessionId(): string | undefined {
 
 export function requireSessionId(): string {
   const id = getSessionId();
-  if (!id) throw new Error("No active session context");
+  if (!id) throw new DomainError({ type: "validation", message: "No active session context" });
   return id;
 }
 

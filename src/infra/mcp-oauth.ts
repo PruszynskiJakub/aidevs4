@@ -9,6 +9,7 @@ import type {
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js";
+import { DomainError } from "../types/errors.ts";
 
 const DATA_DIR = config.paths.mcpOauthDir;
 
@@ -106,8 +107,12 @@ export function createOAuthProvider(
     codeVerifier(): string {
       try {
         return readFileSync(verifierPath, "utf-8");
-      } catch {
-        throw new Error("No code verifier saved");
+      } catch (err) {
+        throw new DomainError({
+          type: "auth",
+          message: "No code verifier saved",
+          cause: err,
+        });
       }
     },
 

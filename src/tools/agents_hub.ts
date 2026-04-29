@@ -6,6 +6,7 @@ import { sandbox as files, resolveInput } from "../infra/sandbox.ts";
 import { config } from "../config/index.ts";
 import { safeParse, validateKeys, assertMaxLength, safePath } from "../utils/parse.ts";
 import { hubPost, stringify } from "../utils/hub-fetch.ts";
+import { DomainError } from "../types/errors.ts";
 
 async function verify(payload: { task: string; answer: string }): Promise<ToolResult> {
   assertMaxLength(payload.task, "task", 100);
@@ -31,7 +32,7 @@ async function apiRequest(payload: {
 
   const resolved = await resolveInput(payload.body, "body");
   if (typeof resolved !== "object" || resolved === null || Array.isArray(resolved)) {
-    throw new Error("body must resolve to a JSON object");
+    throw new DomainError({ type: "validation", message: "body must resolve to a JSON object" });
   }
 
   const url = `${config.hub.baseUrl}/api/${payload.path}`;
@@ -65,12 +66,12 @@ async function apiBatch(payload: {
   const content = await files.readText(payload.data_file);
   const parsed = safeParse<unknown>(content, "data_file");
   if (!Array.isArray(parsed)) {
-    throw new Error("JSON data file must contain an array");
+    throw new DomainError({ type: "validation", message: "JSON data file must contain an array" });
   }
   rows = parsed;
 
   if (rows.length > config.limits.maxBatchRows) {
-    throw new Error(`Batch size ${rows.length} exceeds maximum of ${config.limits.maxBatchRows} rows`);
+    throw new DomainError({ type: "capacity", message: `Batch size ${rows.length} exceeds maximum of ${config.limits.maxBatchRows} rows` });
   }
 
   const url = `${config.hub.baseUrl}/api/${payload.path}`;
@@ -90,7 +91,12 @@ async function apiBatch(payload: {
     } catch (err) {
       results.push({ input: row, response: err instanceof Error ? err.message : String(err) });
       await files.write(payload.output_file, JSON.stringify(results, null, 2));
-      throw new Error(`API batch request failed at row ${results.length} — ${err instanceof Error ? err.message : String(err)}`);
+      throw new DomainError({
+        type: "provider",
+        provider: "ag3nts-hub",
+        message: `API batch request failed at row ${results.length} — ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
     }
   }
 
@@ -112,10 +118,10 @@ async function verifyBatch(payload: {
   const answers = await resolveInput(payload.answers, "answers");
 
   if (!Array.isArray(answers)) {
-    throw new Error("answers must resolve to a JSON array of answer objects");
+    throw new DomainError({ type: "validation", message: "answers must resolve to a JSON array of answer objects" });
   }
   if (answers.length > config.limits.maxBatchRows) {
-    throw new Error(`Batch size ${answers.length} exceeds maximum of ${config.limits.maxBatchRows}`);
+    throw new DomainError({ type: "capacity", message: `Batch size ${answers.length} exceeds maximum of ${config.limits.maxBatchRows}` });
   }
 
   const results: { index: number; answer: unknown; response: unknown }[] = [];
@@ -132,7 +138,12 @@ async function verifyBatch(payload: {
     } catch (err) {
       results.push({ index: i, answer: answers[i], response: err instanceof Error ? err.message : String(err) });
       await files.write(payload.output_file, JSON.stringify(results, null, 2));
-      throw new Error(`Verify batch failed at item ${i} — ${err instanceof Error ? err.message : String(err)}`);
+      throw new DomainError({
+        type: "provider",
+        provider: "ag3nts-hub",
+        message: `Verify batch failed at item ${i} — ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
     }
   }
 
@@ -154,7 +165,7 @@ async function agentsHub(args: Record<string, unknown>): Promise<ToolResult> {
     case "api_batch":
       return apiBatch(payload as { path: string; data_file: string; field_map_json: string; output_file: string });
     default:
-      throw new Error(`Unknown agents_hub action: ${action}`);
+      throw new DomainError({ type: "validation", message: `Unknown agents_hub action: ${action}` });
   }
 }
 

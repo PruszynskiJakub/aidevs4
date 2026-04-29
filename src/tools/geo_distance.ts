@@ -5,6 +5,7 @@ import { text } from "../types/tool-result.ts";
 import { sandbox as files } from "../infra/sandbox.ts";
 import { config } from "../config/index.ts";
 import { safeParse, assertMaxLength, assertNumericBounds, safePath } from "../utils/parse.ts";
+import { DomainError } from "../types/errors.ts";
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -34,12 +35,12 @@ interface GeoPoint {
 
 function validatePoints(data: unknown, label: string): GeoPoint[] {
   if (!Array.isArray(data)) {
-    throw new Error(`${label} must be a JSON array`);
+    throw new DomainError({ type: "validation", message: `${label} must be a JSON array` });
   }
   for (let i = 0; i < data.length; i++) {
     const item = data[i];
     if (typeof item.latitude !== "number" || typeof item.longitude !== "number") {
-      throw new Error(`${label}[${i}] must have numeric latitude and longitude`);
+      throw new DomainError({ type: "validation", message: `${label}[${i}] must have numeric latitude and longitude` });
     }
   }
   return data as GeoPoint[];
@@ -108,7 +109,7 @@ async function geoDistance(args: Record<string, unknown>): Promise<ToolResult> {
     case "distance":
       return distance(payload as { lat1: number; lon1: number; lat2: number; lon2: number });
     default:
-      throw new Error(`Unknown geo_distance action: ${action}`);
+      throw new DomainError({ type: "validation", message: `Unknown geo_distance action: ${action}` });
   }
 }
 

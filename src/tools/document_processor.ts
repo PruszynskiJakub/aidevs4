@@ -9,15 +9,17 @@ import { llm } from "../llm/llm.ts";
 import { assertMaxLength, safePath } from "../utils/parse.ts";
 import { config } from "../config";
 import { IMAGE_EXTENSIONS, TEXT_EXTENSIONS, ALL_SUPPORTED_EXTENSIONS, inferMimeType } from "../utils/media-types.ts";
+import { DomainError } from "../types/errors.ts";
 
 
 async function buildContentPart(path: string): Promise<ContentPart> {
   const ext = extname(path).toLowerCase();
 
   if (!IMAGE_EXTENSIONS.has(ext) && !TEXT_EXTENSIONS.has(ext)) {
-    throw new Error(
-      `Unsupported file extension "${ext}" for file "${basename(path)}". Supported: ${ALL_SUPPORTED_EXTENSIONS.join(", ")}`,
-    );
+    throw new DomainError({
+      type: "validation",
+      message: `Unsupported file extension "${ext}" for file "${basename(path)}". Supported: ${ALL_SUPPORTED_EXTENSIONS.join(", ")}`,
+    });
   }
 
   await files.checkFileSize(path, config.limits.maxFileSize);
@@ -47,13 +49,13 @@ async function ask(payload: {
   const { file_paths, question } = payload;
 
   if (!Array.isArray(file_paths) || file_paths.length === 0) {
-    throw new Error("file_paths must be a non-empty array of file paths");
+    throw new DomainError({ type: "validation", message: "file_paths must be a non-empty array of file paths" });
   }
   if (file_paths.length > config.limits.docMaxFiles) {
-    throw new Error(`Too many files: ${file_paths.length}. Maximum is ${config.limits.docMaxFiles}.`);
+    throw new DomainError({ type: "capacity", message: `Too many files: ${file_paths.length}. Maximum is ${config.limits.docMaxFiles}.` });
   }
   if (question.trim().length === 0) {
-    throw new Error("question must be a non-empty string");
+    throw new DomainError({ type: "validation", message: "question must be a non-empty string" });
   }
   assertMaxLength(question, "question", 2000);
 
@@ -79,7 +81,7 @@ async function documentProcessor(args: Record<string, unknown>): Promise<ToolRes
     case "ask":
       return ask(payload as { file_paths: string[]; question: string });
     default:
-      throw new Error(`Unknown document_processor action: ${action}`);
+      throw new DomainError({ type: "validation", message: `Unknown document_processor action: ${action}` });
   }
 }
 

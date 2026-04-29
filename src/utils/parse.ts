@@ -1,12 +1,18 @@
+import { DomainError } from "../types/errors.ts";
+
 /**
- * Safe JSON.parse wrapper — returns typed result or throws a labelled error
- * that never echoes raw input (prevents stack trace leakage).
+ * Safe JSON.parse wrapper — returns typed result or throws a DomainError
+ * with the original SyntaxError preserved as `cause`.
  */
 export function safeParse<T = unknown>(json: string, label: string): T {
   try {
     return JSON.parse(json) as T;
-  } catch {
-    throw new Error(`Invalid JSON for ${label}`);
+  } catch (err) {
+    throw new DomainError({
+      type: "validation",
+      message: `Invalid JSON for ${label}`,
+      cause: err,
+    });
   }
 }
 
@@ -18,19 +24,19 @@ const SAFE_FILENAME_RE = /^[a-zA-Z0-9_.\-]+$/;
  */
 export function safeFilename(raw: string): string {
   if (!raw || raw.length === 0) {
-    throw new Error("Filename must not be empty");
+    throw new DomainError({ type: "validation", message: "Filename must not be empty" });
   }
   if (raw.includes("/") || raw.includes("\\")) {
-    throw new Error("Filename must not contain path separators");
+    throw new DomainError({ type: "validation", message: "Filename must not contain path separators" });
   }
   if (raw.includes("..")) {
-    throw new Error("Filename must not contain '..'");
+    throw new DomainError({ type: "validation", message: "Filename must not contain '..'" });
   }
   if (raw.startsWith(".")) {
-    throw new Error("Filename must not be a hidden file");
+    throw new DomainError({ type: "validation", message: "Filename must not be a hidden file" });
   }
   if (!SAFE_FILENAME_RE.test(raw)) {
-    throw new Error("Filename contains invalid characters — allowed: [a-zA-Z0-9_.-]");
+    throw new DomainError({ type: "validation", message: "Filename contains invalid characters — allowed: [a-zA-Z0-9_.-]" });
   }
   return raw;
 }
@@ -46,15 +52,18 @@ const MAX_PATH_LENGTH = 500;
 export function safePath(raw: string, label: string): string {
   assertMaxLength(raw, label, MAX_PATH_LENGTH);
   if (!raw || raw.length === 0) {
-    throw new Error(`${label} must not be empty`);
+    throw new DomainError({ type: "validation", message: `${label} must not be empty` });
   }
   const components = raw.split("/").filter(Boolean);
   for (const comp of components) {
     if (comp === "..") {
-      throw new Error(`${label} must not contain '..' components`);
+      throw new DomainError({ type: "validation", message: `${label} must not contain '..' components` });
     }
     if (!SAFE_PATH_COMPONENT_RE.test(comp)) {
-      throw new Error(`${label} contains invalid characters in component "${comp}" — allowed: [a-zA-Z0-9_.-]`);
+      throw new DomainError({
+        type: "validation",
+        message: `${label} contains invalid characters in component "${comp}" — allowed: [a-zA-Z0-9_.-]`,
+      });
     }
   }
   return raw;
@@ -68,7 +77,7 @@ const POISONED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 export function validateKeys(obj: Record<string, unknown>): void {
   for (const key of Object.keys(obj)) {
     if (POISONED_KEYS.has(key)) {
-      throw new Error(`Forbidden key: "${key}"`);
+      throw new DomainError({ type: "validation", message: `Forbidden key: "${key}"` });
     }
   }
 }
@@ -78,7 +87,10 @@ export function validateKeys(obj: Record<string, unknown>): void {
  */
 export function assertMaxLength(value: string, name: string, maxLength: number): void {
   if (value.length > maxLength) {
-    throw new Error(`${name} exceeds max length of ${maxLength} characters`);
+    throw new DomainError({
+      type: "validation",
+      message: `${name} exceeds max length of ${maxLength} characters`,
+    });
   }
 }
 
@@ -94,10 +106,10 @@ export function formatSizeMB(bytes: number): string {
  */
 export function assertNumericBounds(value: number, name: string, min: number, max: number): void {
   if (!Number.isFinite(value)) {
-    throw new Error(`${name} must be a finite number`);
+    throw new DomainError({ type: "validation", message: `${name} must be a finite number` });
   }
   if (value < min || value > max) {
-    throw new Error(`${name} must be between ${min} and ${max}`);
+    throw new DomainError({ type: "validation", message: `${name} must be between ${min} and ${max}` });
   }
 }
 

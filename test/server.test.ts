@@ -110,11 +110,12 @@ describe("POST /chat", () => {
     expect(session.assistant).toBe("proxy");
   });
 
-  it("returns 400 for unknown assistant with available names", async () => {
+  it("returns 404 for unknown assistant", async () => {
     const res = await chatRequest({ sessionId: "s-bad", msg: "hi", assistant: "nonexistent" });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
     const json = await res.json();
-    expect(json.error).toContain("Unknown agent");
+    expect(json.error.type).toBe("not_found");
+    expect(json.error.message).toContain("Unknown agent");
   });
 
   it("pins assistant to session on first request", async () => {

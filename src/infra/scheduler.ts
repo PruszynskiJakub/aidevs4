@@ -1,6 +1,7 @@
 import { Cron } from "croner";
 import { randomUUID } from "node:crypto";
 import { randomSessionId } from "../utils/id.ts";
+import { DomainError } from "../types/errors.ts";
 import { sessionService } from "../agent/session.ts";
 import { executeRun } from "../agent/orchestrator.ts";
 import * as dbOps from "./db/index.ts";
@@ -17,10 +18,13 @@ const DELAY_RE = /^(\d+)([mhd])$/;
 
 export function parseDelay(delay: string): number {
   const match = delay.trim().match(DELAY_RE);
-  if (!match) throw new Error(`Invalid delay format: "${delay}". Use Nm, Nh, or Nd (e.g. "30m", "2h", "1d")`);
+  if (!match) throw new DomainError({
+    type: "validation",
+    message: `Invalid delay format: "${delay}". Use Nm, Nh, or Nd (e.g. "30m", "2h", "1d")`,
+  });
 
   const n = parseInt(match[1], 10);
-  if (n <= 0) throw new Error("Delay must be a positive integer");
+  if (n <= 0) throw new DomainError({ type: "validation", message: "Delay must be a positive integer" });
 
   const unit = match[2];
   let ms: number;
@@ -28,14 +32,14 @@ export function parseDelay(delay: string): number {
     case "m": ms = n * 60_000; break;
     case "h": ms = n * 3_600_000; break;
     case "d": ms = n * 86_400_000; break;
-    default: throw new Error(`Unknown delay unit: ${unit}`);
+    default: throw new DomainError({ type: "validation", message: `Unknown delay unit: ${unit}` });
   }
 
   if (n > MAX_DELAY_DAYS && unit === "d") {
-    throw new Error(`Delay exceeds maximum of ${MAX_DELAY_DAYS} days`);
+    throw new DomainError({ type: "capacity", message: `Delay exceeds maximum of ${MAX_DELAY_DAYS} days` });
   }
   if (ms > MAX_DELAY_DAYS * 86_400_000) {
-    throw new Error(`Delay exceeds maximum of ${MAX_DELAY_DAYS} days`);
+    throw new DomainError({ type: "capacity", message: `Delay exceeds maximum of ${MAX_DELAY_DAYS} days` });
   }
 
   return ms;

@@ -195,6 +195,24 @@ The agent's toolbox grows with each completed task.
 
 ## Code Style
 
+### Errors
+
+- **Throw `DomainError`, not `new Error`.** Defined in `src/types/errors.ts`.
+  Constructor takes `{ type, message, internalMessage?, cause?, provider? }`.
+- **Pick the right `type`** from the 8 categories: `validation` (400),
+  `auth` (401), `permission` (403), `not_found` (404), `conflict` (409),
+  `capacity` (429), `provider` (502), `timeout` (504).
+- **`message` is wire-safe.** It reaches the HTTP response, the Slack reply,
+  and the LLM tool result. Never put filesystem paths, env names, raw
+  upstream bodies, or stack traces in `message`.
+- **`internalMessage` is for logs only.** Put the diagnostic detail there.
+  The HTTP boundary in `src/server.ts` logs it but does not echo it.
+- **At provider boundaries**, map SDK errors via the adapter mapper
+  (`toOpenAIDomainError`, `toGeminiDomainError`). Never let raw
+  `RateLimitError` etc. flow into application code.
+- **At HTTP boundaries**, use `isDomainError(err)` + `toHttpStatus(err.type)`.
+  Unknown errors return a generic 500 with no message leakage.
+
 ## Architecture
 
 ### Events

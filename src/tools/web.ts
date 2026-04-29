@@ -10,15 +10,17 @@ import { resolveHubPlaceholders } from "../utils/hub-fetch.ts";
 import { inferCategory, inferMimeType } from "../utils/media-types.ts";
 import { condense } from "../infra/condense.ts";
 import { scrapeUrl } from "../infra/serper.ts";
+import { DomainError } from "../types/errors.ts";
 
 const MAX_URL_LENGTH = 2048;
 
 function assertHostAllowed(hostname: string): void {
   const allowed = config.sandbox.webAllowedHosts.some((entry) => hostname.endsWith(entry));
   if (!allowed) {
-    throw new Error(
-      `Host "${hostname}" is not on the allowlist. Allowed: ${config.sandbox.webAllowedHosts.join(", ")}`,
-    );
+    throw new DomainError({
+      type: "permission",
+      message: `Host "${hostname}" is not on the allowlist. Allowed: ${config.sandbox.webAllowedHosts.join(", ")}`,
+    });
   }
 }
 
@@ -32,15 +34,18 @@ async function download(payload: { url: string; filename: string }): Promise<Too
   let parsed: URL;
   try {
     parsed = new URL(resolvedUrl);
-  } catch {
-    throw new Error("Invalid URL format");
+  } catch (err) {
+    throw new DomainError({ type: "validation", message: "Invalid URL format", cause: err });
   }
 
   assertHostAllowed(parsed.hostname);
 
   const response = await fetch(resolvedUrl, { signal: AbortSignal.timeout(config.limits.fetchTimeout) });
   if (!response.ok) {
-    throw new Error(`Download failed (${response.status}): ${payload.filename}`);
+    throw new DomainError({
+      type: "provider",
+      message: `Download failed (${response.status}): ${payload.filename}`,
+    });
   }
 
   const path = await sessionService.outputPath(payload.filename);
@@ -61,8 +66,8 @@ function validateUrl(url: string): void {
   assertMaxLength(url, "url", MAX_URL_LENGTH);
   try {
     new URL(url);
-  } catch {
-    throw new Error(`Invalid URL format: ${url.slice(0, 80)}`);
+  } catch (err) {
+    throw new DomainError({ type: "validation", message: `Invalid URL format: ${url.slice(0, 80)}`, cause: err });
   }
 }
 
@@ -82,15 +87,15 @@ async function scrape(payload: { urls: string[] }): Promise<ToolResult> {
   const { urls } = payload;
 
   if (!Array.isArray(urls) || urls.length === 0) {
-    throw new Error("urls must be a non-empty array");
+    throw new DomainError({ type: "validation", message: "urls must be a non-empty array" });
   }
   if (urls.length > config.limits.maxBatchRows) {
-    throw new Error(`Too many URLs (${urls.length}). Maximum: ${config.limits.maxBatchRows}`);
+    throw new DomainError({ type: "capacity", message: `Too many URLs (${urls.length}). Maximum: ${config.limits.maxBatchRows}` });
   }
 
   // Validate all URLs upfront before making any requests
   for (const url of urls) {
-    if (typeof url !== "string") throw new Error("Each URL must be a string");
+    if (typeof url !== "string") throw new DomainError({ type: "validation", message: "Each URL must be a string" });
     validateUrl(url);
   }
 
@@ -129,7 +134,7 @@ async function web(args: Record<string, unknown>): Promise<ToolResult> {
     case "scrape":
       return scrape(payload as { urls: string[] });
     default:
-      throw new Error(`Unknown web action: ${action}`);
+      throw new DomainError({ type: "validation", message: `Unknown web action: ${action}` });
   }
 }
 

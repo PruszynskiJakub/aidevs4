@@ -8,6 +8,7 @@ import { text } from "../types/tool-result.ts";
 import { getSessionWorkingDir } from "../agent/session.ts";
 import { startBridge, type BridgeHandle } from "./sandbox/bridge.ts";
 import { generatePrelude } from "./sandbox/prelude.ts";
+import { DomainError } from "../types/errors.ts";
 
 const MAX_OUTPUT = 20_000;
 const MAX_CODE_LENGTH = 100_000;
@@ -57,15 +58,16 @@ async function executeCode(args: Record<string, unknown>): Promise<ToolResult> {
   const description = args.description;
 
   if (!code || typeof code !== "string") {
-    throw new Error("code parameter is required and must be a string");
+    throw new DomainError({ type: "validation", message: "code parameter is required and must be a string" });
   }
   if (!description || typeof description !== "string") {
-    throw new Error("description parameter is required and must be a string");
+    throw new DomainError({ type: "validation", message: "description parameter is required and must be a string" });
   }
   if (code.length > MAX_CODE_LENGTH) {
-    throw new Error(
-      `Code length ${code.length} exceeds maximum of ${MAX_CODE_LENGTH} characters`,
-    );
+    throw new DomainError({
+      type: "capacity",
+      message: `Code length ${code.length} exceeds maximum of ${MAX_CODE_LENGTH} characters`,
+    });
   }
 
   const rawTimeout =
@@ -131,7 +133,7 @@ async function executeCode(args: Record<string, unknown>): Promise<ToolResult> {
             setTimeout(
               () =>
                 reject(
-                  new Error(`Code execution timed out after ${timeout}ms`),
+                  new DomainError({ type: "timeout", message: `Code execution timed out after ${timeout}ms` }),
                 ),
               timeout + 100,
             ),

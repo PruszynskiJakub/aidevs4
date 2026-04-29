@@ -1,6 +1,8 @@
+import { DomainError } from "../types/errors.ts";
+
 function requireEnv(name: string): string {
   const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  if (!value) throw new DomainError({ type: "validation", message: `Missing required environment variable: ${name}` });
   return value;
 }
 
@@ -8,9 +10,10 @@ function requireEnv(name: string): string {
 const REQUIRED_VARS = ["HUB_API_KEY", "OPENAI_API_KEY"] as const;
 const missing = REQUIRED_VARS.filter((name) => !process.env[name]);
 if (missing.length > 0) {
-  throw new Error(
-    `Missing required environment variable(s): ${missing.join(", ")}`,
-  );
+  throw new DomainError({
+    type: "validation",
+    message: `Missing required environment variable(s): ${missing.join(", ")}`,
+  });
 }
 
 const nodeEnv = (process.env.NODE_ENV ?? "development") as "development" | "production";

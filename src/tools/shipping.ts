@@ -5,13 +5,14 @@ import { text } from "../types/tool-result.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 import { hubPost, stringify } from "../utils/hub-fetch.ts";
+import { DomainError } from "../types/errors.ts";
 
 const PACKAGEID_RE = /^[A-Za-z0-9]+$/;
 const PACKAGES_URL = `${config.hub.baseUrl}/api/packages`;
 
 function validateAlphanumeric(value: string, name: string): void {
   if (!PACKAGEID_RE.test(value)) {
-    throw new Error(`${name} contains invalid characters — allowed: [A-Za-z0-9]`);
+    throw new DomainError({ type: "validation", message: `${name} contains invalid characters — allowed: [A-Za-z0-9]` });
   }
 }
 
@@ -69,7 +70,7 @@ async function shipping(args: Record<string, unknown>): Promise<ToolResult> {
     case "redirect":
       return redirectPackage(payload as { packageid: string; destination: string; code: string });
     default:
-      throw new Error(`Unknown shipping action: ${action}`);
+      throw new DomainError({ type: "validation", message: `Unknown shipping action: ${action}` });
   }
 }
 

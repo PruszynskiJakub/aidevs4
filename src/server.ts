@@ -1,12 +1,38 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { sessionService } from "./agent/session.ts";
 import { executeRun, type ExecuteRunResult } from "./agent/orchestrator.ts";
 import { resumeRun } from "./agent/resume-run.ts";
 import { log } from "./infra/log/logger.ts";
 import { config } from "./config/index.ts";
-import { bus } from "./infra/events.ts";
 import { initServices, installSignalHandlers } from "./infra/bootstrap.ts";
+import { createRuntime } from "./runtime.ts";
+import { isDomainError, toHttpStatus } from "./types/errors.ts";
+
+/**
+ * Convert a thrown error into a sanitized HTTP response payload.
+ * - DomainError: log internalMessage, return { type, message } with mapped status.
+ * - Unknown error: log full message, return generic 500 (no leakage).
+ */
+function errorToHttpPayload(
+  err: unknown,
+  logPrefix: string,
+): { status: number; body: { error: { type: string; message: string } } } {
+  if (isDomainError(err)) {
+    if (err.internalMessage) {
+      log.error(`${logPrefix} (${err.type}): ${err.internalMessage}`);
+    }
+    return {
+      status: toHttpStatus(err.type),
+      body: { error: { type: err.type, message: err.message } },
+    };
+  }
+  const internal = err instanceof Error ? err.message : String(err);
+  log.error(`${logPrefix} (unhandled): ${internal}`);
+  return {
+    status: 500,
+    body: { error: { type: "provider", message: "Internal error" } },
+  };
+}
 
 interface ChatRequest {
   sessionId: string;
@@ -48,6 +74,9 @@ function parseEventFilter(query: string | undefined): Set<string> | null {
   return types.length > 0 ? new Set(types) : null;
 }
 
+// Composition root — built once at boot, shared across all request handlers.
+const runtime = createRuntime();
+
 const app = new Hono();
 
 app.use("*", async (c, next) => {
@@ -83,16 +112,16 @@ app.post("/api/negotiations/search", async (c) => {
     const { exit } = await executeRun({
       prompt: params,
       assistant: "negotiations",
-    });
+    }, runtime);
 
     const answer = exit.kind === "completed" ? exit.result : "";
     const encoded = new TextEncoder().encode(answer);
     const output = new TextDecoder().decode(encoded.slice(0, 500));
     return c.json({ output });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log.error(`/api/negotiations/search error: ${message}`);
-    return c.json({ output: "Error: search failed" }, 500);
+    const { status } = errorToHttpPayload(err, "/api/negotiations/search error");
+    // This route's contract returns { output } not { error } — preserve that shape.
+    return c.json({ output: "Error: search failed" }, status);
   }
 });
 
@@ -131,7 +160,7 @@ app.post("/chat", async (c) => {
     return streamSSE(c, async (stream) => {
       let closed = false;
 
-      const unsubscribe = bus.onAny((event) => {
+      const unsubscribe = runtime.bus.onAny((event) => {
         if (closed) return;
         if (event.sessionId !== sessionId) return;
         if (allowedEvents && !allowedEvents.has(event.type)) return;
@@ -152,12 +181,12 @@ app.post("/chat", async (c) => {
       stream.onAbort(() => { closed = true; });
 
       try {
-        const result = await sessionService.enqueue(sessionId, () =>
+        const result = await runtime.sessions.enqueue(sessionId, () =>
           executeRun({
             sessionId,
             prompt: msg,
             assistant: requestedAssistant,
-          }),
+          }, runtime),
         );
         if (!closed) {
           await stream.writeSSE({
@@ -167,10 +196,10 @@ app.post("/chat", async (c) => {
         }
       } catch (err) {
         if (!closed) {
-          const message = err instanceof Error ? err.message : String(err);
+          const { body } = errorToHttpPayload(err, `/chat (stream) [${sessionId}]`);
           await stream.writeSSE({
             event: "error",
-            data: JSON.stringify({ error: message }),
+            data: JSON.stringify(body),
           });
         }
       } finally {
@@ -181,12 +210,12 @@ app.post("/chat", async (c) => {
   }
 
   try {
-    const result = await sessionService.enqueue(sessionId, () =>
+    const result = await runtime.sessions.enqueue(sessionId, () =>
       executeRun({
         sessionId,
         prompt: msg,
         assistant: requestedAssistant,
-      }),
+      }, runtime),
     );
     const payload = exitToPayload(result);
     if (result.exit.kind === "completed") {
@@ -194,13 +223,8 @@ app.post("/chat", async (c) => {
     }
     return c.json(payload);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const isClientError = message.includes("Unknown agent");
-    if (isClientError) {
-      return c.json({ error: message }, 400);
-    }
-    log.error(`/chat error [${sessionId}]: ${message}`);
-    return c.json({ error: message }, 500);
+    const { status, body } = errorToHttpPayload(err, `/chat error [${sessionId}]`);
+    return c.json(body, status as any);
   }
 });
 
@@ -222,7 +246,7 @@ app.post("/resume", async (c) => {
     stream.onAbort(() => { closed = true; });
 
     try {
-      const result = await resumeRun(runId, resolution as any);
+      const result = await resumeRun(runId, resolution as any, runtime);
       if (!closed) {
         await stream.writeSSE({
           event: "done",
@@ -231,10 +255,10 @@ app.post("/resume", async (c) => {
       }
     } catch (err) {
       if (!closed) {
-        const message = err instanceof Error ? err.message : String(err);
+        const { body } = errorToHttpPayload(err, `/resume error [${runId}]`);
         await stream.writeSSE({
           event: "error",
-          data: JSON.stringify({ error: message }),
+          data: JSON.stringify(body),
         });
       }
     }

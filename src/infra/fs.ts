@@ -1,5 +1,6 @@
 import { readdir, stat, mkdir, appendFile, unlink, rename } from "node:fs/promises";
 import type { FileStat } from "../types/file.ts";
+import { DomainError } from "../types/errors.ts";
 
 // ── Pure filesystem functions — no access control ────────────
 
@@ -61,12 +62,10 @@ export function checkFileSize(
   if (fileStat.size > maxBytes) {
     const sizeMB = (fileStat.size / (1024 * 1024)).toFixed(2);
     const limitMB = (maxBytes / (1024 * 1024)).toFixed(2);
-    throw new FileSizeLimitError(
-      `File ${displayPath} is ${sizeMB} MB — exceeds limit of ${limitMB} MB`,
-    );
+    throw new DomainError({
+      type: "capacity",
+      message: `File exceeds size limit of ${limitMB} MB`,
+      internalMessage: `File ${displayPath} is ${sizeMB} MB — exceeds limit of ${limitMB} MB`,
+    });
   }
-}
-
-export class FileSizeLimitError extends Error {
-  override readonly name = "FileSizeLimitError";
 }

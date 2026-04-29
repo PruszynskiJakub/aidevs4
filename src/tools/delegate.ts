@@ -6,6 +6,7 @@ import { assertMaxLength } from "../utils/parse.ts";
 import { createChildRun } from "../agent/orchestrator.ts";
 import { bus } from "../infra/events.ts";
 import { agentsService } from "../agent/agents.ts";
+import { DomainError } from "../types/errors.ts";
 
 const MAX_PROMPT_LENGTH = 10_000;
 
@@ -14,11 +15,11 @@ async function delegate(args: Record<string, unknown>, ctx?: ToolCallContext): P
 
   assertMaxLength(prompt, "prompt", MAX_PROMPT_LENGTH);
   if (!prompt.trim()) {
-    throw new Error("prompt must not be empty");
+    throw new DomainError({ type: "validation", message: "prompt must not be empty" });
   }
 
   const parentRunId = getRunId();
-  if (!parentRunId) throw new Error("delegate requires an active run context");
+  if (!parentRunId) throw new DomainError({ type: "validation", message: "delegate requires an active run context" });
 
   const rootRunId = getRootRunId() ?? parentRunId;
   const logger = getLogger();

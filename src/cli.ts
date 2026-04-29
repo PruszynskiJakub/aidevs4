@@ -3,12 +3,14 @@ import { executeRun } from "./agent/orchestrator.ts";
 import { resumeRun } from "./agent/resume-run.ts";
 import { initServices, shutdownServices, installSignalHandlers } from "./infra/bootstrap.ts";
 import { takePendingConfirmation } from "./agent/confirmation.ts";
+import { createRuntime } from "./runtime.ts";
 import * as dbOps from "./infra/db/index.ts";
 import type { RunExit } from "./agent/run-exit.ts";
 import type { WaitDescriptor } from "./types/wait.ts";
 import type { ExecuteRunResult } from "./agent/orchestrator.ts";
 import type { Decision } from "./types/tool.ts";
 import * as readline from "node:readline/promises";
+import { DomainError } from "./types/errors.ts";
 
 function extractFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
@@ -44,9 +46,12 @@ if (args.length >= 2) {
 await initServices();
 installSignalHandlers();
 
+// Composition root — built once, threaded through every entry into the agent core.
+const runtime = createRuntime();
+
 async function promptApproval(waitingOn: WaitDescriptor): Promise<Record<string, "approve" | "deny">> {
   if (waitingOn.kind !== "user_approval") {
-    throw new Error(`CLI cannot resolve wait kind: ${waitingOn.kind}`);
+    throw new DomainError({ type: "validation", message: `CLI cannot resolve wait kind: ${waitingOn.kind}` });
   }
   const pending = takePendingConfirmation(waitingOn.confirmationId);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -128,13 +133,15 @@ async function waitForChildResume(parentRunId: string): Promise<ExecuteRunResult
   }
 }
 
+import { isDomainError } from "./types/errors.ts";
+
 try {
   let result = await executeRun({
     sessionId,
     prompt,
     assistant: assistantName,
     model: modelOverride,
-  });
+  }, runtime);
 
   while (result.exit.kind === "waiting") {
     if (result.exit.waitingOn.kind === "child_run") {
@@ -150,12 +157,19 @@ try {
             ? result.exit.waitingOn.confirmationId
             : "",
         decisions,
-      });
+      }, runtime);
     }
   }
 
   console.log(`\nSession: ${result.sessionId}`);
   printExit(result.exit);
+} catch (err) {
+  const userMessage = err instanceof Error ? err.message : String(err);
+  console.error(`Error: ${userMessage}`);
+  if (!config.isProduction && isDomainError(err) && err.internalMessage) {
+    console.error(`(internal: ${err.internalMessage})`);
+  }
+  process.exitCode = 1;
 } finally {
   await shutdownServices();
 }

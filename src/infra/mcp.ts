@@ -18,6 +18,7 @@ import { estimateTokens } from "../utils/tokens.ts";
 import { getSessionId } from "../agent/context.ts";
 import { sessionService } from "../agent/session.ts";
 import { sandbox } from "./sandbox.ts";
+import { DomainError } from "../types/errors.ts";
 
 interface ConnectedServer {
   client: Client;
@@ -49,7 +50,10 @@ function createTransport(serverConfig: McpServerConfig): Transport {
       return new StreamableHTTPClientTransport(new URL(serverConfig.url), opts);
     }
     default:
-      throw new Error(`Unknown MCP transport: ${(serverConfig as McpServerConfig).transport}`);
+      throw new DomainError({
+        type: "validation",
+        message: `Unknown MCP transport: ${(serverConfig as McpServerConfig).transport}`,
+      });
   }
 }
 

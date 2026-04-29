@@ -5,6 +5,7 @@ import { text } from "../types/tool-result.ts";
 import { sandbox as files } from "../infra/sandbox.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
 import { md5 } from "../utils/hash.ts";
+import { DomainError } from "../types/errors.ts";
 
 const MAX_STRING_LENGTH = 64 * 1024; // 64 KB
 
@@ -63,24 +64,24 @@ async function edit_file(args: Record<string, unknown>): Promise<ToolResult> {
 
   const filePath = args.file_path as string;
   if (!filePath || typeof filePath !== "string") {
-    throw new Error("file_path is required and must be a non-empty string");
+    throw new DomainError({ type: "validation", message: "file_path is required and must be a non-empty string" });
   }
   assertMaxLength(filePath, "file_path", 1024);
 
   const oldString = args.old_string as string;
   if (typeof oldString !== "string" || oldString.length === 0) {
-    throw new Error("old_string is required and must be a non-empty string");
+    throw new DomainError({ type: "validation", message: "old_string is required and must be a non-empty string" });
   }
   assertMaxLength(oldString, "old_string", MAX_STRING_LENGTH);
 
   const newString = args.new_string as string;
   if (typeof newString !== "string") {
-    throw new Error("new_string is required and must be a string");
+    throw new DomainError({ type: "validation", message: "new_string is required and must be a string" });
   }
   assertMaxLength(newString, "new_string", MAX_STRING_LENGTH);
 
   if (oldString === newString) {
-    throw new Error("old_string and new_string must be different");
+    throw new DomainError({ type: "validation", message: "old_string and new_string must be different" });
   }
 
   const replaceAll = args.replace_all === true;
@@ -94,23 +95,28 @@ async function edit_file(args: Record<string, unknown>): Promise<ToolResult> {
   if (checksum.length > 0) {
     const actual = md5(content);
     if (actual !== checksum) {
-      throw new Error(
-        `File changed since last read (expected ${checksum}, got ${actual}). Re-read the file to get the current checksum.`
-      );
+      throw new DomainError({
+        type: "conflict",
+        message: `File changed since last read (expected ${checksum}, got ${actual}). Re-read the file to get the current checksum.`,
+      });
     }
   }
 
   // Verify old_string exists
   if (!content.includes(oldString)) {
-    throw new Error(`old_string not found in ${filePath}. Verify the exact text including whitespace and line breaks.`);
+    throw new DomainError({
+      type: "not_found",
+      message: `old_string not found in ${filePath}. Verify the exact text including whitespace and line breaks.`,
+    });
   }
 
   // Uniqueness check
   const occurrences = countOccurrences(content, oldString);
   if (!replaceAll && occurrences > 1) {
-    throw new Error(
-      `old_string found ${occurrences} times in ${filePath}. Provide more surrounding context for a unique match, or set replace_all to true.`
-    );
+    throw new DomainError({
+      type: "validation",
+      message: `old_string found ${occurrences} times in ${filePath}. Provide more surrounding context for a unique match, or set replace_all to true.`,
+    });
   }
 
   // Perform replacement

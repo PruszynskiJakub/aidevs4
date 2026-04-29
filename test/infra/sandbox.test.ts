@@ -181,15 +181,21 @@ describe("Sandbox", () => {
   });
 
   describe("error messages", () => {
-    it("includes the denied path and allowed directories", async () => {
+    it("keeps paths in internalMessage but not in user-facing message", async () => {
       const svc = createSandbox({ readPaths: [allowedDir], writePaths: [] });
       try {
         await svc.readText("/etc/passwd");
         expect(true).toBe(false);
       } catch (e: any) {
-        expect(e.message).toContain("/etc/passwd");
-        expect(e.message).toContain("Allowed read directories:");
-        expect(e.message).toContain(allowedDir);
+        // user-facing message is generic — no path leak
+        expect(e.message).not.toContain("/etc/passwd");
+        expect(e.message).not.toContain(allowedDir);
+        expect(e.message).toContain("Access denied");
+        // internal message preserves detail for logs
+        expect(e.internalMessage).toContain("/etc/passwd");
+        expect(e.internalMessage).toContain("Allowed read directories:");
+        expect(e.internalMessage).toContain(allowedDir);
+        expect(e.type).toBe("permission");
       }
     });
   });
@@ -204,7 +210,7 @@ describe("Sandbox", () => {
       const svc = createSandbox({ readPaths: [allowedDir], writePaths: [allowedDir], blockedWritePaths: [] });
       const p = join(allowedDir, "big.txt");
       await Bun.write(p, "x".repeat(2048));
-      await expect(svc.checkFileSize(p, 1024)).rejects.toThrow("exceeds limit");
+      await expect(svc.checkFileSize(p, 1024)).rejects.toThrow("exceeds size limit");
     });
   });
 

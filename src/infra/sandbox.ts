@@ -4,9 +4,7 @@ import { config } from "../config/index.ts";
 import { getSessionId } from "../agent/context.ts";
 import { safeParse, formatSizeMB } from "../utils/parse.ts";
 import * as fs from "./fs.ts";
-
-export { FileSizeLimitError } from "./fs.ts";
-import { FileSizeLimitError } from "./fs.ts";
+import { DomainError, isDomainError } from "../types/errors.ts";
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -45,9 +43,11 @@ function assertPathAllowed(
     return resolved === resolvedDir || resolved.startsWith(resolvedDir + "/");
   });
   if (!allowed) {
-    throw new Error(
-      `Access denied: cannot ${operation} "${toRelative(resolved)}". Allowed ${operation} directories: [${effective.map((d) => toRelative(d)).join(", ")}]`,
-    );
+    throw new DomainError({
+      type: "permission",
+      message: `Access denied: cannot ${operation} the requested path`,
+      internalMessage: `Access denied: cannot ${operation} "${toRelative(resolved)}". Allowed ${operation} directories: [${effective.map((d) => toRelative(d)).join(", ")}]`,
+    });
   }
 
   if (operation === "write") {
@@ -56,9 +56,11 @@ function assertPathAllowed(
       return resolved === resolvedDir || resolved.startsWith(resolvedDir + "/");
     });
     if (blocked) {
-      throw new Error(
-        `Access denied: cannot write to "${toRelative(resolved)}" — path is in a protected directory.`,
-      );
+      throw new DomainError({
+        type: "permission",
+        message: `Access denied: target path is in a protected directory`,
+        internalMessage: `Access denied: cannot write to "${toRelative(resolved)}" — path is in a protected directory.`,
+      });
     }
   }
 }
@@ -181,14 +183,16 @@ export async function resolveInput(
   try {
     const s = await fileProvider.stat(input);
     if (s.size > config.limits.maxFileSize) {
-      throw new FileSizeLimitError(
-        `File ${toRelative(input)} is ${formatSizeMB(s.size)} MB — exceeds limit of ${formatSizeMB(config.limits.maxFileSize)} MB`,
-      );
+      throw new DomainError({
+        type: "capacity",
+        message: `File exceeds size limit of ${formatSizeMB(config.limits.maxFileSize)} MB`,
+        internalMessage: `File ${toRelative(input)} is ${formatSizeMB(s.size)} MB — exceeds limit of ${formatSizeMB(config.limits.maxFileSize)} MB`,
+      });
     }
     const content = await fileProvider.readText(input);
     return safeParse(content, label);
   } catch (err) {
-    if (err instanceof FileSizeLimitError) throw err;
+    if (isDomainError(err) && err.type === "capacity") throw err;
   }
 
   try {

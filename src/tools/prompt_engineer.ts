@@ -6,6 +6,7 @@ import { llm } from "../llm/llm.ts";
 import { promptService } from "../llm/prompt.ts";
 import { config } from "../config/index.ts";
 import { assertMaxLength, safeParse } from "../utils/parse.ts";
+import { DomainError } from "../types/errors.ts";
 
 const MAX_GOAL = 2_000;
 const MAX_CONSTRAINTS = 1_000;
@@ -32,10 +33,10 @@ async function promptEngineer(
   assertMaxLength(typedArgs.feedback, "feedback", MAX_FEEDBACK);
 
   if (!typedArgs.goal.trim()) {
-    throw new Error("goal is required and cannot be empty");
+    throw new DomainError({ type: "validation", message: "goal is required and cannot be empty" });
   }
   if (!typedArgs.constraints.trim()) {
-    throw new Error("constraints is required and cannot be empty");
+    throw new DomainError({ type: "validation", message: "constraints is required and cannot be empty" });
   }
 
   const systemPrompt = await promptService.load("prompt-engineer");
@@ -70,7 +71,11 @@ async function promptEngineer(
   const parsed = safeParse<Record<string, unknown>>(cleaned, "prompt_engineer response");
 
   if (!parsed.prompt || typeof parsed.prompt !== "string") {
-    throw new Error("LLM did not return a valid prompt field. Try again with more specific goal and constraints.");
+    throw new DomainError({
+      type: "provider",
+      provider: "openai",
+      message: "LLM did not return a valid prompt field. Try again with more specific goal and constraints.",
+    });
   }
 
   const output = JSON.stringify({

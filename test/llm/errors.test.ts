@@ -7,10 +7,14 @@ import {
   InternalServerError,
   APIConnectionError,
   APIConnectionTimeoutError,
+  NotFoundError,
+  ConflictError,
 } from "openai";
-import { isFatalLLMError, extractErrorCode } from "../../src/llm/errors.ts";
+import { toOpenAIDomainError } from "../../src/llm/openai.ts";
+import { toGeminiDomainError } from "../../src/llm/gemini.ts";
+import { isDomainError } from "../../src/types/errors.ts";
 
-// Helper to create OpenAI errors with expected constructor args
+// Helper to construct OpenAI SDK errors with the expected ctor signature.
 function makeAPIError(
   Ctor: new (status: number, error: any, message: string, headers: any) => any,
   status: number,
@@ -20,115 +24,133 @@ function makeAPIError(
   return new Ctor(status, body, message, new Headers());
 }
 
-describe("isFatalLLMError", () => {
-  // ── Fatal errors ─────────────────────────────────────────
-
-  it("classifies AuthenticationError as fatal", () => {
-    const err = makeAPIError(AuthenticationError, 401);
-    expect(isFatalLLMError(err)).toBe(true);
+describe("toOpenAIDomainError", () => {
+  it("maps AuthenticationError to type=auth", () => {
+    const out = toOpenAIDomainError(makeAPIError(AuthenticationError, 401));
+    expect(isDomainError(out)).toBe(true);
+    expect(out.type).toBe("auth");
   });
 
-  it("classifies BadRequestError as fatal", () => {
-    const err = makeAPIError(BadRequestError, 400);
-    expect(isFatalLLMError(err)).toBe(true);
+  it("maps BadRequestError to type=validation", () => {
+    expect(toOpenAIDomainError(makeAPIError(BadRequestError, 400)).type).toBe("validation");
   });
 
-  it("classifies PermissionDeniedError as fatal", () => {
-    const err = makeAPIError(PermissionDeniedError, 403);
-    expect(isFatalLLMError(err)).toBe(true);
+  it("maps PermissionDeniedError to type=permission", () => {
+    expect(toOpenAIDomainError(makeAPIError(PermissionDeniedError, 403)).type).toBe("permission");
   });
 
-  it("classifies insufficient_quota RateLimitError as fatal", () => {
-    const err = makeAPIError(RateLimitError, 429, { code: "insufficient_quota" });
-    expect(isFatalLLMError(err)).toBe(true);
+  it("maps NotFoundError to type=not_found", () => {
+    expect(toOpenAIDomainError(makeAPIError(NotFoundError, 404)).type).toBe("not_found");
   });
 
-  it("classifies Gemini RESOURCE_EXHAUSTED as fatal", () => {
-    const err = new Error("RESOURCE_EXHAUSTED: quota exceeded");
-    expect(isFatalLLMError(err)).toBe(true);
+  it("maps ConflictError to type=conflict", () => {
+    expect(toOpenAIDomainError(makeAPIError(ConflictError, 409)).type).toBe("conflict");
   });
 
-  it("classifies Gemini 401 as fatal", () => {
-    const err = Object.assign(new Error("Unauthorized"), { status: 401 });
-    expect(isFatalLLMError(err)).toBe(true);
+  it("maps insufficient_quota RateLimitError to type=auth (fatal)", () => {
+    const out = toOpenAIDomainError(
+      makeAPIError(RateLimitError, 429, { code: "insufficient_quota" }),
+    );
+    expect(out.type).toBe("auth");
   });
 
-  it("classifies Gemini 403 (non-quota) as fatal", () => {
-    const err = Object.assign(new Error("Forbidden"), { status: 403 });
-    expect(isFatalLLMError(err)).toBe(true);
+  it("maps regular RateLimitError to type=capacity (transient)", () => {
+    const out = toOpenAIDomainError(
+      makeAPIError(RateLimitError, 429, { code: "rate_limit_exceeded" }),
+    );
+    expect(out.type).toBe("capacity");
   });
 
-  // ── Transient errors ─────────────────────────────────────
-
-  it("classifies regular RateLimitError as transient", () => {
-    const err = makeAPIError(RateLimitError, 429, { code: "rate_limit_exceeded" });
-    expect(isFatalLLMError(err)).toBe(false);
+  it("maps InternalServerError to type=provider", () => {
+    const out = toOpenAIDomainError(makeAPIError(InternalServerError, 500));
+    expect(out.type).toBe("provider");
+    expect(out.provider).toBe("openai");
   });
 
-  it("classifies InternalServerError as transient", () => {
-    const err = makeAPIError(InternalServerError, 500);
-    expect(isFatalLLMError(err)).toBe(false);
+  it("maps APIConnectionError to type=provider", () => {
+    const out = toOpenAIDomainError(new APIConnectionError({ message: "Connection failed" }));
+    expect(out.type).toBe("provider");
+    expect(out.provider).toBe("openai");
   });
 
-  it("classifies APIConnectionError as transient", () => {
-    const err = new APIConnectionError({ message: "Connection failed" });
-    expect(isFatalLLMError(err)).toBe(false);
+  it("maps APIConnectionTimeoutError to type=timeout", () => {
+    expect(toOpenAIDomainError(new APIConnectionTimeoutError()).type).toBe("timeout");
   });
 
-  it("classifies APIConnectionTimeoutError as transient", () => {
-    const err = new APIConnectionTimeoutError();
-    expect(isFatalLLMError(err)).toBe(false);
+  it("re-passes existing DomainError unchanged", () => {
+    const original = toOpenAIDomainError(makeAPIError(AuthenticationError, 401));
+    const out = toOpenAIDomainError(original);
+    expect(out).toBe(original);
   });
 
-  it("classifies Gemini 500 as transient", () => {
-    const err = Object.assign(new Error("Internal Server Error"), { status: 500 });
-    expect(isFatalLLMError(err)).toBe(false);
+  it("maps unknown errors to type=provider with cause preserved", () => {
+    const root = new Error("something unexpected");
+    const out = toOpenAIDomainError(root);
+    expect(out.type).toBe("provider");
+    expect(out.cause).toBe(root);
   });
 
-  it("classifies Gemini 503 as transient", () => {
-    const err = Object.assign(new Error("Service Unavailable"), { status: 503 });
-    expect(isFatalLLMError(err)).toBe(false);
-  });
-
-  it("classifies network errors as transient", () => {
-    const err = new Error("ECONNRESET");
-    expect(isFatalLLMError(err)).toBe(false);
-  });
-
-  it("classifies timeout errors as transient", () => {
-    const err = new Error("The operation was aborted due to timeout");
-    expect(isFatalLLMError(err)).toBe(false);
-  });
-
-  it("classifies unknown errors as transient", () => {
-    expect(isFatalLLMError(new Error("something unexpected"))).toBe(false);
-    expect(isFatalLLMError("string error")).toBe(false);
-    expect(isFatalLLMError(null)).toBe(false);
+  it("maps non-Error values to type=provider", () => {
+    expect(toOpenAIDomainError("string error").type).toBe("provider");
+    expect(toOpenAIDomainError(null).type).toBe("provider");
   });
 });
 
-describe("extractErrorCode", () => {
-  it("extracts code from OpenAI APIError", () => {
-    const err = makeAPIError(RateLimitError, 429, { code: "insufficient_quota" });
-    expect(extractErrorCode(err)).toBe("insufficient_quota");
+describe("toGeminiDomainError", () => {
+  it("maps RESOURCE_EXHAUSTED message to type=auth (quota)", () => {
+    expect(toGeminiDomainError(new Error("RESOURCE_EXHAUSTED: quota exceeded")).type).toBe("auth");
   });
 
-  it("falls back to status for OpenAI errors without code", () => {
-    const err = makeAPIError(InternalServerError, 500);
-    expect(extractErrorCode(err)).toBe("500");
+  it("maps status=400 to type=validation", () => {
+    const err = Object.assign(new Error("Bad request"), { status: 400 });
+    expect(toGeminiDomainError(err).type).toBe("validation");
   });
 
-  it("extracts status from Gemini-style errors", () => {
-    const err = Object.assign(new Error("Gemini error"), { status: 429 });
-    expect(extractErrorCode(err)).toBe("429");
+  it("maps status=401 to type=auth", () => {
+    const err = Object.assign(new Error("Unauthorized"), { status: 401 });
+    expect(toGeminiDomainError(err).type).toBe("auth");
   });
 
-  it("returns undefined for plain errors", () => {
-    expect(extractErrorCode(new Error("plain"))).toBeUndefined();
+  it("maps status=403 (non-quota) to type=permission", () => {
+    const err = Object.assign(new Error("Forbidden"), { status: 403 });
+    expect(toGeminiDomainError(err).type).toBe("permission");
   });
 
-  it("returns undefined for non-Error values", () => {
-    expect(extractErrorCode("string")).toBeUndefined();
-    expect(extractErrorCode(null)).toBeUndefined();
+  it("maps status=429 to type=capacity", () => {
+    const err = Object.assign(new Error("Too many requests"), { status: 429 });
+    expect(toGeminiDomainError(err).type).toBe("capacity");
+  });
+
+  it("maps status=500 to type=provider", () => {
+    const err = Object.assign(new Error("Internal Server Error"), { status: 500 });
+    const out = toGeminiDomainError(err);
+    expect(out.type).toBe("provider");
+    expect(out.provider).toBe("gemini");
+  });
+
+  it("maps status=503 to type=provider", () => {
+    const err = Object.assign(new Error("Service Unavailable"), { status: 503 });
+    expect(toGeminiDomainError(err).type).toBe("provider");
+  });
+
+  it("maps AbortError to type=timeout", () => {
+    const err = Object.assign(new Error("aborted"), { name: "AbortError" });
+    expect(toGeminiDomainError(err).type).toBe("timeout");
+  });
+
+  it("maps network errors without status to type=provider", () => {
+    expect(toGeminiDomainError(new Error("ECONNRESET")).type).toBe("provider");
+  });
+
+  it("re-passes existing DomainError unchanged", () => {
+    const original = toGeminiDomainError(new Error("RESOURCE_EXHAUSTED"));
+    const out = toGeminiDomainError(original);
+    expect(out).toBe(original);
+  });
+
+  it("preserves the original error as cause", () => {
+    const root = new Error("RESOURCE_EXHAUSTED");
+    const out = toGeminiDomainError(root);
+    expect(out.cause).toBe(root);
   });
 });

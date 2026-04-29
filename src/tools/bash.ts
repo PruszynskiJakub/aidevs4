@@ -5,6 +5,7 @@ import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import { getSessionWorkingDir } from "../agent/session.ts";
+import { DomainError } from "../types/errors.ts";
 
 const MAX_OUTPUT = 20_000;
 
@@ -23,10 +24,13 @@ function assertWritesInSessionDir(command: string, cwd: string): void {
     if (target.startsWith("/dev/")) continue; // /dev/null etc.
     const resolved = resolve(cwd, target);
     if (!resolved.startsWith(cwd + "/") && resolved !== cwd) {
-      throw new Error(
-        `Write target "${target}" resolves to "${resolved}" which is outside the session output directory "${cwd}". ` +
+      throw new DomainError({
+        type: "permission",
+        message:
+          `Write target "${target}" resolves outside the session output directory. ` +
           `Redirect output to a relative path within CWD (e.g., ./tmp.txt), not /tmp or absolute paths.`,
-      );
+        internalMessage: `Write target "${target}" resolves to "${resolved}" which is outside cwd "${cwd}".`,
+      });
     }
   }
 }
@@ -43,7 +47,7 @@ async function bash(args: Record<string, unknown>): Promise<ToolResult> {
 
   const shellPromise = $`bash -c ${command}`.cwd(cwd).quiet().nothrow();
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`Command timed out after ${timeout}ms`)), timeout),
+    setTimeout(() => reject(new DomainError({ type: "timeout", message: `Command timed out after ${timeout}ms` })), timeout),
   );
   const result = await Promise.race([shellPromise, timeoutPromise]);
 

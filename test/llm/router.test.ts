@@ -49,12 +49,24 @@ describe("ProviderRegistry", () => {
       registry.register("gpt-", stubProvider("openai"));
 
       expect(() => registry.resolve("claude-3")).toThrow('No provider registered for model "claude-3"');
-      expect(() => registry.resolve("claude-3")).toThrow('"gpt-"');
+      // registered patterns are in internalMessage, not message (no leakage to wire)
+      try {
+        registry.resolve("claude-3");
+      } catch (e: any) {
+        expect(e.type).toBe("validation");
+        expect(e.internalMessage).toContain('"gpt-"');
+      }
     });
 
     it("throws with empty registry", () => {
       const registry = new ProviderRegistry();
-      expect(() => registry.resolve("any-model")).toThrow("(none)");
+      try {
+        registry.resolve("any-model");
+        expect(true).toBe(false);
+      } catch (e: any) {
+        expect(e.type).toBe("validation");
+        expect(e.internalMessage).toContain("(none)");
+      }
     });
 
     it("matches 'o' prefix for o-series models", () => {

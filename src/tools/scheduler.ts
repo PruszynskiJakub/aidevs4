@@ -7,6 +7,7 @@ import { text } from "../types/tool-result.ts";
 import { scheduler, parseDelay, delayToRunAt } from "../infra/scheduler.ts";
 import * as dbOps from "../infra/db/index.ts";
 import { assertMaxLength } from "../utils/parse.ts";
+import { DomainError } from "../types/errors.ts";
 
 const ID_RE = /^[a-zA-Z0-9_.\-]+$/;
 const MAX_NAME_LEN = 100;
@@ -17,7 +18,7 @@ const MAX_AGENT_LEN = 100;
 
 function validateId(id: string): void {
   assertMaxLength(id, "id", 100);
-  if (!ID_RE.test(id)) throw new Error(`Invalid id: must match ${ID_RE}`);
+  if (!ID_RE.test(id)) throw new DomainError({ type: "validation", message: `Invalid id: must match ${ID_RE}` });
 }
 
 function validateCron(cron: string): void {
@@ -26,8 +27,8 @@ function validateCron(cron: string): void {
     // Validate by creating a stopped instance
     const c = new Cron(cron);
     c.stop();
-  } catch {
-    throw new Error(`Invalid cron expression: "${cron}"`);
+  } catch (err) {
+    throw new DomainError({ type: "validation", message: `Invalid cron expression: "${cron}"`, cause: err });
   }
 }
 
@@ -102,7 +103,7 @@ async function listAction(): Promise<ToolResult> {
 async function getAction(payload: { id: string }): Promise<ToolResult> {
   validateId(payload.id);
   const job = dbOps.getJob(payload.id);
-  if (!job) throw new Error(`Job not found: ${payload.id}`);
+  if (!job) throw new DomainError({ type: "not_found", message: `Job not found: ${payload.id}` });
 
   const info = [
     `Name: ${job.name}`,
@@ -125,8 +126,8 @@ async function getAction(payload: { id: string }): Promise<ToolResult> {
 async function pauseAction(payload: { id: string }): Promise<ToolResult> {
   validateId(payload.id);
   const job = dbOps.getJob(payload.id);
-  if (!job) throw new Error(`Job not found: ${payload.id}`);
-  if (job.status !== "active") throw new Error(`Job is not active (status: ${job.status})`);
+  if (!job) throw new DomainError({ type: "not_found", message: `Job not found: ${payload.id}` });
+  if (job.status !== "active") throw new DomainError({ type: "conflict", message: `Job is not active (status: ${job.status})` });
 
   dbOps.updateJobStatus(payload.id, "paused");
   scheduler.cancelJob(payload.id);
@@ -137,8 +138,8 @@ async function pauseAction(payload: { id: string }): Promise<ToolResult> {
 async function resumeAction(payload: { id: string }): Promise<ToolResult> {
   validateId(payload.id);
   const job = dbOps.getJob(payload.id);
-  if (!job) throw new Error(`Job not found: ${payload.id}`);
-  if (job.status !== "paused") throw new Error(`Job is not paused (status: ${job.status})`);
+  if (!job) throw new DomainError({ type: "not_found", message: `Job not found: ${payload.id}` });
+  if (job.status !== "paused") throw new DomainError({ type: "conflict", message: `Job is not paused (status: ${job.status})` });
 
   dbOps.updateJobStatus(payload.id, "active");
 
@@ -153,7 +154,7 @@ async function resumeAction(payload: { id: string }): Promise<ToolResult> {
 async function deleteAction(payload: { id: string }): Promise<ToolResult> {
   validateId(payload.id);
   const job = dbOps.getJob(payload.id);
-  if (!job) throw new Error(`Job not found: ${payload.id}`);
+  if (!job) throw new DomainError({ type: "not_found", message: `Job not found: ${payload.id}` });
 
   scheduler.cancelJob(payload.id);
   dbOps.deleteJob(payload.id);
@@ -173,7 +174,7 @@ async function schedulerHandler(args: Record<string, unknown>): Promise<ToolResu
     case "pause": return pauseAction(payload as any);
     case "resume": return resumeAction(payload as any);
     case "delete": return deleteAction(payload as any);
-    default: throw new Error(`Unknown scheduler action: ${action}`);
+    default: throw new DomainError({ type: "validation", message: `Unknown scheduler action: ${action}` });
   }
 }
 

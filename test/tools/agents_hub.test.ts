@@ -249,12 +249,17 @@ describe("agents_hub api_request", () => {
       return new Response("Not Found", { status: 404, statusText: "Not Found" });
     }) as any;
 
-    await expect(
-      handler({
+    try {
+      await handler({
         action: "api_request",
         payload: { path: "missing", body: '{"x":1}' },
-      }),
-    ).rejects.toThrow("API request failed (404): Not Found");
+      });
+      expect(true).toBe(false);
+    } catch (e: any) {
+      expect(e.message).toBe("API request failed (404)");
+      expect(e.internalMessage).toContain("Not Found");
+      expect(e.type).toBe("provider");
+    }
   });
 
   it("returns text response when content-type is not JSON", async () => {

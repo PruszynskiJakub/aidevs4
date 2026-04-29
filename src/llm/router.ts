@@ -4,9 +4,9 @@ import type {
   ChatCompletionParams,
   CompletionParams,
 } from "../types/llm.ts";
-import { isFatalLLMError, extractErrorCode } from "./errors.ts";
 import { errorMessage } from "../utils/parse.ts";
 import { bus } from "../infra/events.ts";
+import { DomainError, isDomainError, type DomainErrorType } from "../types/errors.ts";
 
 interface ProviderEntry {
   pattern: string | RegExp;
@@ -19,6 +19,19 @@ function matches(model: string, pattern: string | RegExp): boolean {
   }
   return pattern.test(model);
 }
+
+/**
+ * An LLM error is "fatal" (will not succeed on retry) if its category is
+ * one of: validation (bad request), auth (key/quota issue), permission,
+ * not_found. Categories `capacity`, `provider`, `timeout`, `conflict` are
+ * transient.
+ */
+const FATAL_TYPES: ReadonlySet<DomainErrorType> = new Set<DomainErrorType>([
+  "validation",
+  "auth",
+  "permission",
+  "not_found",
+]);
 
 export class ProviderRegistry implements LLMProvider {
   private entries: ProviderEntry[] = [];
@@ -38,9 +51,11 @@ export class ProviderRegistry implements LLMProvider {
       .map((e) => (typeof e.pattern === "string" ? `"${e.pattern}"` : e.pattern.toString()))
       .join(", ");
 
-    throw new Error(
-      `No provider registered for model "${model}". Registered patterns: ${registered || "(none)"}`,
-    );
+    throw new DomainError({
+      type: "validation",
+      message: `No provider registered for model "${model}"`,
+      internalMessage: `Registered patterns: ${registered || "(none)"}`,
+    });
   }
 
   async chatCompletion(params: ChatCompletionParams): Promise<LLMChatResponse> {
@@ -64,11 +79,13 @@ export class ProviderRegistry implements LLMProvider {
   }
 
   private emitCallFailed(model: string, err: unknown): void {
+    const fatal = isDomainError(err) ? FATAL_TYPES.has(err.type) : false;
+    const code = isDomainError(err) ? err.type : undefined;
     bus.emit("llm.call.failed", {
       model,
       error: errorMessage(err),
-      fatal: isFatalLLMError(err),
-      code: extractErrorCode(err),
+      fatal,
+      code,
     });
   }
 }

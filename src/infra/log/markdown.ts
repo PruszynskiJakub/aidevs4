@@ -4,6 +4,7 @@ import type { Logger } from "../../types/logger.ts";
 import { createSandbox } from "../sandbox.ts";
 import { config } from "../../config/index.ts";
 import { randomSessionId } from "../../utils/id.ts";
+import { DomainError } from "../../types/errors.ts";
 
 const SAFE_ID = /^[a-zA-Z0-9_\-]+$/;
 const MAX_INLINE_SIZE = 10_240;
@@ -43,7 +44,10 @@ export class MarkdownLogger implements Logger {
     const sid = options?.sessionId ?? randomSessionId();
 
     if (!SAFE_ID.test(sid)) {
-      throw new Error("Invalid session ID: must match /^[a-zA-Z0-9_\\-]+$/");
+      throw new DomainError({
+        type: "validation",
+        message: "Invalid session ID: must match /^[a-zA-Z0-9_-]+$/",
+      });
     }
 
     const ts = utcTimestamp();

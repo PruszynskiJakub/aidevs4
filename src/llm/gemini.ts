@@ -11,6 +11,97 @@ import type {
   ContentPart,
 } from "../types/llm.ts";
 import { config } from "../config/index.ts";
+import { DomainError, isDomainError } from "../types/errors.ts";
+
+/**
+ * Map an unknown Gemini SDK error to a DomainError.
+ * Gemini lacks typed error classes; classify by status code + message substrings.
+ * Re-passes existing DomainErrors unchanged.
+ */
+export function toGeminiDomainError(err: unknown): DomainError {
+  if (isDomainError(err)) return err;
+
+  const status = err instanceof Error ? (err as { status?: number }).status : undefined;
+  const msg = err instanceof Error ? err.message : String(err);
+
+  // Quota exhaustion — Google reports as RESOURCE_EXHAUSTED in the message
+  if (msg.includes("RESOURCE_EXHAUSTED")) {
+    return new DomainError({
+      type: "auth",
+      message: "Gemini quota exhausted",
+      internalMessage: msg,
+      cause: err,
+    });
+  }
+
+  // AbortSignal.timeout fires AbortError
+  if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError" || msg.includes("aborted"))) {
+    return new DomainError({
+      type: "timeout",
+      message: "Gemini request timed out",
+      internalMessage: msg,
+      cause: err,
+    });
+  }
+
+  if (status === 400) {
+    return new DomainError({
+      type: "validation",
+      message: "Gemini rejected the request",
+      internalMessage: msg,
+      cause: err,
+    });
+  }
+  if (status === 401) {
+    return new DomainError({
+      type: "auth",
+      message: "Gemini authentication failed",
+      internalMessage: msg,
+      cause: err,
+    });
+  }
+  if (status === 403) {
+    return new DomainError({
+      type: "permission",
+      message: "Gemini permission denied",
+      internalMessage: msg,
+      cause: err,
+    });
+  }
+  if (status === 404) {
+    return new DomainError({
+      type: "not_found",
+      message: "Gemini resource not found",
+      internalMessage: msg,
+      cause: err,
+    });
+  }
+  if (status === 409) {
+    return new DomainError({
+      type: "conflict",
+      message: "Gemini request conflicted with provider state",
+      internalMessage: msg,
+      cause: err,
+    });
+  }
+  if (status === 429) {
+    return new DomainError({
+      type: "capacity",
+      message: "Gemini rate limit reached",
+      internalMessage: msg,
+      cause: err,
+    });
+  }
+
+  // 5xx, network errors, anything else → generic provider failure (transient)
+  return new DomainError({
+    type: "provider",
+    provider: "gemini",
+    message: "Gemini provider error",
+    internalMessage: msg,
+    cause: err,
+  });
+}
 
 function findToolCallName(messages: LLMMessage[], toolCallId: string): string | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -171,7 +262,7 @@ export function createGeminiProvider(apiKey: string): LLMProvider {
       } catch (err) {
         const roles = contents.map((c) => c.role).join(",");
         console.error(`[gemini] ${(err as Error).message} | roles=[${roles}] parts=${contents.reduce((n, c) => n + (c.parts?.length ?? 0), 0)}`);
-        throw err;
+        throw toGeminiDomainError(err);
       }
 
       const candidate = response.candidates?.[0];
@@ -200,17 +291,21 @@ export function createGeminiProvider(apiKey: string): LLMProvider {
     },
 
     async completion(params: CompletionParams): Promise<string> {
-      const response = await ai.models.generateContent({
-        model: params.model,
-        contents: [{ role: "user", parts: [{ text: params.userPrompt }] }],
-        config: {
-          systemInstruction: params.systemPrompt,
-          temperature: params.temperature ?? 0,
-          abortSignal: AbortSignal.timeout(config.limits.geminiTimeout),
-        },
-      });
+      try {
+        const response = await ai.models.generateContent({
+          model: params.model,
+          contents: [{ role: "user", parts: [{ text: params.userPrompt }] }],
+          config: {
+            systemInstruction: params.systemPrompt,
+            temperature: params.temperature ?? 0,
+            abortSignal: AbortSignal.timeout(config.limits.geminiTimeout),
+          },
+        });
 
-      return response.text ?? "";
+        return response.text ?? "";
+      } catch (err) {
+        throw toGeminiDomainError(err);
+      }
     },
   };
 }

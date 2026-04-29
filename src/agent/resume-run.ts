@@ -5,15 +5,14 @@ import type { ExecuteRunResult } from "./orchestrator.ts";
 import type { RunExit } from "./run-exit.ts";
 import type { Decision } from "../types/tool.ts";
 import type { DbRun } from "../types/db.ts";
-import { bus } from "../infra/events.ts";
-import { sessionService } from "./session.ts";
-import { agentsService } from "./agents.ts";
 import { emptyMemoryState } from "../types/memory.ts";
 import { loadState } from "./memory/persistence.ts";
 import { dispatch } from "../tools/registry.ts";
 import { runAndPersist } from "./orchestrator.ts";
+import { createRuntime, type Runtime } from "../runtime.ts";
 import * as dbOps from "../infra/db/index.ts";
 import { randomUUID } from "node:crypto";
+import { DomainError } from "../types/errors.ts";
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -75,10 +74,15 @@ function dbRunToExit(run: DbRun): RunExit {
 export async function resumeRun(
   runId: string,
   resolution: WaitResolution,
+  runtime: Runtime = createRuntime(),
 ): Promise<ExecuteRunResult> {
   const run = dbOps.getRun(runId);
   if (!run) {
-    throw new Error(`Unknown run: ${runId}`);
+    throw new DomainError({
+      type: "not_found",
+      message: "Run not found",
+      internalMessage: `Unknown run: ${runId}`,
+    });
   }
   if (run.status !== "waiting") {
     // Already resumed (idempotent) — return current state as no-op
@@ -89,18 +93,24 @@ export async function resumeRun(
     };
   }
   if (!run.waitingOn) {
-    throw new Error(`Run ${runId} has no waitingOn descriptor`);
+    throw new DomainError({
+      type: "conflict",
+      message: "Run is not in a resumable state",
+      internalMessage: `Run ${runId} has no waitingOn descriptor`,
+    });
   }
 
   const waitingOn = JSON.parse(run.waitingOn) as WaitDescriptor;
   if (waitingOn.kind !== resolution.kind) {
-    throw new Error(
-      `Resolution kind '${resolution.kind}' does not match waitingOn.kind '${waitingOn.kind}'`,
-    );
+    throw new DomainError({
+      type: "validation",
+      message: "Resolution does not match the run's waiting state",
+      internalMessage: `Resolution kind '${resolution.kind}' does not match waitingOn.kind '${waitingOn.kind}'`,
+    });
   }
 
   // Load the persisted transcript for this run
-  const messages = sessionService.getMessages(run.sessionId, runId);
+  const messages = runtime.sessions.getMessages(run.sessionId, runId);
 
   // Find the most recent assistant message with tool calls that still
   // lack function_call_output responses. Those are what we must answer.
@@ -151,7 +161,7 @@ export async function resumeRun(
   }
 
   // Persist synthetic tool-result messages
-  sessionService.appendRun(run.sessionId, runId, newMessages);
+  runtime.sessions.appendRun(run.sessionId, runId, newMessages);
 
   // Clear waitingOn, transition back to running (with optimistic lock)
   const updated = dbOps.updateRunStatus(runId, {
@@ -169,15 +179,15 @@ export async function resumeRun(
     };
   }
 
-  bus.emit("run.resumed", {
+  runtime.bus.emit("run.resumed", {
     resolution,
   });
 
   // Rebuild run state from DB for the next attempt
-  const fullMessages = sessionService.getMessages(run.sessionId, runId);
+  const fullMessages = runtime.sessions.getMessages(run.sessionId, runId);
   const persisted = await loadState(run.sessionId);
   const assistantName = run.template;
-  const resolved = await agentsService.resolve(assistantName);
+  const resolved = await runtime.agents.resolve(assistantName);
 
   const parentDepth = run.parentId ? 1 : 0;
 
@@ -198,5 +208,5 @@ export async function resumeRun(
     memory: persisted ?? emptyMemoryState(),
   };
 
-  return runAndPersist(state);
+  return runAndPersist(state, runtime);
 }

@@ -1,3 +1,5 @@
+import { DomainError } from "../types/errors.ts";
+
 /**
  * Replace {{hub_api_key}} (and similar) template placeholders in a string.
  */
@@ -35,7 +37,12 @@ export async function hubPost(
     : await res.text();
 
   if (!res.ok) {
-    throw new Error(`${label} (${res.status}): ${stringify(response)}`);
+    throw new DomainError({
+      type: "provider",
+      provider: "ag3nts-hub",
+      message: `${label} (${res.status})`,
+      internalMessage: `${label} (${res.status}): ${stringify(response)}`,
+    });
   }
 
   return response;

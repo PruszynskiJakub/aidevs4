@@ -7,6 +7,7 @@ import { requireSessionId } from "../agent/context.ts";
 import type { BrowserFeedbackTracker, BrowserInterventions, BrowserSession, BrowserPool } from "../types/browser.ts";
 import { createBrowserFeedbackTracker } from "./browser-feedback.ts";
 import { createBrowserInterventions } from "./browser-interventions.ts";
+import { DomainError } from "../types/errors.ts";
 
 export type { BrowserSession, BrowserPool } from "../types/browser.ts";
 
@@ -130,9 +131,10 @@ function createBrowserPool(): BrowserPool {
       if (existing) return existing;
 
       if (sessions.size >= config.browser.maxPoolSize) {
-        throw new Error(
-          `Browser pool full (max ${config.browser.maxPoolSize}). Close an existing session first.`,
-        );
+        throw new DomainError({
+          type: "capacity",
+          message: `Browser pool full (max ${config.browser.maxPoolSize}). Close an existing session first.`,
+        });
       }
 
       const session = createBrowserSession();

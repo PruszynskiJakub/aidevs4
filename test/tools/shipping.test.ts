@@ -129,9 +129,14 @@ describe("shipping API error handling", () => {
       return new Response("Not Found", { status: 404, statusText: "Not Found" });
     }) as any;
 
-    await expect(
-      handler({ action: "check", payload: { packageid: "PKG999" } }),
-    ).rejects.toThrow("Package check failed (404): Not Found");
+    try {
+      await handler({ action: "check", payload: { packageid: "PKG999" } });
+      expect(true).toBe(false);
+    } catch (e: any) {
+      expect(e.message).toBe("Package check failed (404)");
+      expect(e.internalMessage).toContain("Not Found");
+      expect(e.type).toBe("provider");
+    }
   });
 
   it("throws on non-200 response for redirect", async () => {

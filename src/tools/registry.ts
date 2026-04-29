@@ -6,6 +6,7 @@ import type { ToolResult } from "../types/tool-result.ts";
 import { safeParse } from "../utils/parse.ts";
 import { estimateTokens } from "../utils/tokens.ts";
 import { resultStore } from "../infra/result-store.ts";
+import { DomainError } from "../types/errors.ts";
 
 export const SEPARATOR = "__";
 
@@ -21,7 +22,7 @@ function zodToParameters(schema: z.ZodObject): Record<string, unknown> {
 
 export function register(tool: ToolDefinition): void {
   if (handlers.has(tool.name)) {
-    throw new Error(`Duplicate tool registration: "${tool.name}"`);
+    throw new DomainError({ type: "conflict", message: `Duplicate tool registration: "${tool.name}"` });
   }
 
   handlers.set(tool.name, tool);
@@ -66,7 +67,7 @@ export function registerRaw(
   annotations?: ToolAnnotations,
 ): void {
   if (handlers.has(name)) {
-    throw new Error(`Duplicate tool registration: "${name}"`);
+    throw new DomainError({ type: "conflict", message: `Duplicate tool registration: "${name}"` });
   }
 
   handlers.set(name, {

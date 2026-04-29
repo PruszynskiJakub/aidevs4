@@ -97,6 +97,6 @@ describe("fs.ts pure functions", () => {
   });
 
   it("checkFileSize throws for oversized file", () => {
-    expect(() => fs.checkFileSize({ isFile: true, isDirectory: false, size: 2048 }, 1024, "test")).toThrow("exceeds limit");
+    expect(() => fs.checkFileSize({ isFile: true, isDirectory: false, size: 2048 }, 1024, "test")).toThrow("exceeds size limit");
   });
 });

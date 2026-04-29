@@ -2,8 +2,9 @@ import { z } from "zod";
 import type { ToolDefinition } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
-import { sandbox as files, FileSizeLimitError } from "../infra/sandbox.ts";
+import { sandbox as files } from "../infra/sandbox.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
+import { DomainError, isDomainError } from "../types/errors.ts";
 
 const MAX_TOTAL_LINES = 200;
 const MAX_FILES_WITH_MATCHES = 50;
@@ -14,20 +15,20 @@ async function grep(args: Record<string, unknown>): Promise<ToolResult> {
 
   const pattern = args.pattern as string;
   if (!pattern || typeof pattern !== "string") {
-    throw new Error("pattern is required and must be a non-empty string");
+    throw new DomainError({ type: "validation", message: "pattern is required and must be a non-empty string" });
   }
   assertMaxLength(pattern, "pattern", 512);
 
   let regex: RegExp;
   try {
     regex = new RegExp(pattern, args.case_insensitive ? "i" : "");
-  } catch {
-    throw new Error(`Invalid regex: "${pattern}"`);
+  } catch (err) {
+    throw new DomainError({ type: "validation", message: `Invalid regex: "${pattern}"`, cause: err });
   }
 
   const path = args.path as string;
   if (!path || typeof path !== "string") {
-    throw new Error("path is required and must be a non-empty string");
+    throw new DomainError({ type: "validation", message: "path is required and must be a non-empty string" });
   }
   assertMaxLength(path, "path", 1024);
 
@@ -37,7 +38,7 @@ async function grep(args: Record<string, unknown>): Promise<ToolResult> {
   // Verify directory exists (also triggers sandbox check)
   const st = await files.stat(path);
   if (!st.isDirectory) {
-    throw new Error(`"${path}" is not a directory`);
+    throw new DomainError({ type: "validation", message: `"${path}" is not a directory` });
   }
 
   const globber = new Bun.Glob(include);
@@ -65,7 +66,7 @@ async function grep(args: Record<string, unknown>): Promise<ToolResult> {
     try {
       await files.checkFileSize(entry);
     } catch (err) {
-      if (err instanceof FileSizeLimitError) continue;
+      if (isDomainError(err) && err.type === "capacity") continue;
       throw err;
     }
 

@@ -5,21 +5,22 @@ import { text } from "../types/tool-result.ts";
 import { sandbox as files } from "../infra/sandbox.ts";
 import { assertMaxLength, validateKeys } from "../utils/parse.ts";
 import { md5 } from "../utils/hash.ts";
+import { DomainError } from "../types/errors.ts";
 
 async function read_file(args: Record<string, unknown>): Promise<ToolResult> {
   validateKeys(args);
 
   const filePath = args.file_path as string;
   if (!filePath || typeof filePath !== "string") {
-    throw new Error("file_path is required and must be a non-empty string");
+    throw new DomainError({ type: "validation", message: "file_path is required and must be a non-empty string" });
   }
   assertMaxLength(filePath, "file_path", 1024);
 
   const offset = typeof args.offset === "number" ? args.offset : 1;
   const limit = typeof args.limit === "number" ? args.limit : 2000;
 
-  if (offset < 1) throw new Error("offset must be >= 1");
-  if (limit < 1) throw new Error("limit must be >= 1");
+  if (offset < 1) throw new DomainError({ type: "validation", message: "offset must be >= 1" });
+  if (limit < 1) throw new DomainError({ type: "validation", message: "limit must be >= 1" });
 
   await files.checkFileSize(filePath);
 

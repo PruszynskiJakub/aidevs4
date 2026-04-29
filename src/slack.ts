@@ -1,9 +1,9 @@
 import { App } from "@slack/bolt";
 import { randomUUID } from "node:crypto";
 import { executeRun, type ExecuteRunResult } from "./agent/orchestrator.ts";
-import { bus } from "./infra/events.ts";
 import { log } from "./infra/log/logger.ts";
 import { initServices, installSignalHandlers } from "./infra/bootstrap.ts";
+import { createRuntime } from "./runtime.ts";
 import type { AgentEvent } from "./types/events.ts";
 import type { RunExit } from "./agent/run-exit.ts";
 import {
@@ -17,6 +17,7 @@ import {
   postConfirmationMessage,
   registerConfirmationActions,
 } from "./slack-confirmation.ts";
+import { isDomainError } from "./types/errors.ts";
 
 // ── Config ─────────────────────────────────────────────────
 
@@ -104,6 +105,10 @@ function createStatusUpdater(
   };
 }
 
+// ── Composition root ───────────────────────────────────────
+
+const runtime = createRuntime();
+
 // ── Bolt app ───────────────────────────────────────────────
 
 const app = new App({
@@ -129,7 +134,7 @@ registerConfirmationActions(app, {
   async onResumed(result, channel, threadTs) {
     await handleResult(result, channel, threadTs);
   },
-});
+}, runtime);
 
 /** Track in-flight requests to deduplicate Slack retries. */
 const inFlight = new Set<string>();
@@ -202,21 +207,23 @@ async function handleMessage(
 
   const status = createStatusUpdater(app, channelId, replyThread);
 
-  const unsubscribe = bus.onAny((event: AgentEvent) => {
+  const unsubscribe = runtime.bus.onAny((event: AgentEvent) => {
     if (event.sessionId !== sessionId) return;
     status.onEvent(event);
   });
 
   try {
-    const result = await executeRun({ sessionId, prompt: text });
+    const result = await executeRun({ sessionId, prompt: text }, runtime);
     await handleResult(result, channelId, replyThread);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log.error(`[slack] agent error [${sessionId}]: ${message}`);
+    // Reply text uses the user-safe `.message`; log uses `.internalMessage` if present.
+    const userMessage = err instanceof Error ? err.message : String(err);
+    const logMessage = isDomainError(err) && err.internalMessage ? err.internalMessage : userMessage;
+    log.error(`[slack] agent error [${sessionId}]: ${logMessage}`);
     await app.client.chat.postMessage({
       channel: channelId,
       thread_ts: replyThread,
-      text: `Error: ${message.slice(0, 500)}`,
+      text: `Error: ${userMessage.slice(0, 500)}`,
     }).catch(() => {});
   } finally {
     unsubscribe();

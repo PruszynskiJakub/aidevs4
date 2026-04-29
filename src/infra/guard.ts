@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { config } from "../config/index.ts";
 import { log } from "./log/logger.ts";
 import type { ModerationResult } from "../types/moderation.ts";
+import { DomainError } from "../types/errors.ts";
 
 let client: OpenAI | undefined;
 
@@ -64,9 +65,10 @@ export function assertNotFlagged(result: ModerationResult): void {
     .filter(([, v]) => v)
     .map(([k]) => k);
 
-  throw new Error(
-    `Input blocked by moderation policy. Violated categories: ${flaggedCategories.join(", ")}`,
-  );
+  throw new DomainError({
+    type: "permission",
+    message: `Input blocked by moderation policy. Violated categories: ${flaggedCategories.join(", ")}`,
+  });
 }
 
 /** Override the OpenAI client (for testing) */
