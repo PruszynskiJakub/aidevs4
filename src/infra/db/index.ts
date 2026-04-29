@@ -15,32 +15,47 @@ import type {
 
 export { db, sqlite } from "./connection.ts";
 
+// ── Transaction wrapper ─────────────────────────────────────
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type DbOrTx = typeof db | Tx;
+
+/**
+ * Run `fn` inside a SQLite transaction. Either every write inside lands or
+ * none do. The body MUST be synchronous-style — `bun:sqlite` transactions
+ * cannot await non-DB work, and even DB-only `await` widens the lock window
+ * unnecessarily. Compose all I/O outside, then call this with the persistence.
+ */
+export function withTransaction<T>(fn: (tx: Tx) => T): T {
+  return db.transaction(fn);
+}
+
 // ── Sessions ────────────────────────────────────────────────
 
-export function createSession(id: string): void {
-  db.insert(sessions).values({ id }).run();
+export function createSession(id: string, dbOrTx: DbOrTx = db): void {
+  dbOrTx.insert(sessions).values({ id }).run();
 }
 
-export function getSession(id: string): DbSession | null {
-  return db.select().from(sessions).where(eq(sessions.id, id)).get() as DbSession | undefined ?? null;
+export function getSession(id: string, dbOrTx: DbOrTx = db): DbSession | null {
+  return dbOrTx.select().from(sessions).where(eq(sessions.id, id)).get() as DbSession | undefined ?? null;
 }
 
-export function touchSession(id: string): void {
-  db.update(sessions)
+export function touchSession(id: string, dbOrTx: DbOrTx = db): void {
+  dbOrTx.update(sessions)
     .set({ updatedAt: sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` })
     .where(eq(sessions.id, id))
     .run();
 }
 
-export function setRootRun(sessionId: string, runId: string): void {
-  db.update(sessions)
+export function setRootRun(sessionId: string, runId: string, dbOrTx: DbOrTx = db): void {
+  dbOrTx.update(sessions)
     .set({ rootRunId: runId })
     .where(eq(sessions.id, sessionId))
     .run();
 }
 
-export function setAssistant(sessionId: string, assistant: string): void {
-  db.update(sessions)
+export function setAssistant(sessionId: string, assistant: string, dbOrTx: DbOrTx = db): void {
+  dbOrTx.update(sessions)
     .set({ assistant })
     .where(eq(sessions.id, sessionId))
     .run();
@@ -48,8 +63,8 @@ export function setAssistant(sessionId: string, assistant: string): void {
 
 // ── Runs ────────────────────────────────────────────────────
 
-export function createRun(opts: CreateRunOpts): void {
-  db.insert(runs)
+export function createRun(opts: CreateRunOpts, dbOrTx: DbOrTx = db): void {
+  dbOrTx.insert(runs)
     .values({
       id: opts.id,
       sessionId: opts.sessionId,
@@ -62,8 +77,8 @@ export function createRun(opts: CreateRunOpts): void {
     .run();
 }
 
-export function getRun(id: string): DbRun | null {
-  return db.select().from(runs).where(eq(runs.id, id)).get() as DbRun | undefined ?? null;
+export function getRun(id: string, dbOrTx: DbOrTx = db): DbRun | null {
+  return dbOrTx.select().from(runs).where(eq(runs.id, id)).get() as DbRun | undefined ?? null;
 }
 
 export interface UpdateRunStatusOpts {
@@ -81,7 +96,7 @@ export interface UpdateRunStatusOpts {
  * current version matches — prevents concurrent mutations.
  * Returns true if the update was applied, false on version conflict.
  */
-export function updateRunStatus(id: string, opts: UpdateRunStatusOpts): boolean {
+export function updateRunStatus(id: string, opts: UpdateRunStatusOpts, dbOrTx: DbOrTx = db): boolean {
   const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
   const updates: Record<string, unknown> = {
     status: opts.status,
@@ -108,12 +123,12 @@ export function updateRunStatus(id: string, opts: UpdateRunStatusOpts): boolean 
     ? and(eq(runs.id, id), eq(runs.version, opts.expectedVersion))
     : eq(runs.id, id);
 
-  const result = db.update(runs).set(updates).where(where!).run();
+  const result = dbOrTx.update(runs).set(updates).where(where!).run();
   return result.changes > 0;
 }
 
-export function incrementCycleCount(id: string): void {
-  db.update(runs)
+export function incrementCycleCount(id: string, dbOrTx: DbOrTx = db): void {
+  dbOrTx.update(runs)
     .set({ cycleCount: sql`${runs.cycleCount} + 1` })
     .where(eq(runs.id, id))
     .run();
@@ -173,8 +188,8 @@ export function findOrphanedWaitingRuns(): DbRun[] {
 
 // ── Items ───────────────────────────────────────────────────
 
-export function nextSequence(runId: string): number {
-  const row = db
+export function nextSequence(runId: string, dbOrTx: DbOrTx = db): number {
+  const row = dbOrTx
     .select({ maxSeq: sql<number>`coalesce(max(${items.sequence}), -1)` })
     .from(items)
     .where(eq(items.runId, runId))
@@ -182,17 +197,28 @@ export function nextSequence(runId: string): number {
   return (row?.maxSeq ?? -1) + 1;
 }
 
-export function appendItem(item: NewItem): void {
-  db.insert(items).values(item).run();
+export function appendItem(item: NewItem, dbOrTx: DbOrTx = db): void {
+  dbOrTx.insert(items).values(item).run();
 }
 
-export function appendItems(batch: NewItem[]): void {
+/**
+ * Insert a batch of items atomically. When called outside a transaction this
+ * opens one of its own; when called inside one (`dbOrTx` is a tx), it reuses
+ * the caller's transaction so the batch composes with the surrounding writes.
+ */
+export function appendItems(batch: NewItem[], dbOrTx: DbOrTx = db): void {
   if (batch.length === 0) return;
-  db.transaction((tx) => {
+  if (dbOrTx === db) {
+    db.transaction((tx) => {
+      for (const item of batch) {
+        tx.insert(items).values(item).run();
+      }
+    });
+  } else {
     for (const item of batch) {
-      tx.insert(items).values(item).run();
+      dbOrTx.insert(items).values(item).run();
     }
-  });
+  }
 }
 
 export function listItemsByRun(runId: string): DbItem[] {
@@ -215,8 +241,8 @@ export function listItemsBySession(sessionId: string): DbItem[] {
     .map((r) => r.item) as DbItem[];
 }
 
-export function getItemByCallId(callId: string): DbItem | null {
-  return db
+export function getItemByCallId(callId: string, dbOrTx: DbOrTx = db): DbItem | null {
+  return dbOrTx
     .select()
     .from(items)
     .where(eq(items.callId, callId))
@@ -225,8 +251,8 @@ export function getItemByCallId(callId: string): DbItem | null {
 
 // ── Scheduled Jobs ─────────────────────────────────────────
 
-export function createJob(opts: CreateJobOpts): void {
-  db.insert(scheduledJobs)
+export function createJob(opts: CreateJobOpts, dbOrTx: DbOrTx = db): void {
+  dbOrTx.insert(scheduledJobs)
     .values({
       id: opts.id,
       name: opts.name,
@@ -238,8 +264,8 @@ export function createJob(opts: CreateJobOpts): void {
     .run();
 }
 
-export function getJob(id: string): DbJob | null {
-  return db.select().from(scheduledJobs).where(eq(scheduledJobs.id, id)).get() as DbJob | undefined ?? null;
+export function getJob(id: string, dbOrTx: DbOrTx = db): DbJob | null {
+  return dbOrTx.select().from(scheduledJobs).where(eq(scheduledJobs.id, id)).get() as DbJob | undefined ?? null;
 }
 
 export function listJobs(): DbJob[] {
@@ -260,9 +286,9 @@ export function listDueOneShots(now: string): DbJob[] {
     .filter((j) => j.schedule === null) as DbJob[];
 }
 
-export function updateJobStatus(id: string, status: JobStatus): void {
+export function updateJobStatus(id: string, status: JobStatus, dbOrTx: DbOrTx = db): void {
   const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
-  db.update(scheduledJobs)
+  dbOrTx.update(scheduledJobs)
     .set({ status, updatedAt: now })
     .where(eq(scheduledJobs.id, id))
     .run();
@@ -274,9 +300,10 @@ export function updateJobExecution(
   lastRunAt: string,
   lastStatus: JobRunStatus,
   lastError?: string,
+  dbOrTx: DbOrTx = db,
 ): void {
   const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
-  db.update(scheduledJobs)
+  dbOrTx.update(scheduledJobs)
     .set({
       runCount,
       lastRunAt,
@@ -288,8 +315,8 @@ export function updateJobExecution(
     .run();
 }
 
-export function deleteJob(id: string): void {
-  db.delete(scheduledJobs).where(eq(scheduledJobs.id, id)).run();
+export function deleteJob(id: string, dbOrTx: DbOrTx = db): void {
+  dbOrTx.delete(scheduledJobs).where(eq(scheduledJobs.id, id)).run();
 }
 
 /** Visible for testing — deletes all data from all tables */

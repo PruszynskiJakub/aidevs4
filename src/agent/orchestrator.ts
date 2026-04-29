@@ -86,7 +86,7 @@ function pickAssistantName(
   return requestedAssistant ?? "default";
 }
 
-function insertRunRow(opts: RunRowOpts): void {
+function insertRunRow(opts: RunRowOpts, tx?: dbOps.DbOrTx): void {
   dbOps.createRun({
     id: opts.runId,
     sessionId: opts.sessionId,
@@ -95,7 +95,7 @@ function insertRunRow(opts: RunRowOpts): void {
     sourceCallId: opts.sourceCallId,
     template: opts.assistantName,
     task: opts.prompt,
-  });
+  }, tx);
 }
 
 async function hydrateRunState(opts: HydrateOpts, runtime: Runtime): Promise<RunState> {
@@ -138,25 +138,25 @@ async function moderateAndAssert(prompt: string): Promise<void> {
   assertNotFlagged(moderation);
 }
 
-function persistRunExit(runId: string, exit: RunExit): void {
+function persistRunExit(runId: string, exit: RunExit, tx?: dbOps.DbOrTx): void {
   switch (exit.kind) {
     case "completed":
-      dbOps.updateRunStatus(runId, { status: "completed", result: exit.result, exitKind: "completed" });
+      dbOps.updateRunStatus(runId, { status: "completed", result: exit.result, exitKind: "completed" }, tx);
       return;
     case "failed":
-      dbOps.updateRunStatus(runId, { status: "failed", error: exit.error.message, exitKind: "failed" });
+      dbOps.updateRunStatus(runId, { status: "failed", error: exit.error.message, exitKind: "failed" }, tx);
       return;
     case "cancelled":
-      dbOps.updateRunStatus(runId, { status: "cancelled", error: exit.reason, exitKind: "cancelled" });
+      dbOps.updateRunStatus(runId, { status: "cancelled", error: exit.reason, exitKind: "cancelled" }, tx);
       return;
     case "exhausted":
-      dbOps.updateRunStatus(runId, { status: "exhausted", exitKind: "exhausted" });
+      dbOps.updateRunStatus(runId, { status: "exhausted", exitKind: "exhausted" }, tx);
       return;
     case "waiting":
       dbOps.updateRunStatus(runId, {
         status: "waiting",
         waitingOn: JSON.stringify(exit.waitingOn),
-      });
+      }, tx);
       bus.emit("run.waiting", { waitingOn: exit.waitingOn });
       return;
   }
@@ -198,12 +198,15 @@ export async function executeRun(
   const depth = opts.parentRunId ? (opts.parentDepth ?? 0) + 1 : 0;
   const rootRunId = opts.rootRunId ?? runId;
 
-  insertRunRow({ runId, sessionId, parentRunId: opts.parentRunId, rootRunId,
-    sourceCallId: opts.sourceCallId, assistantName, prompt: opts.prompt });
-  if (!opts.parentRunId) dbOps.setRootRun(sessionId, runId);
-  dbOps.updateRunStatus(runId, { status: "running" });
-
-  runtime.sessions.appendMessage(sessionId, runId, { role: "user", content: opts.prompt });
+  // Atomic setup: every write must land or none, so a crash here cannot
+  // leave a half-born `pending` run that no reconciliation sweep catches.
+  dbOps.withTransaction((tx) => {
+    insertRunRow({ runId, sessionId, parentRunId: opts.parentRunId, rootRunId,
+      sourceCallId: opts.sourceCallId, assistantName, prompt: opts.prompt }, tx);
+    if (!opts.parentRunId) dbOps.setRootRun(sessionId, runId, tx);
+    dbOps.updateRunStatus(runId, { status: "running" }, tx);
+    runtime.sessions.appendMessage(sessionId, runId, { role: "user", content: opts.prompt }, tx);
+  });
 
   const state = await hydrateRunState({
     runId, sessionId, assistantName, rootRunId,
@@ -228,8 +231,14 @@ export async function runAndPersist(
 
   try {
     const { exit, messages } = await runAgent(state, undefined, runtime);
-    runtime.sessions.appendRun(sessionId, runId, messages);
-    persistRunExit(runId, exit);
+
+    // Atomic terminal write: items batch + run status update land together.
+    // Crash between them would otherwise leave a `running` row whose work has
+    // actually finished — a silent freeze on the next request for this session.
+    dbOps.withTransaction((tx) => {
+      runtime.sessions.appendRun(sessionId, runId, messages, tx);
+      persistRunExit(runId, exit, tx);
+    });
 
     if (exit.kind === "waiting" && exit.waitingOn.kind === "child_run") {
       kickChildRunAsync(runId, exit.waitingOn.childRunId, runtime);

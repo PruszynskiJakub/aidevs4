@@ -121,29 +121,29 @@ function itemsToMessages(dbItems: DbItem[]): LLMMessage[] {
 
 // ── Persistence helper ─────────────────────────────────────
 
-function persistMessages(runId: string, msgs: LLMMessage[]): void {
+function persistMessages(runId: string, msgs: LLMMessage[], tx?: dbOps.DbOrTx): void {
   if (msgs.length === 0) return;
-  const seq = dbOps.nextSequence(runId);
+  const seq = dbOps.nextSequence(runId, tx);
   const items = messagesToItems(runId, msgs, seq);
   if (items.length === 0) return;
-  if (items.length === 1) dbOps.appendItem(items[0]);
-  else dbOps.appendItems(items);
+  if (items.length === 1) dbOps.appendItem(items[0], tx);
+  else dbOps.appendItems(items, tx);
 }
 
 // ── Factory: Message store ─────────────────────────────────
 
 function createMessageStore() {
   return {
-    appendMessage(id: string, runId: string, message: LLMMessage): void {
+    appendMessage(id: string, runId: string, message: LLMMessage, tx?: dbOps.DbOrTx): void {
       if (message.role === "system") return;
-      persistMessages(runId, [message]);
-      dbOps.touchSession(id);
+      persistMessages(runId, [message], tx);
+      dbOps.touchSession(id, tx);
     },
-    appendRun(id: string, runId: string, messages: LLMMessage[]): void {
+    appendRun(id: string, runId: string, messages: LLMMessage[], tx?: dbOps.DbOrTx): void {
       const nonSystem = messages.filter((m) => m.role !== "system");
       if (nonSystem.length === 0) return;
-      persistMessages(runId, nonSystem);
-      dbOps.touchSession(id);
+      persistMessages(runId, nonSystem, tx);
+      dbOps.touchSession(id, tx);
     },
     getMessages(id: string, runId?: string): LLMMessage[] {
       const dbItems = runId ? dbOps.listItemsByRun(runId) : dbOps.listItemsBySession(id);

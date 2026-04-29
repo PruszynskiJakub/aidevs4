@@ -12,6 +12,8 @@ mkdirSync(dirname(config.database.url), { recursive: true });
 const sqlite = new Database(config.database.url);
 sqlite.run("PRAGMA journal_mode = WAL");
 sqlite.run("PRAGMA foreign_keys = ON");
+sqlite.run("PRAGMA synchronous = NORMAL");
+sqlite.run("PRAGMA busy_timeout = 5000");
 
 export const db = drizzle(sqlite, { schema });
 export { sqlite };

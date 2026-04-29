@@ -160,17 +160,22 @@ export async function resumeRun(
     }
   }
 
-  // Persist synthetic tool-result messages
-  runtime.sessions.appendRun(run.sessionId, runId, newMessages);
-
-  // Clear waitingOn, transition back to running (with optimistic lock)
-  const updated = dbOps.updateRunStatus(runId, {
-    status: "running",
-    waitingOn: null,
-    expectedVersion: run.version,
+  // Atomic resume: optimistic-lock the status flip FIRST, then persist the
+  // synthetic tool-result messages inside the same transaction. If the lock
+  // check fails (another process resumed concurrently) the UPDATE matches no
+  // rows, we skip the items insert, and return idempotently below.
+  let lockWon = false;
+  dbOps.withTransaction((tx) => {
+    const updated = dbOps.updateRunStatus(runId, {
+      status: "running",
+      waitingOn: null,
+      expectedVersion: run.version,
+    }, tx);
+    if (!updated) return;
+    lockWon = true;
+    runtime.sessions.appendRun(run.sessionId, runId, newMessages, tx);
   });
-  if (!updated) {
-    // Another process already resumed this run — idempotent return
+  if (!lockWon) {
     const current = dbOps.getRun(runId);
     return {
       exit: dbRunToExit(current ?? run),
