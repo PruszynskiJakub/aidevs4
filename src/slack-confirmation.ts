@@ -3,6 +3,7 @@ import type { ConfirmationRequest } from "./agent/confirmation.ts";
 import type { Decision } from "./types/tool.ts";
 import type { ExecuteRunResult } from "./agent/orchestrator.ts";
 import type { LLMMessage, LLMAssistantMessage } from "./types/llm.ts";
+import type { Runtime } from "./runtime.ts";
 import { resumeRun } from "./agent/resume-run.ts";
 import { sessionService } from "./agent/session.ts";
 import { log } from "./infra/log/logger.ts";
@@ -152,7 +153,7 @@ interface RegisterOpts {
  * (runId, confirmationId, toolCallId, decision) and the run is
  * loaded fresh from the DB each time.
  */
-export function registerConfirmationActions(app: App, opts: RegisterOpts): void {
+export function registerConfirmationActions(app: App, opts: RegisterOpts, runtime: Runtime): void {
   // In-process accumulator for multi-tool batches. After restart, a
   // user who already clicked N of M buttons will need to click the
   // remaining ones to complete the resolution — each click recovers
@@ -195,7 +196,7 @@ export function registerConfirmationActions(app: App, opts: RegisterOpts): void 
         kind: "user_approval",
         confirmationId,
         decisions: Object.fromEntries(decisions),
-      });
+      }, runtime);
       const thread = opts.resolveThread(runId);
       if (thread) await opts.onResumed(result, thread.channel, thread.threadTs);
     } catch (err) {

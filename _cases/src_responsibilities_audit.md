@@ -1,1058 +1,992 @@
 # `src/` Responsibilities Audit
 
-Goal: every TypeScript file in `src/`, with a grounded list of what it actually does, plus cross-cutting findings about files doing too much, too little, or duplicating responsibilities.
-
-Methodology: each file was read in full; every responsibility below quotes a real symbol or behaviour in the code. After compilation, a sample of claims was spot-checked against the source.
-
----
-
-## Table of contents
-
-1. [`src/agent/`](#srcagent)
-2. [`src/tools/`](#srctools)
-3. [`src/infra/`](#srcinfra)
-4. [`src/llm/`, `src/config/`, `src/utils/`](#srcllm-srcconfig-srcutils)
-5. [`src/types/`](#srctypes)
-6. [Top-level + `src/evals/`](#top-level--srcevals)
-7. [Cross-cutting findings (consolidated)](#cross-cutting-findings-consolidated)
+Generated 2026-04-27. One entry per source file under `src/`. Each entry lists exports, line count, and the concrete responsibilities the file owns. Use this as a baseline for spotting files that do too much, too little, or share a responsibility across multiple sources of truth.
 
 ---
 
 ## `src/agent/`
 
 ### `src/agent/agents.ts`
-**Responsibilities:**
-- Loads `.agent.md` files from `AGENTS_DIR` via `Bun.Glob` and `loadOne()`, parsing YAML frontmatter with `gray-matter`.
-- Validates frontmatter shape (`validate()`): requires `name`, `model` strings, non-empty body, optional `tools`/`capabilities` string arrays, optional `memory: false`.
-- Resolves tool names against the registry (`resolveTools()`), warning via `console.warn` for missing ones.
-- Exposes singleton `agentsService` (`makeAgentsService()`) with `listAgents()` (caches), `get()`, `resolve()` (returns `ResolvedAgent` with concrete `LLMTool[]`).
-
-**Notable:** Re-exports `ResolvedAgent`, `AgentSummary` while also re-importing them in the same file. `cachedAgents` never invalidated.
+- **LoC**: 121
+- **Exports**: `agentsService`, `makeAgentsService`
+- **Responsibilities**:
+  - Load and parse agent configuration files (YAML frontmatter + markdown prompt)
+  - Validate required agent fields (name, model, system prompt)
+  - Resolve tool references to LLMTool objects from registry
+  - Cache agent summaries in-memory for list operations
 
 ### `src/agent/confirmation.ts`
-**Responsibilities:**
-- Module-scope `pendingConfirmations: Map<string, PendingConfirmation>`; `takePendingConfirmation(id)` (consume-once).
-- `confirmBatch(calls)` — partitions calls into `autoApproved` vs `needsApproval` using `getToolMeta(name).confirmIf`; if any need approval, returns `GateResult` with `waitingOn = { kind: "user_approval", ... }`.
-- `extractAction()` strips `${tool}__${action}` prefix using `SEPARATOR` from registry.
-- `setConfirmationProvider()` is declared but a no-op (`void p`).
-
-**Notable:** Tight coupling to `tools/registry.ts`. Comment notes the cache is "optional" — durable record is the run row.
+- **LoC**: 106
+- **Exports**: `confirmBatch`, `takePendingConfirmation`, `setConfirmationProvider`
+- **Responsibilities**:
+  - Inspect tool calls for confirmIf gates requiring operator approval
+  - Partition calls into auto-approved and pending batches
+  - Store pending confirmations in-memory cache keyed by UUID
+  - Build user approval prompts from tool names and arguments
 
 ### `src/agent/context.ts`
-**Responsibilities:**
-- Owns the single `AsyncLocalStorage<RunContext>` (`{ state, log }`).
-- `runWithContext(state, log, fn)` enters scope.
-- Optional + `require*` accessors: `getState`/`requireState`, `getLogger`/`requireLogger`, `getSessionId`/`requireSessionId`, plus convenience getters `getAgentName`, `getRunId`, `getRootRunId`, `getParentRunId`, `getTraceId`, `getDepth`.
-
-**Notable:** Tiny, single-purpose. Pure ALS plumbing, no I/O.
+- **LoC**: 80
+- **Exports**: `runWithContext`, `getState`, `requireState`, `getLogger`, `requireLogger`, `getSessionId`, `requireSessionId`, `getAgentName`, `getRunId`, `getRootRunId`, `getParentRunId`, `getTraceId`, `getDepth`
+- **Responsibilities**:
+  - Provide async-local storage bindings for RunState and Logger
+  - Implement required/optional accessors with error handling
+  - Support tracing identity (runId, rootRunId, parentRunId, traceId, depth)
 
 ### `src/agent/loop.ts`
-**Responsibilities:**
-- `setupSession()` builds composite logger (Markdown + Console), attaches bus listener (`attachLoggerListener`), creates JSONL writer; returns `dispose()`.
-- `resolveAgentForRun()` calls `agentsService.resolve()`, mutates `state.model`/`state.tools`, builds workspace prefix.
-- `executeActPhase()` sends LLM call, accumulates tokens, emits `generation.started`/`generation.completed`.
-- `dispatchTools()` runs confirmation gate, dispatches via `tools/registry.dispatch`, records `tool.succeeded`/`tool.failed`, surfaces a `WaitDescriptor` from gate or any tool result.
-- `buildCycleContext()` decides memory pipeline involvement (`processMemory` vs pass-through) and swaps `state.messages`.
-- `createMemorySaver()` saves only when serialized memory changed.
-- `runCycle()` orchestrates one Plan/Act turn: build context, act, splice messages, save memory, return `completed`/`waiting`/`continue`.
-- `runIteration()` tracks iteration, increments DB cycle count, emits `turn.started`/`turn.completed`, calls `finalizeTerminal()`.
-- `runAgent()` (public) wires session resources, enters context, runs loop, emits `emitFailureTerminal` on error.
-
-**Notable:** Largest agent file. Seven internal types declared inline (`SessionResources`, `RunContext`, `SettledOutcome`, `MemoryContext`, `CycleOutcome`, `IterationDeps`, `LoopResult`).
+- **LoC**: 464
+- **Exports**: `runAgent`
+- **Responsibilities**:
+  - Orchestrate the main agent reasoning loop (act→tool-dispatch→reflect cycle)
+  - Execute LLM act phase with message context and tools
+  - Dispatch approved tool calls and record outcomes
+  - Integrate memory processing (observation/reflection) via processMemory hook
+  - Handle terminal states (completed, exhausted, waiting) with finalization events
+  - Emit telemetry for turns, generations, tools, and batch operations
 
 ### `src/agent/orchestrator.ts`
-**Responsibilities:**
-- `executeRun()` — top-level entry: generates session id, creates session, picks assistant (`pickAssistantName()` preferring session-pinned), runs `moderateAndAssert()` (Moderation API), pins assistant, generates `runId`/`traceId`/`depth`, inserts run row via `dbOps.createRun`, marks running, appends user message, hydrates `RunState`, calls `runAndPersist`.
-- `runAndPersist()` — runs the loop, persists messages via `sessionService.appendRun`, writes terminal status via `persistRunExit()`, kicks child runs async on `child_run` waits.
-- `createChildRun()`, `startChildRun(runId)` — child entry points.
-- `hydrateRunState()` — rebuilds `RunState` from messages + persisted memory.
-- `moderateAndAssert()` — emits `input.flagged`/`input.clean`, throws via `assertNotFlagged`.
-- `kickChildRunAsync()` — fires `startChildRun` without await; on failure calls `resumeRun(parentRunId, ...)`.
-
-**Notable:** Imports from `resume-run.ts` — circular-conceptual coupling. Two parallel hydration paths (one builds tools=[], one resolves tools eagerly).
+- **LoC**: 295
+- **Exports**: `executeRun`, `runAndPersist`, `createChildRun`, `startChildRun`
+- **Responsibilities**:
+  - Orchestrate run creation, hydration, and persistence
+  - Validate input via moderation, pick assistant, assign runId and traceId
+  - Hydrate RunState with messages, tools, and persisted memory
+  - Persist run results to DB via dbOps (status, exit reason, error)
+  - Kick off child runs asynchronously and handle start failures
 
 ### `src/agent/resume-run.ts`
-**Responsibilities:**
-- `resumeRun(runId, resolution)` — DB-load, idempotent no-op for non-`waiting`, validates `waitingOn.kind`, loads transcript.
-- `findPendingToolCalls()` — walks history backwards, finds latest assistant message with unanswered `toolCalls`.
-- For `user_approval` resolutions: dispatches each approved call (`dispatch()` from `tools/registry`); denies become `"Error: Tool call denied by operator."` messages.
-- For `child_run` resolutions: writes child's `result` string as the tool message body for every pending call.
-- Persists synthetic messages, transitions `waiting → running` with optimistic `expectedVersion`, emits `run.resumed`, rebuilds `RunState`, calls `runAndPersist()`.
-- `dbRunToExit()` — maps DB rows to `RunExit`.
-
-**Notable:** `parentDepth` heuristic on line 182 is `run.parentId ? 1 : 0` — does not honor any deeper original depth.
+- **LoC**: 202
+- **Exports**: `resumeRun`
+- **Responsibilities**:
+  - Resume waiting runs by validating state and matching resolution kind
+  - Find pending tool calls from message history
+  - Dispatch approved/denied decisions or child_run results as synthetic tool messages
+  - Rebuild RunState from DB and re-enter loop via runAndPersist
 
 ### `src/agent/run-continuation.ts`
-**Responsibilities:**
-- `registerContinuationSubscriber()` subscribes `handleChildTerminal` to `run.completed`/`run.failed` on bus.
-- `handleChildTerminal()` finds parent waiting on the child via `dbOps.findRunWaitingOnChild`, formats `result` via `childExitToResult()`, emits `run.child_terminal`, calls `resumeRun(parent.id, ...)`.
-- `reconcileOrphanedWaits()` — startup sweep for crash-gap recovery (parents whose child already terminal).
-
-**Notable:** Single coherent concern.
+- **LoC**: 95
+- **Exports**: `registerContinuationSubscriber`, `reconcileOrphanedWaits`
+- **Responsibilities**:
+  - Listen for child run terminal events (completed, failed) and resume parents
+  - Convert child exit status to result strings for tool message injection
+  - Reconcile orphaned waits at startup (crash-gap recovery for lost subscribers)
 
 ### `src/agent/run-exit.ts`
-**Responsibilities:**
-- Defines a single discriminated union `RunExit` (`completed | failed | cancelled | waiting | exhausted`).
-
-**Notable:** Pure type file, ~7 lines.
+- **LoC**: 16
+- **Exports**: `RunExit` (type union)
+- **Responsibilities**:
+  - Define typed RunExit union covering terminal states and waiting non-terminal state
 
 ### `src/agent/run-telemetry.ts`
-**Responsibilities:**
-- Typed thin wrappers around `bus.emit`: `emitRunStarted`, `emitAgentStarted`, `emitTurnStarted`, `emitTurnCompleted`, `emitGenerationStarted`, `emitGenerationCompleted`, `emitToolCalled`, `emitToolSucceeded`, `emitToolFailed`, `emitBatchStarted`, `emitBatchCompleted`.
-- Composite terminal helpers: `emitAnswerTerminal`, `emitMaxIterationsTerminal`, `emitFailureTerminal` — each fires multiple events with synchronously-snapshotted tokens.
-
-**Notable:** Mix of single-event one-liners and composite emitters — inconsistent granularity.
+- **LoC**: 202
+- **Exports**: `emitRunStarted`, `emitAgentStarted`, `emitTurnStarted`, `emitTurnCompleted`, `emitGenerationStarted`, `emitGenerationCompleted`, `emitToolCalled`, `emitToolSucceeded`, `emitToolFailed`, `emitBatchStarted`, `emitBatchCompleted`, `emitAnswerTerminal`, `emitMaxIterationsTerminal`, `emitFailureTerminal`
+- **Responsibilities**:
+  - Emit lifecycle events (run, agent, turn, generation) to event bus
+  - Emit tool dispatch events (called, succeeded, failed)
+  - Wrap composite terminal transitions (answer, max_iterations, failure) with multi-event emission
 
 ### `src/agent/session.ts`
-**Responsibilities:**
-- Message ↔ DB-item conversion: `userMessageToItem`, `assistantMessageToItems` (also serializes `providerMetadata` like Gemini `thoughtSignature` into `function_call`'s `content` column), `messagesToItems`, `parseUserContent`, `collectAssistantToolCalls`, `itemsToMessages`. Drops `system` messages.
-- `persistMessages()` — allocates next sequence via `dbOps.nextSequence`, writes via `dbOps.appendItem`/`appendItems`.
-- `createMessageStore()` — `appendMessage`, `appendRun`, `getMessages` (per-run or per-session).
-- `createSessionRegistry()` — `getOrCreate`, `setAssistant`, per-session serial queue (`enqueue<T>`), `_clearQueues`.
-- `createSessionPaths()` — `sessionDir(date)`, `logDir`, `sharedDir`, `ensureSessionDir`, `outputPath(filename)` (creates `{agentName}/output/`, returns randomized `${randomSessionId}${ext}`), `toSessionPath`/`resolveSessionPath`.
-- Composes the three factories into singleton `sessionService` and exposes `_clear()`.
-
-**Notable:** Three independent factories bundled. `outputPath` randomizes filename even for identical inputs.
-
-### `src/agent/wait-descriptor.ts`
-**Responsibilities:**
-- Defines `WaitDescriptor` union (`user_approval | child_run`), deprecated alias `Wait`, `WaitResolution` union.
-
-**Notable:** Comment claims `child_run` is "Reserved placeholder…not triggered" — but `loop.ts` returns it from `dispatchTools()` and `orchestrator.ts`/`run-continuation.ts` consume it. Comment is stale.
+- **LoC**: 285
+- **Exports**: `sessionService`, `createSessionService`, `messagesToItems`, `itemsToMessages`, `getSessionWorkingDir`
+- **Responsibilities**:
+  - Convert LLM messages ↔ DB items (users, assistant, function_calls, outputs)
+  - Append messages and runs to DB, retrieve transcript by session/run
+  - Manage session registry (get-or-create, set assistant pin)
+  - Enqueue session tasks serially (per-session queues)
+  - Build session paths (date-folder structure, log/shared/output dirs)
 
 ### `src/agent/workspace.ts`
-**Responsibilities:**
-- Static `workspace` constant (path tree from `config.paths` + `config.browser`).
-- Hardcoded `NAV_INSTRUCTIONS` template (long markdown describing workspace layout, knowledge-base rules).
-- `readFileSafe()`, `loadWorkflows()` — read live workspace content via `infra/sandbox`.
-- `buildWorkspaceContext()` assembles `<workspace-navigation>` system-prompt block combining static text + live knowledge index + workflows.
-
-**Notable:** Hardcoded prompt text in a `.ts` file violates project rule "No hardcoded prompts — never put prompt text in `.ts` files".
+- **LoC**: 155
+- **Exports**: `workspace`, `buildWorkspaceContext`
+- **Responsibilities**:
+  - Define workspace path constants (knowledge, scratch, workflows, sessions, browser)
+  - Provide universal navigation instructions for agents (file operations, KB rules)
+  - Load knowledge index and workflow definitions from disk at runtime
+  - Compose workspace context block injected into agent system prompts
 
 ### `src/agent/memory/generation.ts`
-**Responsibilities:**
-- Single helper `buildMemoryGeneration(name, model, inputMessages, response, startTime, durationMs)` — converts input/response to `MemoryGeneration` event payload.
-
-**Notable:** Tiny, single-purpose.
+- **LoC**: 25
+- **Exports**: `buildMemoryGeneration`
+- **Responsibilities**:
+  - Transform LLM call (input messages, response) into MemoryGeneration event payload
 
 ### `src/agent/memory/observer.ts`
-**Responsibilities:**
-- `truncateToTokens()` — char-budget truncation (`maxTokens * 4`).
-- `serializeMessages()` — formats messages into `[USER]`/`[ASSISTANT]`/`[TOOL_RESULT]` blocks with config-driven budgets.
-- `observe()` — loads `observer.md` prompt, calls `provider.chatCompletion`, treats `NO_NEW_OBSERVATIONS`/empty as no-op, returns `{ text, generation }`.
-
-**Notable:** Imports `estimateTokens` but never uses it. Re-exports `ObserveResult` while also re-importing it.
+- **LoC**: 81
+- **Exports**: `observe`, `serializeMessages`
+- **Responsibilities**:
+  - Serialize LLM messages to truncated text (respecting token budgets per message type)
+  - Call observer prompt via LLM to extract/append observations from message batch
+  - Return text and MemoryGeneration for bus emission
 
 ### `src/agent/memory/persistence.ts`
-**Responsibilities:**
-- `sessionOutputDir()` — `{sessionsDir}/{YYYY-MM-DD}/{sessionId}` using current clock.
-- `saveState(sessionId, state)` — writes `memory-state.json`.
-- `loadState(sessionId)` — reads + parses `memory-state.json`; returns `null` on missing.
-- `saveDebugArtifact(sessionId, type, content, metadata)` — writes `${type}-NNN.md` with YAML frontmatter; sequence based on `files.readdir`.
-
-**Notable:** Date is recomputed at every call — day-boundary saves can split. Mixes runtime state with debug-artifact writing.
+- **LoC**: 60
+- **Exports**: `saveState`, `loadState`, `saveDebugArtifact`
+- **Responsibilities**:
+  - Save/load MemoryState JSON to session directory
+  - Generate sequential debug artifacts (observer/reflector .md files) with YAML frontmatter
 
 ### `src/agent/memory/processor.ts`
-**Responsibilities:**
-- `appendObservationsToPrompt()`, `combineObservations()`, `passThrough()` — string composition utilities.
-- `processMemory()` — token-budget split heuristic (walks backwards to set `splitIndex`, pulls back so `tool` message stays with its `assistant` `tool_calls`); runs `observe()`, emits `memory.observation.*` events, persists artifact, optionally runs `reflect()` (graceful degradation), emits `memory.reflection.*`. Returns `{ context, state }`.
-- `flushMemory()` — end-of-session hook; observes tail above hardcoded 1,000 tokens.
-
-**Notable:** Hardcoded `1_000` in `flushMemory` (everything else is config-driven). Uses `estimateMessagesTokens([m])` per-iteration in backwards walk.
+- **LoC**: 242
+- **Exports**: `processMemory`, `flushMemory`
+- **Responsibilities**:
+  - Split messages at tail budget, observe old messages if unobserved tokens exceed threshold
+  - Combine new observations into active set, emit observation events
+  - Trigger multi-level reflection if observation tokens exceed reflectionThreshold
+  - Handle tool-response coherence (prevent splitting assistant + tool output pairs)
+  - Flush remaining unobserved messages at session end
 
 ### `src/agent/memory/reflector.ts`
-**Responsibilities:**
-- `COMPRESSION_GUIDANCE` lookup table (levels 0/1/2) — text guidance about which `🟢/🟡/🔴` priority items to keep.
-- `reflect(observations, targetTokens, provider)` — iterates up to `config.memory.maxReflectionLevels` levels, loads `reflector.md`, accumulates `MemoryGeneration[]`, stops early on target hit, falls back to "smallest seen" output.
-
-**Notable:** Hardcoded compression text in `.ts` file (parameterized into the prompt rather than the full prompt, but still text-in-code).
+- **LoC**: 71
+- **Exports**: `reflect`
+- **Responsibilities**:
+  - Iteratively compress observations via multi-level reflection (reorganize→condense→essential)
+  - Return best (smallest) result or first result meeting target token budget
+  - Record each reflection level as MemoryGeneration for telemetry
 
 ---
 
-## `src/tools/`
+## `src/llm/` and `src/prompts/`
 
-### `src/tools/agents_hub.ts`
-**Responsibilities:**
-- Multi-action tool: `verify | verify_batch | api_request | api_batch`. POSTs to `hub.ag3nts.org` via `hubPost` from `utils/hub-fetch.ts`.
-- `verify()` — submits single answer; auto-injects `apikey`; uses `resolveInput` (file/inline JSON/raw).
-- `apiRequest()` — POSTs to `${baseUrl}/api/${path}`; rejects non-object resolved bodies.
-- `apiBatch()` — reads JSON array file, applies `field_map_json` rename, sequential POST per row, persists partial results, stops on first error.
-- `verifyBatch()` — same shape but for verify-style answers.
-- Per-payload validation: `assertMaxLength`, `safePath`, `validateKeys`, `safeParse`. Batch row cap via `config.limits.maxBatchRows`.
+### `src/llm/errors.ts`
+- **LoC**: 64
+- **Exports**: `isFatalLLMError`, `extractErrorCode`
+- **Responsibilities**:
+  - Classify OpenAI and Gemini errors as fatal (auth, billing, malformed) or transient
+  - Detect insufficient_quota, RESOURCE_EXHAUSTED, 400/401/403 status codes as unretryable
+  - Extract error codes from APIError and custom Gemini error objects for event telemetry
 
-**Notable:** Mixes hub-verify semantics with generic API calls. `apiBatch`/`verifyBatch` duplicate the sequential-batch loop.
+### `src/llm/gemini.ts`
+- **LoC**: 217
+- **Exports**: `createGeminiProvider`
+- **Responsibilities**:
+  - Convert LLM message format to Gemini API structure with system instructions and roles
+  - Serialize ContentPart array (text, inline base64 images) to Gemini Part objects
+  - Extract tool calls from Gemini response, preserve thoughtSignature for thinking models
+  - Handle function response lookups via findToolCallName for tool-result reconciliation
+  - Call generateContent with timeout, temperature, maxOutputTokens, and tools config
 
-### `src/tools/bash.ts`
-**Responsibilities:**
-- Resolves per-session CWD (`getBashCwd`) using `getSessionId` + `config.paths.sessionsDir` + date folder.
-- `assertWritesInSessionDir(command, cwd)` — regex-extracts `>`/`>>`/`tee` redirects, rejects out-of-CWD targets.
-- Executes via `Bun.$`bash -c ${command}``.cwd().quiet().nothrow()` raced against `setTimeout` rejection.
-- Clamps `timeout` to `[1000, 120000]`. Truncates output to `MAX_OUTPUT = 20_000` chars.
-- Composes stdout+stderr, prefixes `[exit code N]` when nonzero.
+### `src/llm/llm.ts`
+- **LoC**: 25
+- **Exports**: `createOpenAIProvider`, `createLlmService`, `llm`
+- **Responsibilities**:
+  - Bootstrap LLM service by registering OpenAI and Gemini providers with model patterns
+  - Route "gpt-" and o1/o3 models to OpenAI, "gemini-" to Gemini if key exists
+  - Expose singleton llm instance for global use across application
 
-**Notable:** Ad-hoc shell sandboxing via regex (redirect detection) lives in the tool, not in `infra/sandbox.ts`.
+### `src/llm/openai.ts`
+- **LoC**: 141
+- **Exports**: `createOpenAIProvider`
+- **Responsibilities**:
+  - Convert LLM messages and ContentPart (text, base64 images) to OpenAI API format
+  - Map tool calls and function results between internal LLMToolCall and OpenAI wire formats
+  - Call chat.completions.create with timeout, temperature, max_tokens, and tools
+  - Extract usage (promptTokens, completionTokens) and finish_reason from response
 
-### `src/tools/browser.ts`
-**Responsibilities:**
-- Five actions: `navigate`, `evaluate`, `click`, `type_text`, `take_screenshot`.
-- Page-artifact persistence: `urlSlug`, `extractNumberedText`, `extractDomStructure` (in-page recursive walk respecting `structMaxNodes`/`structMaxDepth`), `savePageArtifacts`.
-- Error-page detection (`detectErrorPage`) — HTTP ≥ 400 + regex pattern list.
-- Feedback piping (`appendFeedback`) — calls `feedbackTracker`/`interventions` from session and appends `Note:` lines.
-- `navigate` builds multi-part `ContentPart[]` with resource refs; conditionally appends instruction-file note from `workspace/knowledge/browser/<host>.md`.
-- `evaluate` races `page.evaluate` with timeout, truncates at `MAX_RESULT = 5000`.
-- `click` enforces XOR between `css_selector` and `text`.
-- `typeText` substitutes `{{hub_api_key}}` via `resolveValuePlaceholders`.
-- `takeScreenshot` falls back to viewport-only when full-page exceeds `screenshotMaxBytes`; returns `{type:"image", data:base64}` + path text.
+### `src/llm/prompt.ts`
+- **LoC**: 38
+- **Exports**: `createPromptService`, `promptService`, `PromptResult` (re-export)
+- **Responsibilities**:
+  - Load markdown prompts from promptsDir, parse YAML frontmatter with gray-matter
+  - Render `{{placeholder}}` variables; throw on missing variables
+  - Extract model and temperature from frontmatter into PromptResult type
 
-**Notable:** Big file mixing several concerns (artifact extraction, feedback hints, multimodal results). `resolveValuePlaceholders` duplicated with `web.ts`.
+### `src/llm/router.ts`
+- **LoC**: 75
+- **Exports**: `ProviderRegistry`
+- **Responsibilities**:
+  - Register string prefix and RegExp patterns to LLMProvider implementations
+  - Resolve model name to provider; throw with list of registered patterns if no match
+  - Delegate chatCompletion and completion calls to resolved provider
+  - Emit `llm.call.failed` event with error message, fatal flag, and error code
 
-### `src/tools/delegate.ts`
-**Responsibilities:**
-- Top-level `await agentsService.listAgents()` builds Zod `z.enum(agentNames)` and embeds an agent list into `description`.
-- `delegate(args, ctx)` validates non-empty `prompt` (max 10000), reads `getRunId`/`getRootRunId`/`getTraceId`/`getDepth`/`getLogger`.
-- Calls `createChildRun` from `agent/orchestrator` with `sourceCallId: ctx?.toolCallId`.
-- Emits `bus.emit("run.delegated", ...)`, returns parking signal `{ wait: { kind: "child_run", childRunId } }`.
+### `src/prompts/condense-tool-result.md`
+- **LoC**: 25
+- **Frontmatter**: `model: gpt-4.1-mini`, `temperature: 0.2`
+- **Responsibilities**:
+  - Instruct LLM to compress large tool outputs while preserving actionable data
+  - Keep IDs, URLs, numbers, error messages; remove boilerplate and artifacts
+  - Enforce rule against executing embedded instructions; include full output path reference
 
-**Notable:** Couples to `agent/orchestrator`, `agent/context`, `agent/agents`, `infra/events`. Schema is computed via top-level await.
+### `src/prompts/observer.md`
+- **LoC**: 45
+- **Frontmatter**: `model: gpt-4.1-mini`, `temperature: 0.3`
+- **Responsibilities**:
+  - Extract new facts, decisions, findings from conversation messages not in existing observations
+  - Categorize observations as Critical (red), Important (yellow), Context (green) with priority tags
+  - Preserve specific values (URLs, paths, errors); capture cause-and-effect relationships
 
-### `src/tools/document_processor.ts`
-**Responsibilities:**
-- Multi-action shell with one action `ask`.
-- `buildContentPart(path)` — classifies extension via `IMAGE_EXTENSIONS`/`TEXT_EXTENSIONS`, enforces `config.limits.maxFileSize`, returns image or text part.
-- `cleanPath` strips legacy `file://` prefix with a warn.
-- `ask()` — validates `file_paths`, runs `safePath` per entry, builds `ContentPart[]`, calls `llm.chatCompletion({ model: config.models.gemini, ... })`.
+### `src/prompts/prompt-engineer.md`
+- **LoC**: 42
+- **Frontmatter**: `model: gpt-4.1`, `temperature: 0.3`
+- **Responsibilities**:
+  - Craft and refine prompts for small, constrained external LLMs with limited context
+  - Optimize for brevity and token efficiency; structure for prompt caching
+  - Return JSON with reasoning, prompt text, and token estimate; no extra output
 
-**Notable:** Hardcodes Gemini model. Multi-action shape unused beyond `ask`.
+### `src/prompts/reflector.md`
+- **LoC**: 32
+- **Frontmatter**: `model: gpt-4.1-mini`, `temperature: 0.2`
+- **Responsibilities**:
+  - Compress accumulated observations to fit token budget while preserving priority
+  - Always retain Critical (red) observations; merge duplicates, summarize Context items
+  - Maintain priority tags and specific values in output replacement
 
-### `src/tools/edit_file.ts`
-**Responsibilities:**
-- Single tool. Validates `file_path`, `old_string`, `new_string`, `replace_all`, `checksum`, `dry_run` (`MAX_STRING_LENGTH = 64KB`).
-- Rejects identical `old_string === new_string`.
-- Reads via `files.readText`; optionally verifies `md5` matches `checksum`.
-- `countOccurrences` enforces uniqueness unless `replace_all`.
-- In dry-run, generates `unifiedDiff` (custom hand-rolled `--- a/+++ b/@@` formatter, 3-line context).
-- On non-dry-run, writes via `files.write`, returns new md5.
-
-**Notable:** Hand-rolls own diff renderer (~40 lines). `md5` logic duplicated with `read_file.ts`.
-
-### `src/tools/execute_code.ts`
-**Responsibilities:**
-- `findDeno()` — checks `~/.deno/bin/deno`, `/usr/local/bin/deno`, `/opt/homebrew/bin/deno`, then `which deno`; memoizes via `_denoBin`.
-- `getSessionDir` — duplicates `bash.ts`'s `getBashCwd`.
-- `sanitizeOutput` — replaces sessionDir → `./`, projectRoot → `WORKSPACE`.
-- Validates `code` (max 100,000), `description`, `timeout` (`[1000, 120000]`).
-- Spins per-call bridge (`startBridge` from `./sandbox/bridge.ts`).
-- Builds prelude + user code, writes to `_exec_<rand>.ts`, spawns `deno run --allow-net=127.0.0.1:<port> --no-prompt` (or `bun run` fallback).
-- Captures stdout/stderr, races against timeout, kills on timeout, truncates to `MAX_OUTPUT = 20_000`.
-- Cleans tmp file in `finally`; stops bridge.
-
-**Notable:** Imports `* as fs from "../infra/fs.ts"` — only tool bypassing the sandboxed `files` service. Violates project rule.
-
-### `src/tools/geo_distance.ts`
-**Responsibilities:**
-- Two actions: `find_nearby`, `distance`.
-- Pure haversine math (`haversine` exported, `roundTo3`, `toRad`).
-- Coordinate validation via `assertNumericBounds`.
-- `findNearby` — reads two JSON files, computes O(n*m) pairwise haversine, filters by `radius_km` (validated `[0.001, 40075]`), sorts, returns `{count, matches}`.
-- `distance` — single haversine pair from inline lat/lon.
-
-**Notable:** Tight, single-domain.
-
-### `src/tools/glob.ts`
-**Responsibilities:**
-- Single tool. Validates `pattern` (max 512), `path` (max 1024).
-- `files.stat` + `Bun.Glob(pattern).scan({ absolute: true })`.
-- Caps at `MAX_RESULTS = 500`, sorts, formats `Total: N file(s)` + truncation note + `\nNote:` hint.
-
-**Notable:** Tiny, single-purpose.
-
-### `src/tools/grep.ts`
-**Responsibilities:**
-- Single tool. Validates `pattern`, `path`, `include`, `case_insensitive`.
-- Compiles `RegExp(pattern, "i" | "")`, throws `Invalid regex` on construct failure.
-- Iterates `Bun.Glob(include).scan(...)`; per file: `stat`, `checkFileSize`, `readText`, per-line regex test.
-- Caps: `MAX_TOTAL_LINES = 200`, `MAX_FILES_WITH_MATCHES = 50`, `PER_FILE_CAP = 20`.
-- Formats `path:line:content` + summary + truncation note + hint.
-
-**Notable:** Mirrors `glob.ts` structurally.
-
-### `src/tools/index.ts`
-**Responsibilities:**
-- Imports each tool default and calls `register(tool)` for 17 tools.
-- Manages MCP service lifecycle: stores instance on `globalThis.__mcpService` for hot-reload disconnect; creates `createMcpService(llm)`; exports `initMcpTools()` and `shutdownMcp()`.
-- Re-exports registry surface (`register`, `registerRaw`, `getTools`, `getToolsByName`, `dispatch`, `reset`, `mcpService`).
-
-**Notable:** Two concerns: tool registration + MCP lifecycle. Hot-reload guard is module-side-effecty.
-
-### `src/tools/prompt_engineer.ts`
-**Responsibilities:**
-- Single tool. Validates 5 string inputs (per-field max lengths from 1000 to 5000).
-- Loads `prompt-engineer` template, builds multi-section markdown user prompt.
-- Calls `llm.completion({ model: prompt.model ?? config.models.agent, ... })`.
-- Strips ` ```json ... ``` ` fences; `safeParse`s; validates `parsed.prompt` is string.
-- Returns JSON `{prompt, token_estimate, reasoning}` text.
-
-**Notable:** Same skeleton as `think.ts` (load prompt → completion → return).
-
-### `src/tools/read_file.ts`
-**Responsibilities:**
-- Single tool. Validates `file_path`, `offset≥1`, `limit≥1` (defaults 1/2000).
-- `files.checkFileSize`, `readText`, computes md5 of full content.
-- Slices `[offset-1, offset-1+limit)`, formats cat -n style, appends `Checksum: <md5> | Lines: <total>` + hint.
-
-**Notable:** md5 logic duplicates `edit_file.ts`.
-
-### `src/tools/registry.ts`
-**Responsibilities:**
-- Module state `handlers: Map<string, ToolDefinition>`, `expandedTools: LLMTool[]`.
-- `zodToParameters` (`z.toJSONSchema(schema)` minus `$schema`).
-- `register(tool)` rejects duplicates; if `schema.actions` exists, expands each action into `${name}__${action}` LLMTool with concatenated description; else single tool. Always `strict: true`.
-- `registerRaw(...)` bypasses Zod for MCP tools (`strict: false`).
-- `getTools`, `getToolsByName`, `getToolMeta`.
-- `serializeContent(parts)` — stringifies text/image/resource parts.
-- `tryDispatch`/`dispatch` — `safeParse` of args, invokes handler, completes via `resultStore`, propagates `wait`, wraps errors.
-- `reset()` clears state.
-
-**Notable:** Three concerns: registration (Zod conversion + multi-action expansion), dispatch + result-store integration, and content serialization.
-
-### `src/tools/scheduler.ts`
-**Responsibilities:**
-- Seven actions: `schedule`, `delay`, `list`, `get`, `pause`, `resume`, `delete`.
-- `validateId` (regex), `validateCron` (constructs `new Cron()`).
-- `scheduleAction` — `randomUUID()`, `dbOps.createJob`, `scheduler.scheduleCron`.
-- `delayAction` — `delayToRunAt`, `dbOps.createJob`.
-- `listAction`/`getAction` — formats output.
-- `pauseAction`/`resumeAction`/`deleteAction` — DB status updates + `scheduler` cancel/re-schedule.
-
-**Notable:** Cleanly delegates to `infra/db` and `infra/scheduler`. Uses `payload as any` casts.
-
-### `src/tools/shipping.ts`
-**Responsibilities:**
-- Two actions `check` and `redirect` against `${baseUrl}/api/packages` via `hubPost`.
-- `validateAlphanumeric` for `packageid`/`destination`.
-- `redirect` extracts `confirmation` from response and prepends instructional `IMPORTANT:` line.
-
-**Notable:** Effectively a domain-specific subset of `agents_hub.api_request`.
-
-### `src/tools/think.ts`
-**Responsibilities:**
-- Single tool. Validates `thought` (max 5000 — error label says `"question"`).
-- Loads `think` prompt, calls `llm.completion({ model: prompt.model ?? config.models.agent, ... })`.
-- Returns LLM result as text.
-
-**Notable:** Tiny — same skeleton as `prompt_engineer.ts`. `assertMaxLength(thought, "question", 5_000)` — label disagrees with field name.
-
-### `src/tools/web.ts`
-**Responsibilities:**
-- Two actions: `download`, `scrape`.
-- `assertHostAllowed(hostname)` — checks `config.sandbox.webAllowedHosts`.
-- `download` — `safeFilename`, substitutes `{{hub_api_key}}`, `fetch` with timeout, writes via `sessionService.outputPath`/`files.write`, returns `[resource(...), text(...)]`.
-- `scrape` — validates URL array (cap = `config.limits.maxBatchRows`), `Promise.allSettled` over `scrapeSingle` (`scrapeUrl` from `infra/serper.ts` + `condense` from `infra/condense.ts`).
-
-**Notable:** `{{hub_api_key}}` substitution duplicated with `browser.ts`. `scrape` transparently summarizes via LLM rather than returning raw.
-
-### `src/tools/write_file.ts`
-**Responsibilities:**
-- Single tool. Validates `file_path` (max 1024), `content` is string.
-- Auto-creates parent dir via `files.mkdir(dirname(path))`.
-- Writes via `files.write`, reports byte count via `TextEncoder().encode(content).length`.
-
-**Notable:** Tiny, single-purpose. No content-length cap on write (only path length).
-
-### `src/tools/sandbox/bridge.ts`
-**Responsibilities:**
-- `startBridge({readPaths, writePaths, cwd})` — creates sandboxed `FileProvider` via `createSandbox`.
-- Spawns `Bun.serve({port:0, hostname:"127.0.0.1"})` HTTP server with endpoints `read_file`, `read_json`, `write_file`, `list_dir`, `exists`, `stat`, `mkdir`.
-- Resolves relative `body.path` against configured `cwd`.
-- Returns `{port, stop}` handle.
-
-**Notable:** Single, clear responsibility.
-
-### `src/tools/sandbox/prelude.ts`
-**Responsibilities:**
-- `generatePrelude(bridgePort, sessionDir)` returns a TypeScript source string.
-- Generates `SESSION_DIR`, `_BRIDGE_URL`, `_bridge(endpoint, body)` HTTP wrapper, plus `tools.{readFile, readJson, writeFile, listDir, exists, stat, mkdir}` async methods.
-
-**Notable:** Pure code-generation helper, complementary to `bridge.ts`.
+### `src/prompts/think.md`
+- **LoC**: 18
+- **Frontmatter**: `model: gpt-4.1`, `temperature: 0.7`
+- **Responsibilities**:
+  - Provide internal reasoning module for agent to analyze questions with gathered context
+  - Step-through reasoning and conclude with actionable next steps; flag missing information
 
 ---
 
 ## `src/infra/`
 
 ### `src/infra/bootstrap.ts`
-**Responsibilities:**
-- `initServices()` — boot banner, `initTracing()`, `attachLangfuseSubscriber(bus)`, `registerContinuationSubscriber()`, `initMcpTools()`, `scheduler.loadAll()`, `reconcileOrphanedWaits()`.
-- `shutdownServices()` — stops scheduler, tracing, MCP, closes sqlite.
-- `installSignalHandlers(extra?)` — `SIGTERM`/`SIGINT` graceful shutdown then `process.exit(0)`.
-
-**Notable:** Reaches across layering: imports from `../tools/index.ts` and `../agent/run-continuation.ts` (infra → tools/agent).
+- **LoC**: 43
+- **Exports**: `initServices`, `shutdownServices`, `installSignalHandlers`
+- **Responsibilities**:
+  - Initialize database, tracing, MCP tools, event bus subscribers at startup
+  - Register signal handlers for graceful SIGTERM/SIGINT shutdown
+  - Reconcile orphaned async continuations after crash recovery
 
 ### `src/infra/browser-feedback.ts`
-**Responsibilities:**
-- `createBrowserFeedbackTracker()` factory; closure state `history`, `consecutive`, `lastHostname`, `totalCount`, `successCount`.
-- `record(event)` (bounded `MAX_HISTORY = 20`), `consecutiveFailures`, `lastVisitedHostname`, `stats`.
-- `generateHints(tool, outcome, error)` — pattern-matches error strings (`json`, `trailing comma`, `timeout`, `null`, `cannot read properties`).
-
-**Notable:** Self-contained; no LLM, no I/O.
+- **LoC**: 80
+- **Exports**: `createBrowserFeedbackTracker`, `FeedbackEvent`, `BrowserFeedbackTracker`
+- **Responsibilities**:
+  - Track browser tool success/failure history with circular buffer
+  - Detect consecutive failures and suggest recovery strategies
+  - Generate contextual hints based on error patterns (JSON, selectors, timeouts)
 
 ### `src/infra/browser-interventions.ts`
-**Responsibilities:**
-- `createBrowserInterventions(tracker)` — three flags: `screenshotHintSent`, `discoveryHintSent`, `hadFailures`.
-- `checkScreenshotHint`, `checkDiscoveryHint`, `checkEndOfTaskHint` — one-shot string hints.
-
-**Notable:** Tiny (~40 lines). Hardcoded user-facing copy and paths (`workspace/scratch/...`).
+- **LoC**: 45
+- **Exports**: `createBrowserInterventions`, `BrowserInterventions`
+- **Responsibilities**:
+  - Emit screenshot hint after 2+ consecutive browser failures
+  - Suggest saving working approaches to workspace on recovery
+  - Recommend persistence of learnings on task completion
 
 ### `src/infra/browser.ts`
-**Responsibilities:**
-- `createBrowserSession()` — Playwright `chromium.launch()`, owns `Browser`/`Context`/`Page`, `lastActivity`.
-- `launch()` — restores `storageState` from `config.browser.sessionPath`.
-- `saveSession()` — atomic write via tmp + `fsRename`.
-- Exposes `feedbackTracker` + `interventions` on the session — composes both sibling files.
-- `createBrowserPool()` — keyed map by `requireSessionId()`, idle-timeout `setInterval` (30s), `maxPoolSize`.
-- Registers `SIGINT`/`SIGTERM` handlers (`browserPool.closeAll()`).
-
-**Notable:** Aggregates two sibling files. Mixes session lifecycle, pool, idle GC, signal handlers.
+- **LoC**: 186
+- **Exports**: `createBrowserSession`, `createBrowserPool`, `browserPool`, `_setBrowserPoolForTest`
+- **Responsibilities**:
+  - Manage Chromium browser instances with session persistence
+  - Implement idle timeout cleanup of inactive browser sessions
+  - Persist and restore browser storage state (cookies, localStorage)
+  - Track page feedback and intervention hints per session
 
 ### `src/infra/condense.ts`
-**Responsibilities:**
-- Single function `condense(opts)` — token-thresholded summarization.
-- Below `DEFAULT_THRESHOLD = 3000` tokens: pass-through.
-- Above: writes raw to `sessionService.outputPath(filename)`, loads `condense-tool-result` prompt, calls `provider.completion()`, returns `{ text, fullPath, condensed }`.
-
-**Notable:** Cross-layer (llm + prompt + sandbox + sessionService + tokens).
-
-### `src/infra/db/connection.ts`
-**Responsibilities:**
-- Synchronous `mkdirSync(dirname(config.database.url))`.
-- Opens `bun:sqlite` Database; sets `PRAGMA journal_mode = WAL` and `PRAGMA foreign_keys = ON`.
-- Wraps with `drizzle(sqlite, { schema })`. Exports `db` and `sqlite`.
-
-**Notable:** Side effects on import. Comment notes deliberate use of raw `fs` at this layer.
-
-### `src/infra/db/index.ts`
-**Responsibilities:**
-- Re-exports `db, sqlite`.
-- Sessions: `createSession`, `getSession`, `touchSession`, `setRootRun`, `setAssistant`.
-- Runs: `createRun`, `getRun`, `updateRunStatus` (optional optimistic lock via `expectedVersion`), `incrementCycleCount`, `listRunsBySession`, `findRunWaitingOnChild`, `findOrphanedWaitingRuns`.
-- Items: `nextSequence`, `appendItem`, `appendItems` (transaction), `listItemsByRun`, `listItemsBySession`, `getItemByCallId`.
-- Scheduled jobs: `createJob`, `getJob`, `listJobs`, `listActiveJobs`, `listDueOneShots`, `updateJobStatus`, `updateJobExecution`, `deleteJob`.
-- `_clearAll()` test helper.
-
-**Notable:** Four CRUD domains in one ~300-line file. `findOrphanedWaitingRuns` does post-fetch filtering in JS.
-
-### `src/infra/db/migrate.ts`
-**Responsibilities:**
-- One line: `migrate(db, { migrationsFolder: "./src/infra/db/migrations" })`.
-
-**Notable:** Trivial.
-
-### `src/infra/db/schema.ts`
-**Responsibilities:**
-- Drizzle SQLite schemas: `sessions`, `runs`, `items`, `scheduledJobs`.
-- Enums (`JobStatus`, `JobRunStatus`), `timestamp()` column helper using sqlite `strftime`.
-- `runs_root_run_rule` check constraint and three indexes.
-- `idx_items_run_seq` unique index, `idx_items_call_id`. `idx_jobs_status`.
-
-**Notable:** Pure schema; self-contained.
+- **LoC**: 55
+- **Exports**: `condense`, `CondenseOpts`, `CondenseResult`
+- **Responsibilities**:
+  - Summarize large tool outputs via LLM when exceeding token threshold
+  - Write full output to session files and return concise summaries
+  - Pass through small outputs unchanged for zero cost
 
 ### `src/infra/events.ts`
-**Responsibilities:**
-- `createEventBus()` factory; closure over `exact: Map<EventType, Set<Listener>>` and `wildcards: Set<WildcardListener>`.
-- `emit(type, data)` — `randomUUID()`, attaches `ts`, pulls envelope from `agent/context.ts` ALS (`sessionId`, `runId`, `rootRunId`, `parentRunId`, `traceId`, `depth`).
-- `on/off/onAny/offAny/clear`.
-- Singleton `bus` + factory.
-
-**Notable:** Couples `infra` to `agent/context.ts` for envelope injection.
+- **LoC**: 87
+- **Exports**: `bus`, `createEventBus`, `EventBus`
+- **Responsibilities**:
+  - Manage process-wide event bus with exact and wildcard listeners
+  - Enrich events with session/run/trace context from async context
+  - Emit with unique IDs and timestamps for traceability
 
 ### `src/infra/fs.ts`
-**Responsibilities:**
-- Thin wrappers around `fs/promises` and `Bun.file/Bun.write`: `exists`, `readText`, `readBinary`, `readJson`, `write`, `append`, `fsReaddir`, `fsStat`, `fsMkdir`, `fsUnlink`, `fsRename`.
-- `checkFileSize(stat, maxBytes, displayPath)` — throws `FileSizeLimitError`.
-- `class FileSizeLimitError extends Error`.
-
-**Notable:** Header note "no access control" — pairs with `sandbox.ts`.
+- **LoC**: 72
+- **Exports**: `exists`, `readText`, `readBinary`, `readJson`, `write`, `append`, `fsReaddir`, `fsStat`, `fsMkdir`, `fsUnlink`, `fsRename`, `checkFileSize`, `FileSizeLimitError`
+- **Responsibilities**:
+  - Provide low-level async filesystem operations (no access control)
+  - Validate file sizes against configured limits
+  - Wrap Bun file APIs with standard Node.js/Promise interface
 
 ### `src/infra/guard.ts`
-**Responsibilities:**
-- Lazy `getClient()` for OpenAI SDK.
-- `moderateInput(text)` — short-circuits when `config.moderation.enabled` is false; calls `moderations.create`, normalizes categories, logs, fail-open on errors.
-- `assertNotFlagged(result)` — throws if flagged.
-- `_setClient(c)` test override.
-
-**Notable:** Uses `log` directly (not bus).
+- **LoC**: 75
+- **Exports**: `moderateInput`, `assertNotFlagged`, `_setClient`
+- **Responsibilities**:
+  - Check user input against OpenAI moderation API for policy violations
+  - Log flagged categories and fail-open on API errors
+  - Throw error if input violates moderation policy
 
 ### `src/infra/langfuse-subscriber.ts`
-**Responsibilities:**
-- `attachLangfuseSubscriber(bus)` — early-out via `isTracingEnabled()`; dynamic `require("@langfuse/tracing")`.
-- `SubscriberState` with multiple maps (`agentMap`, `turnMap`, `turnStartMap`, `toolMap`, `agentAnswerMap`, `memoryMap`, `pendingModeration`).
-- Seven handler groups: session, turn, generation, tool, agent-answer, memory, moderation. Each opens/ends Langfuse observations keyed by `runId`/`toolCallId`.
-- Helpers: `truncate`, `nestGeneration`, `withAgentCtx` (OTel `context.with`), `parentFor`, `endAgentObs`, `clearAll`.
-
-**Notable:** ~540 lines. Largest infra file.
-
-### `src/infra/log/bridge.ts`
-**Responsibilities:**
-- `attachLoggerListener(bus, log, sessionId?)` — translates bus events to `Logger` method calls.
-- Filters by `sessionId`.
-- Maps each event class to a logger method (`run.started → log.info`, `tool.called → log.toolHeader`, etc.).
-
-**Notable:** Pure adapter.
-
-### `src/infra/log/composite.ts`
-**Responsibilities:**
-- `createCompositeLogger(targets)` — Proxy that fans every method call to all targets.
-
-**Notable:** Six effective lines.
-
-### `src/infra/log/console.ts`
-**Responsibilities:**
-- ANSI color constants and helpers (`truncate`, `formatVal`, `summarizeArgs`, `summarizeResult`, `tokenSuffix`).
-- `LEVEL_ORDER` map and `isEnabled` filter.
-- `class ConsoleLogger implements Logger` — `step`, `llm`, `toolHeader`/`toolCall`/`toolOk`/`toolErr`, `batchDone`, `answer`, `maxIter` (always-on), plus level-filterable `info`/`success`/`error`/`debug`/`memoryObserve`/`memoryReflect`.
-
-**Notable:** Self-contained presenter.
-
-### `src/infra/log/jsonl.ts`
-**Responsibilities:**
-- `defaultPathFn(event)` — `{sessionsDir}/{date}/{sessionId}/log/events.jsonl`.
-- `extractPayload` strips `ENVELOPE_KEYS`.
-- `createJsonlWriter(pathFn?)` — wildcard listener serializing `{id, type, ts, sid?, cid?, data}` per line; chains writes; lazy mkdir cached in `ensuredDirs`.
-- `compactData` — drops `input` from `generation.completed`, `result` from `tool.succeeded`.
-
-**Notable:** Persists by date+session.
-
-### `src/infra/log/logger.ts`
-**Responsibilities:**
-- Single line: `export const log: Logger = new ConsoleLogger();`.
-
-**Notable:** Three-line file.
-
-### `src/infra/log/markdown.ts`
-**Responsibilities:**
-- `class MarkdownLogger implements Logger` with sandboxed `FileProvider` (per-instance `createSandbox({ writePaths: [sessionDir] })`).
-- Validates `sessionId` against `/^[a-zA-Z0-9_\-]+$/`.
-- `toolOk` off-loads results > `MAX_INLINE_SIZE = 10240` to a sidecar `.txt` file.
-- `flush()`/`dispose()` (removes `beforeExit` listener).
-
-**Notable:** Substantial sidecar logic; owns its own filesystem instance.
+- **LoC**: 540
+- **Exports**: `attachLangfuseSubscriber`
+- **Responsibilities**:
+  - Convert agent domain events (runs, turns, tools, generations) to Langfuse observations
+  - Maintain observation hierarchy with OTel context propagation
+  - Track memory compression (observation/reflection) metrics
+  - Record input moderation results as guardrail observations
+  - Map tool outputs and LLM generations to structured trace data
 
 ### `src/infra/mcp-oauth.ts`
-**Responsibilities:**
-- Per-server JSON state persistence (`tokens.json`, `client-info.json`, `verifier.txt`, `discovery.json`) using raw `fs`.
-- `createOAuthProvider(serverName, callbackPort=8090)` — implements `OAuthClientProvider` interface (clientMetadata, save/load, redirectToAuthorization spawning `open`/`start`/`xdg-open`, codeVerifier, discoveryState, invalidateCredentials).
-- `waitForOAuthCallback(port)` — `node:http` server on `127.0.0.1:port` parsing `/callback` query; 5-minute timeout; HTML response pages.
-
-**Notable:** Combines persistence + browser-launching + HTTP callback. Uses raw `fs` (bypasses sandbox).
+- **LoC**: 179
+- **Exports**: `createOAuthProvider`, `waitForOAuthCallback`
+- **Responsibilities**:
+  - Persist OAuth tokens, client info, code verifiers to filesystem
+  - Open browser for authorization flow and launch callback server
+  - Handle OAuth callback parsing and token storage
 
 ### `src/infra/mcp.ts`
-**Responsibilities:**
-- `normalizeName(name)` — strips non-alphanumeric/underscore.
-- `createTransport(serverConfig)` — switch over `stdio | sse | http` returning correct transport (wires OAuth for http via `createOAuthProvider`).
-- `mapMcpContent(content)` — translates MCP content to local `ContentPart[]`; strips `file://` on resource URIs.
-- `handleStructuredContent(...)` — token threshold (`STRUCTURED_CONTENT_TOKEN_LIMIT = 3000`); inline or write+ref.
-- `killStaleMcpRemoteProcesses()` — `pgrep -f mcp-remote` + SIGTERM.
-- `createMcpService(llmProvider)` — manages connected-server map: `connect()` (with OAuth retry), `setupSamplingHandler` (bridges MCP `CreateMessage` to `llmProvider.chatCompletion`), `registerTools()` (registers `mcp_<server>_<tool>` via `registerRaw`), `disconnect()`.
-
-**Notable:** Crosses many concerns; reaches into `tools/registry.ts` and `agent/session.ts`.
+- **LoC**: 363
+- **Exports**: `createMcpService`, `McpService`
+- **Responsibilities**:
+  - Connect to MCP servers (stdio, SSE, HTTP) with transport abstraction
+  - Implement OAuth handshake for authenticated MCP connections
+  - Convert MCP tools to registered agent tools with result mapping
+  - Handle structured content by writing large payloads to session files
+  - Kill stale mcp-remote processes on startup
 
 ### `src/infra/result-store.ts`
-**Responsibilities:**
-- `createResultStore()` — `Map<string, ToolCallRecord>` keyed by `toolCallId`.
-- `create(toolCallId, toolName, args)` — pre-registers `pending`.
-- `complete(toolCallId, result, tokens)` — finalizes with `ok`/`error`; auto-creates if missing.
-- `get`, `list`, `clear`. Singleton `resultStore` + factory.
-
-**Notable:** Pure in-memory store.
+- **LoC**: 60
+- **Exports**: `resultStore`, `createResultStore`, `ToolCallRecord`
+- **Responsibilities**:
+  - Store tool call records indexed by toolCallId
+  - Track status (pending/ok/error) and token usage per call
+  - Provide list and clear methods for result inspection
 
 ### `src/infra/sandbox.ts`
-**Responsibilities:**
-- `toRelative(absolutePath)` — formats paths relative to project root.
-- `narrowOutputPaths` — at write, replaces a generic `sessionsDir` allowed entry with `{sessionsDir}/{date}/{sessionId}` when there's a session.
-- `assertPathAllowed(target, allowed, blocked, op, sessionsDir)` — resolves and checks containment.
-- `createSandbox(opts)` — returns `FileProvider` (`exists`, `readText`, `readBinary`, `readJson`, `write`, `append`, `readdir`, `stat`, `mkdir`, `unlink`, `rename`, `checkFileSize`).
-- Default singleton `sandbox`.
-- `resolveInput(input, label, fileProvider?)` — file path, inline JSON, or raw string.
-
-**Notable:** Couples to `agent/context.ts` for `getSessionId()`.
+- **LoC**: 199
+- **Exports**: `createSandbox`, `sandbox`, `_setSandboxForTest`, `resolveInput`, `FileSizeLimitError`
+- **Responsibilities**:
+  - Enforce read/write path allowlists with blocked directory support
+  - Narrow session-specific write paths to date-partitioned directories
+  - Wrap filesystem operations with access control checks
+  - Resolve input as file path, JSON, or raw string fallback
 
 ### `src/infra/scheduler.ts`
-**Responsibilities:**
-- `parseDelay(delay)` — regex `/^(\d+)([mhd])$/` → ms; rejects > `MAX_DELAY_DAYS = 30`.
-- `delayToRunAt(delay)`.
-- `executeJob(job)` — fresh `randomSessionId()`, `sessionService.enqueue` + `executeRun({ sessionId, prompt: job.message, assistant: job.agent })`, updates `dbOps.updateJobExecution`, marks one-shots completed.
-- `scheduleCron(job)` — `new Cron(...)` with freshness re-check; tracks in `cronJobs: Map<id, Cron>`.
-- `cancelJob(id)`. `pollOneShots()` polls due one-shots.
-- `loadAll()` reschedules cron jobs from DB on startup; starts `setInterval(POLL_INTERVAL_MS = 60_000)`.
-- `shutdown()` stops crons + clears poll timer.
-- `_activeCronCount`, `_hasPollTimer` test hooks.
-
-**Notable:** Reaches into `agent/orchestrator.ts` and `agent/session.ts`.
+- **LoC**: 146
+- **Exports**: `scheduler`, `parseDelay`, `delayToRunAt`
+- **Responsibilities**:
+  - Schedule cron jobs from database active jobs on load
+  - Poll for due one-shot jobs every 60 seconds
+  - Execute jobs via session queue with error tracking
+  - Parse delay strings (30m, 2h, 1d) and validate against 30-day limit
 
 ### `src/infra/serper.ts`
-**Responsibilities:**
-- `getApiKey()` — reads `config.keys.serperApiKey`, throws if missing.
-- `scrapeUrl(url)` — POSTs to `config.urls.serperScrape` with `X-API-KEY`; picks `data.text ?? data.content ?? data.markdown`; returns `{text, url}`.
-
-**Notable:** Tiny single-purpose client.
+- **LoC**: 31
+- **Exports**: `scrapeUrl`, `ScrapeResult`
+- **Responsibilities**:
+  - Call Serper scrape API with URL and API key authentication
+  - Extract text/content/markdown from response with JSON fallback
+  - Apply fetch timeout to prevent hanging
 
 ### `src/infra/tracing.ts`
-**Responsibilities:**
-- `isTracingEnabled()` — both Langfuse keys present.
-- `initTracing()` — sets `LANGFUSE_*` env vars; dynamic `require` of `@opentelemetry/sdk-node` + `@langfuse/otel`; constructs `NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] })`.
-- `shutdownTracing()` — `await sdk.shutdown()`.
+- **LoC**: 42
+- **Exports**: `isTracingEnabled`, `initTracing`, `shutdownTracing`
+- **Responsibilities**:
+  - Initialize OpenTelemetry Node SDK with Langfuse span processor
+  - Set environment variables for Langfuse configuration
+  - Gracefully handle missing OTel/Langfuse dependencies
 
-**Notable:** Dynamic require keeps OTel out of cold paths.
+### `src/infra/db/connection.ts`
+- **LoC**: 17
+- **Exports**: `db`, `sqlite`
+- **Responsibilities**:
+  - Initialize SQLite database with Drizzle ORM schema
+  - Enable WAL journal mode and foreign key enforcement
+  - Create database directory synchronously at module load
+
+### `src/infra/db/index.ts`
+- **LoC**: 301
+- **Exports**: `db`, `sqlite`, `createSession`, `getSession`, `touchSession`, `setRootRun`, `setAssistant`, `createRun`, `getRun`, `updateRunStatus`, `incrementCycleCount`, `listRunsBySession`, `findRunWaitingOnChild`, `findOrphanedWaitingRuns`, `nextSequence`, `appendItem`, `appendItems`, `listItemsByRun`, `listItemsBySession`, `getItemByCallId`, `createJob`, `getJob`, `listJobs`, `listActiveJobs`, `listDueOneShots`, `updateJobStatus`, `updateJobExecution`, `deleteJob`, `_clearAll`
+- **Responsibilities**:
+  - Query and mutate sessions, runs, items, scheduled jobs in SQLite
+  - Track run status with optimistic locking by version field
+  - Find orphaned waiting runs for crash recovery reconciliation
+  - Manage scheduled job execution history and cron status
+
+### `src/infra/db/migrate.ts`
+- **LoC**: 4
+- **Exports**: (none — runs Drizzle migrations)
+- **Responsibilities**:
+  - Execute Drizzle migrations from migrations folder on import
+
+### `src/infra/db/schema.ts`
+- **LoC**: 93
+- **Exports**: `sessions`, `runs`, `items`, `scheduledJobs`, `JobStatus`, `JobRunStatus`
+- **Responsibilities**:
+  - Define SQLite schema for sessions, runs, items, scheduled jobs
+  - Enforce foreign key constraints and run hierarchy invariants
+  - Index session/parent/root references and scheduled job status
+
+### `src/infra/log/bridge.ts`
+- **LoC**: 146
+- **Exports**: `attachLoggerListener`
+- **Responsibilities**:
+  - Subscribe to domain events and translate to Logger method calls
+  - Filter events by session ID to support multi-session concurrent logging
+  - Format durations and forward event data to logger targets
+
+### `src/infra/log/composite.ts`
+- **LoC**: 17
+- **Exports**: `createCompositeLogger`
+- **Responsibilities**:
+  - Implement Proxy-based composite logger delegating to multiple targets
+  - Avoid manual method forwarding for each Logger interface method
+
+### `src/infra/log/console.ts`
+- **LoC**: 172
+- **Exports**: `ConsoleLogger`, `ConsoleLoggerOptions`
+- **Responsibilities**:
+  - Log agent loop steps, LLM responses, tool calls with ANSI colors
+  - Summarize JSON args and results with configurable truncation
+  - Emit token counts and elapsed time for each phase
+  - Support debug/info/error filtering based on log level
+
+### `src/infra/log/jsonl.ts`
+- **LoC**: 103
+- **Exports**: `createJsonlWriter`, `JsonlWriter`
+- **Responsibilities**:
+  - Append domain events to JSONL files chained by session/date
+  - Compact large fields (input, result) before persistence
+  - Flush pending writes on demand or exit signal
+
+### `src/infra/log/logger.ts`
+- **LoC**: 4
+- **Exports**: `log`
+- **Responsibilities**:
+  - Export singleton ConsoleLogger instance for console output
+
+### `src/infra/log/markdown.ts`
+- **LoC**: 182
+- **Exports**: `MarkdownLogger`, `formatJson`
+- **Responsibilities**:
+  - Write human-readable markdown logs with headers, code blocks, sections
+  - Write large tool outputs to sidecar .txt files with references
+  - Chain async appends to guarantee ordering without blocking
+  - Implement beforeExit handler for best-effort flush on process exit
 
 ---
 
-## `src/llm/`, `src/config/`, `src/utils/`
+## `src/tools/`
 
-### `src/llm/errors.ts`
-**Responsibilities:**
-- `isFatalLLMError(err)` — duck-type/instanceof checks across OpenAI SDK error classes (`AuthenticationError`, `BadRequestError`, `PermissionDeniedError`, `RateLimitError` with code `insufficient_quota`) and Gemini errors (`status` field, `RESOURCE_EXHAUSTED` substring, HTTP 400/401/403).
-- `extractErrorCode(err)` — short code/status string for telemetry.
+### `src/tools/agents_hub.ts`
+- **LoC**: 202
+- **Exports**: `agentsHub` handler
+- **Responsibilities**:
+  - Multi-action tool (verify, verify_batch, api_request, api_batch) for hub.ag3nts.org
+  - Submit task answers and receive verification responses from the AG3NTS hub
+  - Batch processing of answers or API calls with field mapping support
+  - File I/O for batch input/output with size checks and error handling
 
-**Notable:** Mixes two providers' error taxonomies. Imports concrete OpenAI SDK classes — couples a "shared" module to one provider.
+### `src/tools/bash.ts`
+- **LoC**: 80
+- **Exports**: `bash` handler
+- **Responsibilities**:
+  - Execute shell commands in session working directory with timeout enforcement
+  - Validate write targets (`>`, `>>`, `tee`) stay within session directory only
+  - Capture stdout/stderr, enforce 20KB output truncation, return exit codes
 
-### `src/llm/gemini.ts`
-**Responsibilities:**
-- `findToolCallName(messages, toolCallId)` — walks back to recover function name needed for Gemini's `functionResponse`.
-- `contentPartsToGemini(content)` — `ContentPart[]` → Gemini `Part[]`, drops `resource`.
-- `toGeminiContents(messages)` — `LLMMessage[]` → `{ systemInstruction, contents }` with `thoughtSignature` round-trip.
-- `toGeminiTools(tools)` — `LLMTool[]` → `FunctionDeclaration[]`.
-- `extractToolCalls(parts)` — pulls `functionCall` parts, captures `thoughtSignature`.
-- `createGeminiProvider(apiKey)` — `GoogleGenAI` client, retry config, `chatCompletion`/`completion` with timeouts.
+### `src/tools/browser.ts`
+- **LoC**: 446
+- **Exports**: `browserHandler`, `navigate`, `evaluate`, `click`, `typeText`, `takeScreenshot`
+- **Responsibilities**:
+  - Multi-action tool: navigate URLs, evaluate JavaScript, click elements, fill forms, screenshot
+  - Manage Playwright browser session persistence (cookies, localStorage)
+  - Save page text and DOM structure artifacts; detect error pages via status/patterns
+  - Provide feedback hints via session interventions (discovery, screenshot recommendations)
 
-**Notable:** Mixes message/tool/response translation with retry/timeout wiring and `console.error` diagnostics.
+### `src/tools/delegate.ts`
+- **LoC**: 72
+- **Exports**: `delegate` handler
+- **Responsibilities**:
+  - Delegate subtask to specialized child agent with isolated session
+  - Create child run linked to parent run context and trace hierarchy
+  - Block parent execution (return wait signal) until child reaches terminal state
 
-### `src/llm/llm.ts`
-**Responsibilities:**
-- `createLlmService()` — registers OpenAI for `"gpt-"` + `/^o[1-9]/` and Gemini for `"gemini-"` (only when `config.keys.geminiApiKey`).
-- Singleton `llm: LLMProvider`.
-- Re-exports `createOpenAIProvider`.
+### `src/tools/document_processor.ts`
+- **LoC**: 103
+- **Exports**: `documentProcessor`, `ask`
+- **Responsibilities**:
+  - Multi-action tool: ask questions about documents using AI vision (Gemini)
+  - Support text and image files (10-file max); handle file:// URI legacy cleanup
+  - Build ContentPart array and stream to LLM for cross-document synthesis
 
-**Notable:** Eager singleton on module load.
+### `src/tools/edit_file.ts`
+- **LoC**: 152
+- **Exports**: `edit_file` handler
+- **Responsibilities**:
+  - String-based find-replace in files with single/bulk occurrence support
+  - Checksum verification for concurrency safety; prevent ambiguous replacements
+  - Generate unified diff for dry-run preview without writing
 
-### `src/llm/openai.ts`
-**Responsibilities:**
-- `contentToOpenAI(content)` → `text`/`image_url` (data URL).
-- `toOpenAIMessages(messages)` — preserves `tool_calls`/`tool_call_id`.
-- `toOpenAITools(tools)`.
-- `toResponse(choice, usage)`.
-- `createOpenAIProvider(client?)` — `OpenAI` client (with `maxRetries`), `chatCompletion`/`completion` with `AbortSignal.timeout`.
+### `src/tools/execute_code.ts`
+- **LoC**: 195
+- **Exports**: `executeCode` handler
+- **Responsibilities**:
+  - Run TypeScript code in sandboxed subprocess (Deno or Bun fallback)
+  - Inject bridge prelude providing file access only to session directory
+  - Strip absolute paths from output to prevent filesystem leakage
 
-**Notable:** Mirrors Gemini structurally; both files independently translate.
+### `src/tools/geo_distance.ts`
+- **LoC**: 142
+- **Exports**: `geoDistance`, `haversine`
+- **Responsibilities**:
+  - Multi-action tool: distance calculation and bulk location matching
+  - Implement haversine formula for geographic distance computation
+  - Match query points against references within radius; sort results ascending
 
-### `src/llm/prompt.ts`
-**Responsibilities:**
-- `createPromptService(promptsDir)` — `load(name, variables)` reads `<promptsDir>/<name>.md`, parses YAML frontmatter with `gray-matter`, substitutes `{{var}}`, throws on missing variables, returns `{ model?, temperature?, content }`.
-- Singleton `promptService` bound to `config.paths.promptsDir`.
+### `src/tools/glob.ts`
+- **LoC**: 73
+- **Exports**: `glob` handler
+- **Responsibilities**:
+  - Find files matching glob pattern in directory; 500-result cap with truncation warning
+  - Use Bun.Glob for pattern expansion; return sorted absolute paths
 
-**Notable:** Single, focused responsibility.
+### `src/tools/grep.ts`
+- **LoC**: 131
+- **Exports**: `grep` handler
+- **Responsibilities**:
+  - Search files by regex pattern; 200 lines, 50 files, 20 per-file limits
+  - Skip directories, oversized files; return file:line:content matches with case sensitivity option
 
-### `src/llm/router.ts`
-**Responsibilities:**
-- `ProviderEntry` and `matches(model, pattern)` (string `startsWith` or regex `.test`).
-- `ProviderRegistry` implements `LLMProvider`: `register`, `resolve(model)` (linear scan), `chatCompletion`/`completion` delegate; on error calls `emitCallFailed` and rethrows.
-- `emitCallFailed(model, err)` — emits `llm.call.failed` with `fatal`/`code`.
+### `src/tools/index.ts`
+- **LoC**: 60
+- **Exports**: `register`, `registerRaw`, `getTools`, `getToolsByName`, `dispatch`, `reset`, `initMcpTools`, `shutdownMcp`, `mcpService`
+- **Responsibilities**:
+  - Import and register all native tool definitions (think, bash, browser, etc.)
+  - Manage MCP service lifecycle (connect, register remote tools, disconnect)
+  - Hot-reload support: disconnect previous instance before creating new one
 
-**Notable:** Routing + telemetry emission in one class.
+### `src/tools/prompt_engineer.ts`
+- **LoC**: 100
+- **Exports**: `promptEngineer` handler
+- **Responsibilities**:
+  - Craft or refine LLM prompts with goal, constraints, context, and feedback input
+  - Load system prompt from prompt-engineer template; parse JSON response stripping markdown fences
+  - Return prompt, token estimate, and reasoning as structured JSON
 
-### `src/config/env.ts`
-**Responsibilities:**
-- `requireEnv(name)` helper.
-- Upfront validation of `REQUIRED_VARS = ["HUB_API_KEY", "OPENAI_API_KEY"]`.
-- Computes `nodeEnv` and `defaultDbPath`.
-- Frozen `env` object holding hub/openai/gemini/serper keys + port + assistant + Langfuse keys + browserHeadless + apiSecret + databaseUrl.
+### `src/tools/read_file.ts`
+- **LoC**: 63
+- **Exports**: `read_file` handler
+- **Responsibilities**:
+  - Read text files with line numbering and md5 checksum; 1-based offset/limit pagination
+  - Display cat -n format with total line count and checksum for verification
 
-**Notable:** Single concern.
+### `src/tools/registry.ts`
+- **LoC**: 195
+- **Exports**: `register`, `registerRaw`, `getTools`, `getToolsByName`, `dispatch`, `reset`, `getToolMeta`, `serializeContent`
+- **Responsibilities**:
+  - Register single-action and multi-action tools; expand multi-action to separate LLM functions
+  - Convert Zod schemas to OpenAI JSON Schema; support pre-built raw schemas for MCP tools
+  - Dispatch tool calls by name (with action routing for multi-action); handle errors gracefully
+  - Serialize content parts to plain text; estimate tokens for result tracking
 
-### `src/config/index.ts`
-**Responsibilities:**
-- `deepFreeze(obj)` recursive walker.
-- Hardcoded `HUB_BASE_URL`.
-- Assembles + freezes `config`: `paths`, `sandbox`, `models`, `hub`, `keys`, `urls`, `limits`, `server`, `memory`, `moderation`, `langfuse`, `retry`, `browser`, `database`, `assistant`.
+### `src/tools/sandbox/bridge.ts`
+- **LoC**: 84
+- **Exports**: `startBridge`
+- **Responsibilities**:
+  - Create sandboxed HTTP bridge server (OS-assigned port, localhost only)
+  - Expose file operations (read, write, stat, mkdir, exists, listDir, readJson) via REST endpoints
+  - Resolve relative paths against session cwd; enforce sandbox read/write path restrictions
 
-**Notable:** Single god-config blob spanning many runtime domains.
+### `src/tools/sandbox/prelude.ts`
+- **LoC**: 51
+- **Exports**: `generatePrelude`
+- **Responsibilities**:
+  - Generate TypeScript prelude injected into sandboxed scripts
+  - Export SESSION_DIR constant and tools object with async file access methods
+  - Route all I/O through bridge server via fetch; compatible with Deno and Bun
 
-### `src/config/mcp.ts`
-**Responsibilities:**
-- Re-exports MCP types.
-- Computes local `MCP_CONFIG_PATH` (`workspace/system/mcp.json`).
-- `loadMcpConfig()` — reads via `Bun.file`, returns cached `{servers: []}` on missing, parses JSON, pulls `servers` array. Memoizes via `cached`.
+### `src/tools/scheduler.ts`
+- **LoC**: 236
+- **Exports**: `schedulerHandler` (schedule, delay, list, get, pause, resume, delete actions)
+- **Responsibilities**:
+  - Multi-action tool: create recurring cron jobs and one-shot delayed executions
+  - Manage job lifecycle (pause, resume, delete); track run count and last execution metadata
+  - Validate cron syntax and delay strings (Nm/Nh/Nd format); trigger agent with message payload
 
-**Notable:** Duplicates `MCP_CONFIG_PATH` already in `paths.ts`. Uses raw `Bun.file` (bypasses sandbox).
+### `src/tools/shipping.ts`
+- **LoC**: 100
+- **Exports**: `shipping` handler
+- **Responsibilities**:
+  - Multi-action tool: check package status and redirect to new destinations
+  - Validate alphanumeric package/destination IDs; extract confirmation code from response
+  - Enforce security code authorization for redirects
 
-### `src/config/paths.ts`
-**Responsibilities:**
-- `PROJECT_ROOT` via `resolve(import.meta.dir, "../..")`.
-- Path constants: `WORKSPACE_DIR`, `SESSIONS_DIR`, `SYSTEM_DIR`, `KNOWLEDGE_DIR`, `SCRATCH_DIR`, `WORKFLOWS_DIR`, `BROWSER_DIR`, `AGENTS_DIR`, `PROMPTS_DIR` (under `src/`), `DATA_DIR`, `MCP_OAUTH_DIR`, `MCP_CONFIG_PATH`.
+### `src/tools/think.ts`
+- **LoC**: 37
+- **Exports**: `think` handler
+- **Responsibilities**:
+  - Reasoning tool: pause and perform step-by-step thinking before acting
+  - Load think system prompt template; call LLM for structured reasoning output
+  - No side effects — planning only, does not fetch or modify state
 
-**Notable:** Single concern. `PROMPTS_DIR` lives under `src/`, breaking otherwise-consistent grouping.
+### `src/tools/web.ts`
+- **LoC**: 160
+- **Exports**: `web`, `download`, `scrape`
+- **Responsibilities**:
+  - Multi-action tool: download files or scrape web page text
+  - Enforce host allowlist for downloads; resolve `{{placeholder}}` variables (hub_api_key)
+  - Condense scraped content per URL; save full text artifacts; parallel scraping with independent failure handling
 
-### `src/utils/errors.ts`
-**Responsibilities:**
-- `getErrorMessage(err)` — `err.message` or `String(err)`.
-
-**Notable:** Three lines. Duplicates `errorMessage` in `parse.ts`.
-
-### `src/utils/hub-fetch.ts`
-**Responsibilities:**
-- `stringify(value)` — coerce unknown to string.
-- `hubPost(url, body, label, timeout=30_000)` — POSTs JSON with `AbortSignal.timeout`, content-type-aware response parsing, throws `${label} (${status}): …` on non-OK.
-
-**Notable:** No URL allowlist (caller's responsibility). `stringify` is generic, not hub-specific.
-
-### `src/utils/id.ts`
-**Responsibilities:**
-- `randomSessionId()` — wraps `randomUUID()`.
-
-**Notable:** Two-line file.
-
-### `src/utils/index.ts`
-**Responsibilities:**
-- Re-exports from `parse.ts`, `xml.ts`, `timing.ts`, `hub-fetch.ts`, `media-types.ts`, `errors.ts`.
-
-**Notable:** Does not re-export `id.ts` or `tokens.ts`.
-
-### `src/utils/media-types.ts`
-**Responsibilities:**
-- Extension `Set`s: `IMAGE_EXTENSIONS`, `TEXT_EXTENSIONS`, private `AUDIO_/VIDEO_EXTENSIONS`.
-- `MIME_MAP` image MIME lookup.
-- Frozen `ALL_SUPPORTED_EXTENSIONS`.
-- `getExt`, `inferCategory`, `inferMimeType`.
-
-**Notable:** Single concern.
-
-### `src/utils/parse.ts`
-**Responsibilities:**
-- `safeParse<T>(json, label)` — try/catch JSON.parse; doesn't echo input.
-- `safeFilename(raw)` — non-empty, no `/`, `\`, `..`, no leading `.`, regex allowlist.
-- `safePath(raw, label)` — max length 500, rejects `..` components, char allowlist.
-- `validateKeys(obj)` — rejects `__proto__`/`constructor`/`prototype`.
-- `assertMaxLength(value, name, max)`.
-- `formatSizeMB(bytes)` — `"X.Y"` MB string.
-- `assertNumericBounds(value, name, min, max)`.
-- `errorMessage(err)`.
-
-**Notable:** Mixes JSON parsing, filesystem name validation, prototype-pollution guard, generic assertions, byte formatting, error message extraction.
-
-### `src/utils/timing.ts`
-**Responsibilities:**
-- `elapsed(startPerfNow)` — `${seconds.toFixed(2)}s`.
-
-**Notable:** Three lines.
-
-### `src/utils/tokens.ts`
-**Responsibilities:**
-- `estimateTokens(text)` — `Math.ceil(text.length / 4)`.
-- `serializeMessage(msg)` (private) — flattens `LLMMessage` to string.
-- `estimateMessagesTokens(messages)` — sum.
-
-**Notable:** Imports `LLMMessage` from types — `utils/` taking a hard LLM dep. Not re-exported from `utils/index.ts`.
-
-### `src/utils/xml.ts`
-**Responsibilities:**
-- `escapeXml(s)` — escapes `&`, `<`, `>`, `"` (not `'`).
-
-**Notable:** Single tiny function.
+### `src/tools/write_file.ts`
+- **LoC**: 48
+- **Exports**: `write_file` handler
+- **Responsibilities**:
+  - Create or overwrite files; auto-create parent directories recursively
+  - Write UTF-8 content; report byte count and verification hint
 
 ---
 
 ## `src/types/`
 
 ### `src/types/agent.ts`
-**Responsibilities:** `ResolvedAgent` (`prompt`, `model`, `tools: LLMTool[]`, optional `memory`), `AgentSummary` (`name`, `description`).
-**Notable:** Tiny.
-
-### `src/types/assistant.ts`
-**Responsibilities:** `AgentConfig` (`name`, `model`, `prompt`, optional `tools[]`, `capabilities[]`, `memory`).
-**Notable:** Filename is `assistant.ts` but only export is `AgentConfig` — naming/content mismatch.
+- **LoC**: 23
+- **Exports**: `AgentConfig`, `ResolvedAgent`, `AgentSummary`
+- **Responsibilities**:
+  - Models agent configuration including name, model, prompt, tools, and capabilities
+  - Represents resolved agent state with tools list and memory flag
+  - Defines agent summary for identification and description
 
 ### `src/types/browser.ts`
-**Responsibilities:** `FeedbackEvent`, `BrowserFeedbackTracker`, `BrowserInterventions`, `BrowserSession` (uses `import("playwright").Page`), `BrowserPool`.
-**Notable:** Third-party type leaks (Playwright) into `types/`.
+- **LoC**: 38
+- **Exports**: `FeedbackEvent`, `BrowserFeedbackTracker`, `BrowserInterventions`, `BrowserSession`, `BrowserPool`
+- **Responsibilities**:
+  - Tracks browser tool feedback (success/failure) and consecutive failures
+  - Generates hints and statistics for browser interaction optimization
+  - Manages browser sessions and page instances via Playwright integration
+  - Provides pooling mechanism for multiple browser sessions
 
 ### `src/types/condense.ts`
-**Responsibilities:** `CondenseOpts`, `CondenseResult`. Imports `LLMProvider`.
-**Notable:** JSDoc documents runtime defaults — defaults belong in implementation.
+- **LoC**: 24
+- **Exports**: `CondenseOpts`, `CondenseResult`
+- **Responsibilities**:
+  - Configures tool output condensation with token thresholds and LLM providers
+  - Encapsulates condensation results with original or summarized content
 
 ### `src/types/confirmation.ts`
-**Responsibilities:** `ConfirmationRequest`, `ConfirmationProvider`, `GateResult`. Imports `WaitDescriptor` from `agent/`.
-**Notable:** Reverse dependency `types/` → `agent/`.
+- **LoC**: 21
+- **Exports**: `ConfirmationRequest`, `ConfirmationProvider`, `GateResult`
+- **Responsibilities**:
+  - Models confirmation requests for gated tool calls awaiting operator approval
+  - Separates approved and denied calls with reasons
+  - Integrates wait descriptors for blocking on confirmation
 
 ### `src/types/db.ts`
-**Responsibilities:** `RunStatus` union, `ItemType` union, `DbSession`, `DbRun`, `DbItem`, `DbJob`, plus insert/options shapes (`CreateRunOpts`, `CreateJobOpts`, `NewItem`).
-**Notable:** Mixes run/session/item domain with job persistence.
+- **LoC**: 101
+- **Exports**: `RunStatus`, `ItemType`, `DbSession`, `DbRun`, `DbItem`, `CreateRunOpts`, `DbJob`, `CreateJobOpts`, `NewItem`
+- **Responsibilities**:
+  - Models database entities for sessions, runs, items, and scheduled jobs
+  - Defines run lifecycle statuses and item types for conversation history
+  - Specifies creation options for runs and jobs with optional metadata
 
 ### `src/types/events.ts`
-**Responsibilities:** Envelope helpers (`RunScoped`, `Unscoped`, `RunId`, `SessionId`, `TokenPair`, `MemoryGeneration`); flat `AgentEvent` discriminated union; derived `EventType`/`EventOf`/`EventInput`/`Listener`/`WildcardListener`; `EventBus` interface; runtime `assertNever`.
-**Notable:** Contains runtime `assertNever`. Largest types file.
+- **LoC**: 113
+- **Exports**: `RunId`, `SessionId`, `TokenPair`, `MemoryGeneration`, `AgentEvent`, `EventType`, `EventOf`, `EventInput`, `Listener`, `WildcardListener`, `EventBus`, `assertNever`
+- **Responsibilities**:
+  - Defines discriminated union of all agent event types across lifecycle, turns, generation, tools, memory, agent, and moderation
+  - Provides event bus interface for subscription and emission
+  - **Runtime code**: `assertNever()` function for exhaustiveness checking in event switches
 
 ### `src/types/file.ts`
-**Responsibilities:** `FileStat`, `WritableData = string | Response`, `FileProvider` interface.
-**Notable:** Header claims "no runtime-specific imports" but `WritableData` includes `Response` and `readBinary` returns `Buffer`.
+- **LoC**: 25
+- **Exports**: `FileStat`, `WritableData`, `FileProvider`
+- **Responsibilities**:
+  - Abstracts file I/O operations in provider-agnostic interface
+  - Supports text, binary, and JSON file operations with directory and stat operations
+  - Validates file sizes and handles read/write/append/delete/rename operations
 
 ### `src/types/llm.ts`
-**Responsibilities:** Content parts (`TextPart`, `ImagePart`, `ResourceRef`, `ContentPart`), message variants (`LLMSystemMessage`/`LLMUserMessage`/`LLMAssistantMessage`/`LLMToolResultMessage`/`LLMMessage`), `LLMTool`/`LLMToolCall`/`LLMChatResponse`, `ChatCompletionParams`/`CompletionParams`, `LLMProvider`.
-**Notable:** Self-contained; foundational.
+- **LoC**: 99
+- **Exports**: `TextPart`, `ImagePart`, `ResourceRef`, `ContentPart`, `LLMSystemMessage`, `LLMUserMessage`, `LLMAssistantMessage`, `LLMToolResultMessage`, `LLMMessage`, `LLMTool`, `LLMToolCall`, `LLMChatResponse`, `ChatCompletionParams`, `CompletionParams`, `LLMProvider`
+- **Responsibilities**:
+  - Models LLM message formats with multipart content support (text, images, resources)
+  - Defines tool schemas and tool call structures with provider metadata preservation
+  - Specifies LLM provider interface for chat and completion operations with usage tracking
 
 ### `src/types/logger.ts`
-**Responsibilities:** `LogLevel`, `GeneralLogger`, `AgentLogger`, `Logger`, `ConsoleLoggerOptions`, `JsonlWriter`.
-**Notable:** Inline `import("./events.ts").WildcardListener` instead of top-of-file import.
+- **LoC**: 40
+- **Exports**: `LogLevel`, `GeneralLogger`, `AgentLogger`, `Logger`, `ConsoleLoggerOptions`, `JsonlWriter`
+- **Responsibilities**:
+  - Defines logging interface for general and agent-specific operations
+  - Models JSONL writer for event bus integration and async flushing
+  - Specifies console logger options with truncation and log level configuration
 
 ### `src/types/mcp.ts`
-**Responsibilities:** `McpStdioServer`, `McpHttpServer`, `McpServerConfig`, `McpConfig`, `McpService`.
-**Notable:** Self-contained.
+- **LoC**: 33
+- **Exports**: `McpStdioServer`, `McpHttpServer`, `McpServerConfig`, `McpConfig`, `McpService`
+- **Responsibilities**:
+  - Models MCP server configurations supporting stdio, SSE, and HTTP transports
+  - Specifies OAuth support for authenticated remote MCP servers
+  - Defines MCP service interface for connection lifecycle and tool registration
 
 ### `src/types/media.ts`
-**Responsibilities:** Single union `MediaCategory`.
-**Notable:** Tiny.
+- **LoC**: 2
+- **Exports**: `MediaCategory`
+- **Responsibilities**:
+  - Defines media type categories for file classification
 
 ### `src/types/memory-ops.ts`
-**Responsibilities:** `ObserveResult`, `ReflectResult`. Imports `MemoryGeneration` from `events.ts`.
-**Notable:** Two interfaces; could fold into `memory.ts`.
+- **LoC**: 12
+- **Exports**: `ObserveResult`, `ReflectResult`
+- **Responsibilities**:
+  - Models observation and reflection operation results with LLM generation metadata
+  - Tracks memory operations via generation data structures
 
 ### `src/types/memory.ts`
-**Responsibilities:** `MemoryState`, `ProcessedContext`, runtime `emptyMemoryState()` factory.
-**Notable:** Contains runtime code.
+- **LoC**: 23
+- **Exports**: `MemoryState`, `ProcessedContext`, `emptyMemoryState`
+- **Responsibilities**:
+  - Tracks memory state including active observations and token counts
+  - Encapsulates processed context with system prompt and LLM messages
+  - **Runtime code**: `emptyMemoryState()` factory function for initializing memory
 
 ### `src/types/moderation.ts`
-**Responsibilities:** Single `ModerationResult`.
-**Notable:** Tiny.
+- **LoC**: 6
+- **Exports**: `ModerationResult`
+- **Responsibilities**:
+  - Models moderation check results with category flags and confidence scores
 
 ### `src/types/prompt.ts`
-**Responsibilities:** Single `PromptResult`.
-**Notable:** Tiny.
+- **LoC**: 6
+- **Exports**: `PromptResult`
+- **Responsibilities**:
+  - Encapsulates prompt execution result with model, temperature, and rendered content
 
 ### `src/types/result-store.ts`
-**Responsibilities:** Single `ToolCallRecord`.
-**Notable:** Tiny.
+- **LoC**: 13
+- **Exports**: `ToolCallRecord`
+- **Responsibilities**:
+  - Tracks tool call execution history with status, arguments, results, and timing
 
 ### `src/types/run-state.ts`
-**Responsibilities:** `TokenUsage`, `RunState` (with `messages`, `tokens`, `iteration`, `assistant`, `model`, `tools`, `memory`).
-**Notable:** `TokenUsage` shape duplicates `TokenPair` in `events.ts`. `RunStatus` lives in `db.ts`, not here.
+- **LoC**: 25
+- **Exports**: `TokenUsage`, `RunState`
+- **Responsibilities**:
+  - Models complete run state including messages, tokens, iteration, agent, and tools
+  - Tracks session and run hierarchy with optional trace and depth information
 
 ### `src/types/sandbox.ts`
-**Responsibilities:** Single `BridgeHandle` (`port`, `stop`).
-**Notable:** Tiny.
+- **LoC**: 5
+- **Exports**: `BridgeHandle`
+- **Responsibilities**:
+  - Models sandbox bridge server handle with port and lifecycle control
 
 ### `src/types/serper.ts`
-**Responsibilities:** Single `ScrapeResult`.
-**Notable:** Tiny; type is generic despite the file name.
+- **LoC**: 5
+- **Exports**: `ScrapeResult`
+- **Responsibilities**:
+  - Models scrape results from web search operations with text and URL
 
 ### `src/types/session.ts`
-**Responsibilities:** Single `Session` (`id`, `assistant?`, `messages`, `createdAt: Date`, `updatedAt: Date`).
-**Notable:** Overlaps conceptually with `DbSession`.
+- **LoC**: 10
+- **Exports**: `Session`
+- **Responsibilities**:
+  - Models session with id, optional assistant, messages, and timestamps
 
 ### `src/types/tool-result.ts`
-**Responsibilities:** `ToolResult` (`content`, `isError?`, `wait?`); runtime factories `text`, `error`, `resource`.
-**Notable:** Contains runtime code (the canonical helpers per `tools_standard.md`).
+- **LoC**: 25
+- **Exports**: `ToolResult`, `text`, `error`, `resource`
+- **Responsibilities**:
+  - Encapsulates tool execution results with multipart content and error flags
+  - **Runtime code**: Three factory functions (`text()`, `error()`, `resource()`) for constructing tool results
 
 ### `src/types/tool.ts`
-**Responsibilities:** `ToolAnnotations`, `Decision`, `ConfirmableToolCall`, `SimpleToolSchema`, `ActionDef`, `MultiActionToolSchema`, `ToolSchema`, `ToolCallContext`, `ToolDefinition`, `ToolMeta`, `DispatchResult`. Imports `z` from `zod`.
-**Notable:** Pulls `zod` into `types/`. Imports `WaitDescriptor` from `agent/`.
+- **LoC**: 59
+- **Exports**: `ToolAnnotations`, `Decision`, `ConfirmableToolCall`, `SimpleToolSchema`, `ActionDef`, `MultiActionToolSchema`, `ToolSchema`, `ToolCallContext`, `ToolDefinition`, `ToolMeta`, `DispatchResult`
+- **Responsibilities**:
+  - Models tool definitions with Zod schemas, handlers, and metadata annotations
+  - Supports both single-action and multi-action tool schemas
+  - Specifies confirmation conditions and dispatch result with wait descriptor support
+
+### `src/types/wait.ts`
+- **LoC**: 33
+- **Exports**: `WaitDescriptor`, `Wait`, `WaitResolution`
+- **Responsibilities**:
+  - Models run pause states for user approval and child run completion
+  - Defines matching resolution payloads for resuming paused runs
 
 ---
 
-## Top-level + `src/evals/`
+## `src/utils/`, `src/config/`, `src/evals/`, top-level
 
-### `src/cli.ts`
-**Responsibilities:**
-- Parses `--session`, `--model` flags + positional args; usage error and `exit(1)` on missing args.
-- Bootstraps via `initServices()` + `installSignalHandlers()`; tears down with `shutdownServices()`.
-- Wait-loop around `executeRun`/`resumeRun`: while `result.exit.kind === "waiting"`, dispatches by `waitingOn.kind`.
-- `promptApproval` — interactive `node:readline/promises` loop; calls `takePendingConfirmation`; reads `Y/n`.
-- `waitForChildResume` — DB poll every 200 ms via `dbOps.getRun` until status leaves `waiting`; maps DB rows to `RunExit`.
-- `printExit` — branches on exit kind to print result/error/cancellation/exhaustion.
+### `src/utils/hash.ts`
+- **LoC**: 6
+- **Exports**: `md5`
+- **Responsibilities**:
+  - Compute MD5 hex digest of a string using Node crypto
 
-**Notable:** Mixes arg parsing + interactive UX + DB-polling continuation loop.
+### `src/utils/hub-fetch.ts`
+- **LoC**: 42
+- **Exports**: `resolveHubPlaceholders`, `stringify`, `hubPost`
+- **Responsibilities**:
+  - Replace `{{hub_api_key}}` template placeholders in strings
+  - Coerce unknown response values to strings for tool results and errors
+  - POST JSON to hub endpoints with timeout, auth, and content-type handling
 
-### `src/server.ts`
-**Responsibilities:**
-- `parseChatBody` and `parseEventFilter`.
-- Hono `app` with timing middleware (`log.info`).
-- `GET /health`. Bearer auth middleware on `/chat`.
-- `POST /api/negotiations/search` — hard-coded `assistant: "negotiations"`, truncates answer to 500 bytes.
-- `POST /chat` — `sessionService.enqueue`-serialized; SSE in stream mode (subscribes to bus, filters by sessionId, sends `agent_event`/`heartbeat`/`done`/`error`); 15 s heartbeat; non-stream returns JSON; classifies "Unknown agent" → 400.
-- `POST /resume` — accepts `{ runId, resolution }`, streams via SSE.
-- `exitToPayload` maps `RunExit` → wire JSON.
-- Bootstraps + signal handlers at module top level.
+### `src/utils/id.ts`
+- **LoC**: 6
+- **Exports**: `randomSessionId`
+- **Responsibilities**:
+  - Generate UUID v4 strings for anonymous sessions
 
-**Notable:** Mixes routing/auth/SSE/heartbeat/task-specific endpoint/bootstrap. Three independent `RunExit` renderers across cli/server/slack.
+### `src/utils/index.ts`
+- **LoC**: 5
+- **Exports**: Re-exports from `parse.ts`, `xml.ts`, `timing.ts`, `hub-fetch.ts`, `media-types.ts`
+- **Responsibilities**:
+  - Aggregate utility module exports into single barrel
 
-### `src/slack.ts`
-**Responsibilities:**
-- Reads Slack tokens; exits if absent.
-- Constructs `@slack/bolt` `App` (socket mode).
-- `createStatusUpdater` — per-thread throttled posting/editing using `StatusTracker` from `slack-utils`; rate-limit retry honors `data.retry_after`.
-- `runThread: Map<runId, {channel, threadTs}>` for posting final answer post-button.
-- Wires `registerConfirmationActions` from `slack-confirmation`.
-- `inFlight: Set<dedupeKey>` deduping retries.
-- `handleResult` — branches on `RunExit`: `waiting` → fetch confirmations, post interactive message; otherwise post answer.
-- `exitToText` mapping.
-- `handleMessage` — full Slack-message orchestration (reactions, status updater, executeRun, post result, cleanup).
-- Registers `app.message` and `app.event("app_mention")`.
-- Bootstraps via `initServices()` + `installSignalHandlers()`.
+### `src/utils/media-types.ts`
+- **LoC**: 58
+- **Exports**: `MediaCategory` type, `IMAGE_EXTENSIONS`, `TEXT_EXTENSIONS`, `ALL_SUPPORTED_EXTENSIONS`, `inferCategory`, `inferMimeType`
+- **Responsibilities**:
+  - Define supported file extension sets for images, text, audio, video
+  - Infer media category from file extension (image, text, audio, video, document)
+  - Infer MIME type from file extension with fallback defaults
 
-**Notable:** Heavy file — orchestration + throttling + dedupe + exit rendering all inline.
+### `src/utils/parse.ts`
+- **LoC**: 107
+- **Exports**: `safeParse`, `safeFilename`, `safePath`, `validateKeys`, `assertMaxLength`, `formatSizeMB`, `assertNumericBounds`, `errorMessage`
+- **Responsibilities**:
+  - Parse JSON with labelled errors preventing stack trace leakage
+  - Validate filenames reject path separators, traversal, hidden files, unsafe characters
+  - Validate file paths and reject `..` components, excessive length, unsafe characters
+  - Reject prototype-pollution keys (`__proto__`, `constructor`, `prototype`)
+  - Assert string length, numeric bounds; format byte counts to MB; extract error messages
 
-### `src/slack-confirmation.ts`
-**Responsibilities:**
-- Action-id codec (`encodeAction`/`decodeAction`) — `cnf_app:`/`cnf_deny:` prefix + pipe-delimited `runId|confirmationId|toolCallId`.
-- `getPendingConfirmationRequests(sessionId, runId)` — reads transcript via `sessionService.getMessages`, builds `answered` set from tool messages, walks back to latest assistant with toolCalls.
-- `truncateArgs` — pretty-prints + truncates at 200 chars.
-- `postConfirmationMessage` — Slack Block Kit assembly + `chat.postMessage`.
-- `registerConfirmationActions` registers `app.action(/^cnf_app:/, …)` and `cnf_deny`.
-- `handleClick` — decodes, fetches run via `dbOps.getRun`, accumulates partial decisions per `runId:confirmationId`, calls `resumeRun` once all answered.
+### `src/utils/timing.ts`
+- **LoC**: 3
+- **Exports**: `elapsed`
+- **Responsibilities**:
+  - Calculate and format elapsed time in seconds from performance.now()
 
-**Notable:** Mixes codec, transcript walk, DB access, Block Kit rendering, resumption control.
+### `src/utils/tokens.ts`
+- **LoC**: 43
+- **Exports**: `estimateTokens`, `estimateMessagesTokens`
+- **Responsibilities**:
+  - Estimate token count from text using character-length heuristic (length / 4)
+  - Serialize assistant/user/tool messages to text; aggregate token estimates across message arrays
 
-### `src/slack-utils.ts`
-**Responsibilities:**
-- `SLACK_MESSAGE_LIMIT = 4000`.
-- `deriveSessionId(teamId, channelId, threadTs?, messageTs)` — `slack-{team}-{channel}-{ts}`.
-- `toSlackMarkdown(md)` — regex transforms.
-- `splitMessage(text, limit)` — paragraph → line → word → hard-cut.
-- `class StatusTracker` — accumulates `active`/`history` from `tool.called`/`tool.succeeded`/`tool.failed`; `update(event)` returns multi-line status string.
+### `src/utils/xml.ts`
+- **LoC**: 7
+- **Exports**: `escapeXml`
+- **Responsibilities**:
+  - Escape XML special characters in attribute values and text content
 
-**Notable:** Cleanly scoped, no I/O.
+### `src/config/env.ts`
+- **LoC**: 36
+- **Exports**: `env` object with validated environment variables
+- **Responsibilities**:
+  - Require and validate HUB_API_KEY, OPENAI_API_KEY at startup
+  - Collect optional env vars (GEMINI_API_KEY, SERPER_API_KEY, LANGFUSE_*, etc.)
+  - Determine environment (production/development); derive default database path
 
-### `src/evals/harness.ts`
-**Responsibilities:**
-- `runEvalCase(message)` — runs `executeRun({ prompt: message })` and returns `AgentOutput`.
-- Subscribes to `tool.succeeded`/`tool.failed` (push tool name), `generation.completed` (sum tokens), `turn.completed` (`event.index + 1` iterations).
-- `matchRun` closure captures first event's `runId`.
-- Cleans up subscriptions in `finally`.
+### `src/config/index.ts`
+- **LoC**: 127
+- **Exports**: `config` deeply frozen object
+- **Responsibilities**:
+  - Aggregate env vars, paths, sandbox rules, models, hub endpoints, API keys, limits, timeouts, memory config, langfuse settings into single immutable config object
+  - Define model names, rate limits, browser settings, server port, database URL
 
-**Notable:** Single, focused.
+### `src/config/mcp.ts`
+- **LoC**: 27
+- **Exports**: Type re-exports from `types/mcp.ts`, `loadMcpConfig` function
+- **Responsibilities**:
+  - Load MCP server configuration from JSON file with caching and graceful fallback to empty config
 
-### `src/evals/runner.ts`
-**Responsibilities:**
-- `EVALUATOR_MAP: { "tool-selection": toolSelectionEvaluator }`.
-- `parseArgs` — `--dataset`, `--concurrency`, `--langfuse` (parsed but never read), `--ci`.
-- `loadDataset(name)` — reads JSON, validates array shape.
-- `discoverDatasets()`.
-- `runDataset` — sliding `running` array + `Promise.race`; per case calls `runEvalCase` then evaluator; aggregates scores.
-- `printReport` — fixed-width text table specialized to `tool-selection` (looks up `tool_decision`/`required_tools`/`forbidden_tools`/`call_count`).
-- `main` — installs auto-approve `setConfirmationProvider`, iterates datasets, gates CI exit on `tool_selection_overall < 0.8`.
-- Top-level `main().catch(...)` exit 1.
+### `src/config/paths.ts`
+- **LoC**: 22
+- **Exports**: `PROJECT_ROOT`, `WORKSPACE_DIR`, `SESSIONS_DIR`, `SYSTEM_DIR`, `KNOWLEDGE_DIR`, `SCRATCH_DIR`, `WORKFLOWS_DIR`, `BROWSER_DIR`, `AGENTS_DIR`, `PROMPTS_DIR`, `DATA_DIR`, `MCP_OAUTH_DIR`, `MCP_CONFIG_PATH`
+- **Responsibilities**:
+  - Define all well-known project and workspace directory paths relative to project root
 
-**Notable:** Mixes CLI + dataset I/O + dispatch + concurrency + scoring + reporting + CI gate + bootstrap. Reporting is hardcoded to one evaluator. `--langfuse` unused.
-
-### `src/evals/types.ts`
-**Responsibilities:** `EvalCase`, `ScoringMetric`, `AgentOutput`, `Evaluator`, `EvalCaseResult`, `EvalRunResult`.
-**Notable:** Pure types.
+### `src/evals/datasets/tool-selection.json`
+- **LoC**: 170
+- **Shape**: Array of evaluation case objects with `id`, `message`, `expect` (containing `shouldUseTools`, `requiredTools`, `forbiddenTools`, `minToolCalls`/`maxToolCalls`)
+- **Responsibilities**:
+  - Define 18 test cases for evaluating agent tool selection behavior (when to use tools, which tools to use, call count bounds)
 
 ### `src/evals/evaluators/tool-selection.ts`
-**Responsibilities:**
-- Local `ToolSelectionExpect` and `parseExpect` to coerce raw `expect` data.
-- `toolSelectionEvaluator: Evaluator` — four binary metrics (`decision`, `required`, `forbidden`, `callCount`); `overall = avg`; emits five `ScoringMetric` entries.
+- **LoC**: 74
+- **Exports**: `toolSelectionEvaluator`
+- **Responsibilities**:
+  - Score tool selection decisions (should/should not use tools)
+  - Verify required tools are called; forbid unwanted tools
+  - Check tool call counts within min/max bounds; aggregate four metrics to overall score
 
-**Notable:** Score names are coupled to `runner.ts`'s `printReport` columns.
+### `src/evals/harness.ts`
+- **LoC**: 73
+- **Exports**: `runEvalCase`
+- **Responsibilities**:
+  - Execute agent on single eval case and capture structured output (response, tool names, iterations, tokens, duration) by subscribing to bus events
+  - Isolate each case with ephemeral session; filter events by run ID
+
+### `src/evals/runner.ts`
+- **LoC**: 282
+- **Exports**: Main script; exports `parseArgs`, `loadDataset`, `discoverDatasets`, `runDataset`, `printReport`
+- **Responsibilities**:
+  - Parse CLI args (dataset, concurrency, langfuse, ci flags)
+  - Load JSON datasets; discover registered evaluators
+  - Run eval cases with concurrency control and aggregate scores per metric
+  - Print formatted case results table and aggregated scores; exit with non-zero on CI failure
+
+### `src/evals/types.ts`
+- **LoC**: 42
+- **Exports**: `EvalCase`, `ScoringMetric`, `AgentOutput`, `Evaluator` function type, `EvalCaseResult`, `EvalRunResult`
+- **Responsibilities**:
+  - Define core evaluation pipeline types: test case structure, scoring metrics, agent output shape, evaluator callback signature
+
+### `src/cli.ts`
+- **LoC**: 162
+- **Exports**: Main script (executable)
+- **Responsibilities**:
+  - Parse CLI args (assistant name, prompt, session ID, model override)
+  - Initialize services; execute run with user approval flow for tool confirmation
+  - Handle waiting states (child runs, user approval); poll DB until parent resumes
+  - Print exit status and result to stdout/stderr
+
+### `src/server.ts`
+- **LoC**: 254
+- **Exports**: Hono app instance and port (executable)
+- **Responsibilities**:
+  - Set up HTTP endpoints: `/health`, `/chat` (POST), `/resume` (POST), `/api/negotiations/search` (POST)
+  - Parse chat requests (sessionId, msg, assistant, stream flag); validate API secret
+  - Stream agent events via SSE or return JSON response
+  - Queue runs per session to ensure serial execution; handle waiting states
+  - Initialize services and signal handlers; log request timing
+
+### `src/slack.ts`
+- **LoC**: 268
+- **Exports**: Main script (executable)
+- **Responsibilities**:
+  - Set up Slack Bolt app in socket mode; validate tokens
+  - Listen to messages and app mentions; route to `executeRun`
+  - Track in-flight requests to deduplicate retries; derive stable session IDs from thread metadata
+  - Update status messages in thread with throttled tool activity via `StatusTracker`
+  - Delegate waiting runs to confirmation flow; post final result to thread
+
+### `src/slack-utils.ts`
+- **LoC**: 107
+- **Exports**: `SLACK_MESSAGE_LIMIT`, `deriveSessionId`, `toSlackMarkdown`, `splitMessage`, `StatusTracker` class
+- **Responsibilities**:
+  - Derive stable session ID from Slack team, channel, thread timestamp
+  - Convert GitHub-flavored markdown to Slack mrkdwn (bold, strikethrough, links, code blocks)
+  - Split long messages at paragraph/line/word boundaries respecting 4000-char limit
+  - Track active and completed tools; render compact single-line status string per event
+
+### `src/slack-confirmation.ts`
+- **LoC**: 218
+- **Exports**: `getPendingConfirmationRequests`, `postConfirmationMessage`, `registerConfirmationActions`
+- **Responsibilities**:
+  - Extract pending tool calls from persisted transcript (latest assistant message without matching tool outputs)
+  - Post Slack block-kit message with approve/deny buttons per tool; truncate args to 200 chars
+  - Register button action handlers; accumulate partial decisions; call `resumeRun` when all tools decided
+  - Encode/decode action IDs with runId, confirmationId, toolCallId; survive process restart via DB state
 
 ---
 
-## Cross-cutting findings (consolidated)
+## Quick observations (not analysis — just patterns visible from this catalog)
 
-### Files doing too much (>~3 distinct concerns)
+These are patterns visible directly from the export/responsibility listing above. They are NOT yet validated as problems, just candidates for the user to investigate next.
 
-| File | Concerns bundled |
-| --- | --- |
-| `src/agent/loop.ts` | Session resource lifecycle, agent resolution, LLM act mechanics, tool dispatch + confirmation gate, memory-pipeline integration, terminal-event emission, DB cycle counting. Seven internal types declared inline. |
-| `src/agent/orchestrator.ts` | Run lifecycle DB ops, input moderation, assistant-pinning policy, `RunExit → DB` persistence, child-run kickoff, two parallel hydration paths. |
-| `src/agent/session.ts` | Three independent factories (DB-message store, session registry/queues, filesystem paths) bundled into one composed service. |
-| `src/agent/workspace.ts` | Static path constants + hardcoded multi-page markdown prompt + live disk-reading prompt assembly. Violates "No hardcoded prompts" project rule. |
-| `src/agent/memory/processor.ts` | Drives observer + reflector + persistence; emits five bus events; encodes tail-budget split heuristic; inlines `flushMemory` end-of-session path with hardcoded 1000-token threshold. |
-| `src/tools/browser.ts` | Page-artifact persistence + DOM-structure walker + error-page heuristics + intervention/feedback hints + multimodal screenshot construction. |
-| `src/tools/execute_code.ts` | Deno binary discovery + session-dir resolution + output sanitization + bridge orchestration + subprocess timeout + tmp-file lifecycle. |
-| `src/tools/registry.ts` | Schema-to-LLMTool registration + multi-action expansion + dispatch + result-store integration + content serialization. |
-| `src/tools/index.ts` | Static tool registration + MCP service lifecycle (`globalThis.__mcpService`). |
-| `src/tools/agents_hub.ts` | Hub-`verify` semantics + generic API calls; two batch handlers duplicate sequential-batch loop. |
-| `src/infra/browser.ts` | Playwright session lifecycle + pool keyed by session id + idle-timeout `setInterval` + `SIGINT`/`SIGTERM` handlers + composition of feedback/interventions. |
-| `src/infra/mcp.ts` | Transport construction + OAuth orchestration + content mapping + structured-content spillover + sampling bridge to LLM + stale-process killing + tool registration. |
-| `src/infra/db/index.ts` | Four CRUD domains (sessions, runs, items, jobs) + crash-recovery queries in one ~300-line file. |
-| `src/infra/langfuse-subscriber.ts` | ~540 lines, seven handler groups, OTel context management, Langfuse schema mapping. |
-| `src/infra/log/markdown.ts` | Logger implementation + sidecar-file spillover + per-instance `createSandbox`. |
-| `src/infra/mcp-oauth.ts` | Per-server JSON state (raw `fs`) + OS-specific browser launching + `node:http` callback server. |
-| `src/infra/scheduler.ts` | Delay-string parsing + DB reads/writes + cron management + one-shot polling timer + bridge to `executeRun`. |
-| `src/llm/gemini.ts` | Message/tool/response translation + retry/timeout + `console.error` diagnostics. |
-| `src/llm/router.ts` | Routing + telemetry-event emission. |
-| `src/utils/parse.ts` | JSON parsing + filesystem-name validation + prototype-pollution guard + generic assertions + byte formatting + error-message extraction. |
-| `src/config/index.ts` | God-config bundling sandbox/models/hub/keys/limits/server/memory/moderation/langfuse/retry/browser/database. |
-| `src/server.ts` | Routing + bearer auth + body validation + SSE + heartbeat + task-specific `/api/negotiations/search` + bootstrap + exit rendering. |
-| `src/slack.ts` | Bolt setup + status updater + run-thread map + dedupe + handleMessage orchestration + exit rendering + bootstrap. |
-| `src/slack-confirmation.ts` | Action-id codec + transcript walk + Block Kit rendering + DB access + multi-click accumulator + resumeRun invocation. |
-| `src/evals/runner.ts` | CLI parsing + dataset I/O + concurrency + auto-approve provider + report rendering hardcoded to one evaluator + CI gate + bootstrap. |
-
-### Files doing too little (could be inlined)
-
-- `src/agent/run-exit.ts` — pure `RunExit` type, ~7 lines.
-- `src/agent/memory/generation.ts` — single 25-line helper; only shared by `observer`/`reflector`.
-- `src/agent/run-telemetry.ts` — most helpers are one-line `bus.emit` wrappers; only the three composite emitters justify the file.
-- `src/tools/document_processor.ts` — declares multi-action shape with one action; the `actions` map is overhead.
-- `src/infra/db/migrate.ts` — one effective line.
-- `src/infra/log/logger.ts` — three lines.
-- `src/infra/log/composite.ts` — six effective lines.
-- `src/infra/serper.ts` — single function.
-- `src/utils/errors.ts` — three lines, duplicates `errorMessage` in `parse.ts`.
-- `src/utils/id.ts` — two-line wrapper.
-- `src/utils/timing.ts` — single function.
-- `src/utils/xml.ts` — single function.
-- `src/types/media.ts`, `src/types/moderation.ts`, `src/types/prompt.ts`, `src/types/sandbox.ts`, `src/types/serper.ts`, `src/types/session.ts`, `src/types/assistant.ts` — each holds one tiny type.
-
-### Responsibilities split across multiple files that should live together
-
-1. **Session/run state is scattered.** `session.ts` writes message items + path layout + per-session queues; `orchestrator.ts` writes run rows + status updates. The DB is touched in both. `RunStatus` lives in `types/db.ts`, `RunState` lives in `types/run-state.ts`, `RunExit` lives in `agent/run-exit.ts`. Three sources of truth for the same domain.
-
-2. **Three different `RunExit` renderers.** `printExit` in `cli.ts`, `exitToPayload` in `server.ts`, `exitToText` in `slack.ts` — each entry point reinvents the mapping.
-
-3. **Three different bootstrap entry points.** `cli.ts`, `server.ts`, `slack.ts` each call `initServices()` + `installSignalHandlers()` and each implement their own wait/confirmation strategy (interactive readline / `/resume` endpoint / Slack buttons).
-
-4. **Three different confirmation flows.** CLI uses `takePendingConfirmation` + interactive prompts; Slack uses `getPendingConfirmationRequests` (transcript walk in `slack-confirmation.ts`); evals use `setConfirmationProvider` with a global auto-approver. Three different paths to the same outcome.
-
-5. **Slack split across three top-level files.** `slack.ts`, `slack-confirmation.ts`, `slack-utils.ts` are at `src/` root while every other concern lives under a directory; a `src/slack/` folder would mirror existing structure.
-
-6. **Browser logic split across three files.** `browser.ts`, `browser-feedback.ts`, `browser-interventions.ts` — the session in `browser.ts` instantiates and exposes both helpers, which have no other consumers.
-
-7. **MCP across two files.** `mcp.ts` directly imports `createOAuthProvider`/`waitForOAuthCallback` from `mcp-oauth.ts`; that module has no other consumers — they are one OAuth+transport unit.
-
-8. **Logging spread across six files.** `log/bridge.ts`, `log/composite.ts`, `log/console.ts`, `log/jsonl.ts`, `log/logger.ts`, `log/markdown.ts`. `composite.ts` and `logger.ts` are tiny.
-
-9. **Memory pipeline contract is implicit between four files.** `observer.ts`/`reflector.ts`/`processor.ts`/`persistence.ts`/`generation.ts` plus `loop.ts` (which owns `createMemorySaver`, calls `flushMemory` in `finalizeTerminal`, performs the `messagesSnapshot` swap dance). The "snapshot, swap, splice" message-mutation protocol between `loop.ts` and `processor.ts` is unencoded.
-
-10. **Confirmation lifecycle split between `confirmation.ts` and `resume-run.ts`.** Module-scope `pendingConfirmations` lives in `confirmation.ts`; consumption of `decisions` + tool re-dispatch lives in `resume-run.ts`. `takePendingConfirmation` is exported but unused on the public resume flow shown.
-
-11. **`WaitDescriptor` handling spans many files.** `wait-descriptor.ts` (types), `confirmation.ts` (constructs `user_approval`), `loop.ts:dispatchTools` (returns it), `orchestrator.ts:persistRunExit`/`kickChildRunAsync` (reacts), `resume-run.ts` (consumes), `run-continuation.ts` (parses JSON). No single owner; JSON shape inferred independently.
-
-12. **Two error-message helpers.** `getErrorMessage` in `utils/errors.ts` and `errorMessage` in `utils/parse.ts` are functionally identical. Both flow through `utils/index.ts`.
-
-13. **MCP path constant duplicated.** `MCP_CONFIG_PATH` defined in `config/paths.ts` (and re-exported through `config.paths.mcpConfigPath`) is recomputed in `config/mcp.ts` with its own `join(WORKSPACE_DIR, "system", "mcp.json")`.
-
-14. **Tokens vs LLM module placement.** `utils/tokens.ts` imports `LLMMessage` from `types/llm.ts` and walks LLM message shapes — belongs under `llm/`, not generic `utils/`.
-
-15. **md5 logic duplicated.** `tools/edit_file.ts` (`md5(text)` helper) and `tools/read_file.ts` (`createHash("md5").update(...)` inline).
-
-16. **Session-dir resolution duplicated.** `getBashCwd` in `tools/bash.ts` and `getSessionDir` in `tools/execute_code.ts` are identical.
-
-17. **`{{hub_api_key}}` placeholder substitution duplicated.** `tools/browser.ts` (`resolveValuePlaceholders`) and `tools/web.ts` (`payload.url.replace("{{hub_api_key}}", ...)`).
-
-18. **Filesystem-access inconsistency.** `infra/sandbox.ts` is the documented path; but `infra/mcp-oauth.ts` and `infra/db/connection.ts` deliberately bypass it (raw `fs`); `tools/execute_code.ts` imports raw `infra/fs.ts`; `config/mcp.ts` uses raw `Bun.file`. Four callers each picking their own layer.
-
-19. **Hub concerns split.** `utils/hub-fetch.ts` owns `hubPost` (generic POST helper) but does not use the hub URL or API key; `config.hub.{baseUrl, verifyUrl, apiKey}` lives in `config/index.ts`. Caller has to glue them.
-
-20. **LLM error classification spans two files.** Predicates in `llm/errors.ts`; only consumer that emits `llm.call.failed` is `llm/router.ts`. Provider files (`openai.ts`, `gemini.ts`) don't use `errors.ts` directly.
-
-21. **Layer leaks from `infra/` upward into `agent/` and `tools/`.** `infra/bootstrap.ts` imports `../tools/index.ts` and `../agent/run-continuation.ts`; `infra/events.ts`, `infra/sandbox.ts`, `infra/mcp.ts` import `../agent/context.ts`/`../agent/session.ts`; `infra/scheduler.ts` imports `../agent/orchestrator.ts` and `../agent/session.ts`; `infra/condense.ts` imports `../llm/llm.ts`, `../llm/prompt.ts`, `../agent/session.ts`. Several "infra" modules are effectively orchestrators.
-
-22. **Reverse `types/` → `agent/` dependencies.** `types/confirmation.ts`, `types/tool-result.ts`, `types/tool.ts`, `types/events.ts` all import from `agent/wait-descriptor.ts`. `types/` is no longer a leaf module.
-
-23. **Runtime code inside `types/`.** `types/events.ts` exports `assertNever`, `types/memory.ts` exports `emptyMemoryState()`, `types/tool-result.ts` exports `text`/`error`/`resource` factories.
-
-24. **Third-party type leakage into `types/`.** `types/browser.ts` imports `playwright`'s `Page`. `types/tool.ts` imports `z` from `zod`. `types/file.ts` references `Buffer` (Node) and `Response` (Web).
-
-25. **Overlapping types across files.** `Session` (`types/session.ts`) vs `DbSession` (`types/db.ts`); `TokenUsage` (`types/run-state.ts`) vs `TokenPair` (`types/events.ts`); `AgentConfig` (`types/assistant.ts` — misnamed file) vs `ResolvedAgent` (`types/agent.ts`).
-
-26. **Action-dispatch `switch(default)` boilerplate** is repeated in every multi-action tool (`agents_hub`, `browser`, `document_processor`, `geo_distance`, `scheduler`, `shipping`, `web`).
-
-27. **Tracing pairs `infra/tracing.ts` (init) with `infra/langfuse-subscriber.ts` (consume)** — `bootstrap.ts` always wires them together.
+1. **Three slack files at top-level** (`slack.ts`, `slack-utils.ts`, `slack-confirmation.ts`) sit alongside `cli.ts` and `server.ts`, while every other domain (agent, llm, infra, tools) is folder-scoped. Candidate consolidation under `src/slack/`.
+2. **Two scheduler files**: `src/infra/scheduler.ts` (cron loop, polling, execution) and `src/tools/scheduler.ts` (multi-action tool exposing job CRUD). Splitting by layer is intentional per the project's tool-vs-infra split — flag if any logic is duplicated.
+3. **Two sandbox concepts**: `src/infra/sandbox.ts` (filesystem path allowlist) and `src/tools/sandbox/` (HTTP bridge + prelude for code execution). Same word, different concerns — name collision worth checking.
+4. **Browser feedback / interventions split into 3 files** (`browser-feedback.ts`, `browser-interventions.ts`, `browser.ts` in `src/infra/`). Each is small (45–80 LoC). Possible over-decomposition.
+5. **`src/types/` files with runtime code**: `events.ts` (`assertNever`), `memory.ts` (`emptyMemoryState`), `tool-result.ts` (`text`, `error`, `resource`). Mixes pure-type and runtime-helper conventions.
+6. **Two tool-registry files**: `src/tools/index.ts` (60 LoC) re-exports from `src/tools/registry.ts` (195 LoC) plus adds MCP lifecycle. Worth checking why the wrapper exists.
+7. **`src/agent/loop.ts` (464 LoC)** is by far the largest agent file — handles loop, tool dispatch, memory hooks, terminal states, and telemetry emission. Candidate for review against single-responsibility.
+8. **`src/infra/langfuse-subscriber.ts` (540 LoC)** is the single largest file. Pure event-to-observation translation but very wide — covers all event domains in one module.
+9. **`src/infra/db/index.ts` (301 LoC, 28 exports)** is a flat function bag spanning sessions, runs, items, jobs. No sub-grouping.
+10. **`src/agent/session.ts` (285 LoC)** mixes message↔item conversion, DB persistence wrapper, session registry, per-session task queue, and path building. Five concerns in one module.
+11. **Memory persistence vs DB**: `src/agent/memory/persistence.ts` writes JSON to session dir via filesystem, while everything else durable goes through `src/infra/db/`. Two persistence stores for run-related state.
+12. **Workspace paths surfaced through three layers**: `src/config/paths.ts` declares flat constants (`WORKSPACE_DIR`, `KNOWLEDGE_DIR`, etc.); `src/config/index.ts` re-exposes them under `config.paths.*`; `src/agent/workspace.ts` builds a structured `workspace` object on top of `config.paths.*`. Not duplicate values, but three names for the same paths — agents/tools could pick any of them inconsistently.

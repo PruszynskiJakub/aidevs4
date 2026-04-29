@@ -1,11 +1,10 @@
 import type { LLMProvider, LLMMessage, LLMChatResponse, LLMToolCall } from "../types/llm.ts";
 import type { Logger } from "../types/logger.ts";
 import type { RunState } from "../types/run-state.ts";
-import { llm as defaultLLM } from "../llm/llm.ts";
 import { config } from "../config/index.ts";
+import { createRuntime, type Runtime } from "../runtime.ts";
 import { dispatch } from "../tools/registry.ts";
 import { confirmBatch } from "./confirmation.ts";
-import { agentsService } from "./agents.ts";
 import { MarkdownLogger } from "../infra/log/markdown.ts";
 import { ConsoleLogger } from "../infra/log/console.ts";
 import { createCompositeLogger } from "../infra/log/composite.ts";
@@ -97,8 +96,8 @@ function setupSession(userPrompt: string | unknown, sessionId?: string): Session
 
 // ── Agent resolution ───────────────────────────────────────
 
-async function resolveAgentForRun(state: RunState): Promise<RunContext> {
-  const resolved = await agentsService.resolve(state.assistant);
+async function resolveAgentForRun(state: RunState, runtime: Runtime): Promise<RunContext> {
+  const resolved = await runtime.agents.resolve(state.assistant);
   if (!state.model) state.model = resolved.model;
   state.tools = resolved.tools;
 
@@ -421,8 +420,10 @@ async function finalizeTerminal(
 
 export async function runAgent(
   state: RunState,
-  provider: LLMProvider = defaultLLM,
+  providerOrUndefined?: LLMProvider,
+  runtime: Runtime = createRuntime(),
 ): Promise<LoopResult> {
+  const provider: LLMProvider = providerOrUndefined ?? runtime.llm;
   const userPrompt = state.messages.find((m) => m.role === "user")?.content ?? "";
   const { log, dispose } = setupSession(userPrompt, state.sessionId);
   const inputLength = state.messages.length;
@@ -433,7 +434,7 @@ export async function runAgent(
     const runStartTime = performance.now();
 
     try {
-      const ctx = await resolveAgentForRun(state);
+      const ctx = await resolveAgentForRun(state, runtime);
       emitRunStartEvents(state, userPrompt);
       const deps: IterationDeps = { state, ctx, provider, saveMemoryIfChanged, sliceMessages, runStartTime };
 
