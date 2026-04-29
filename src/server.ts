@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { executeRun, type ExecuteRunResult } from "./agent/orchestrator.ts";
+import { foldExit } from "./agent/run-exit.ts";
 import { resumeRun } from "./agent/resume-run.ts";
 import { log } from "./infra/log/logger.ts";
 import { config } from "./config/index.ts";
@@ -127,18 +128,13 @@ app.post("/api/negotiations/search", async (c) => {
 
 function exitToPayload(result: ExecuteRunResult): Record<string, unknown> {
   const { exit, runId, sessionId } = result;
-  switch (exit.kind) {
-    case "completed":
-      return { kind: "completed", runId, sessionId, answer: exit.result };
-    case "failed":
-      return { kind: "failed", runId, sessionId, error: exit.error.message };
-    case "cancelled":
-      return { kind: "cancelled", runId, sessionId, reason: exit.reason };
-    case "exhausted":
-      return { kind: "exhausted", runId, sessionId, cycleCount: exit.cycleCount };
-    case "waiting":
-      return { kind: "waiting", runId, sessionId, waitingOn: exit.waitingOn };
-  }
+  return foldExit<Record<string, unknown>>(exit, {
+    completed: (answer) => ({ kind: "completed", runId, sessionId, answer }),
+    failed: (error) => ({ kind: "failed", runId, sessionId, error }),
+    cancelled: (reason) => ({ kind: "cancelled", runId, sessionId, reason }),
+    exhausted: (cycleCount) => ({ kind: "exhausted", runId, sessionId, cycleCount }),
+    waiting: (waitingOn) => ({ kind: "waiting", runId, sessionId, waitingOn }),
+  });
 }
 
 app.post("/chat", async (c) => {

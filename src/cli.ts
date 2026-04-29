@@ -5,12 +5,12 @@ import { initServices, shutdownServices, installSignalHandlers } from "./infra/b
 import { takePendingConfirmation } from "./agent/confirmation.ts";
 import { createRuntime } from "./runtime.ts";
 import * as dbOps from "./infra/db/index.ts";
-import type { RunExit } from "./agent/run-exit.ts";
+import { foldExit, type RunExit } from "./agent/run-exit.ts";
 import type { WaitDescriptor } from "./types/wait.ts";
 import type { ExecuteRunResult } from "./agent/orchestrator.ts";
 import type { Decision } from "./types/tool.ts";
 import * as readline from "node:readline/promises";
-import { DomainError } from "./types/errors.ts";
+import { DomainError, isDomainError } from "./types/errors.ts";
 
 function extractFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
@@ -77,23 +77,13 @@ async function promptApproval(waitingOn: WaitDescriptor): Promise<Record<string,
 }
 
 function printExit(exit: RunExit): void {
-  switch (exit.kind) {
-    case "completed":
-      if (exit.result) console.log(exit.result);
-      break;
-    case "failed":
-      console.error(`Run failed: ${exit.error.message}`);
-      break;
-    case "cancelled":
-      console.error(`Run cancelled: ${exit.reason}`);
-      break;
-    case "exhausted":
-      console.error(`Run exhausted after ${exit.cycleCount} cycles`);
-      break;
-    case "waiting":
-      // handled by loop below, should not be reached here
-      break;
-  }
+  foldExit<void>(exit, {
+    completed: (result) => { if (result) console.log(result); },
+    failed: (message) => { console.error(`Run failed: ${message}`); },
+    cancelled: (reason) => { console.error(`Run cancelled: ${reason}`); },
+    exhausted: (cycleCount) => { console.error(`Run exhausted after ${cycleCount} cycles`); },
+    waiting: () => {}, // handled by loop below
+  });
 }
 
 /**
@@ -132,8 +122,6 @@ async function waitForChildResume(parentRunId: string): Promise<ExecuteRunResult
     return { exit, sessionId: run.sessionId, runId: parentRunId };
   }
 }
-
-import { isDomainError } from "./types/errors.ts";
 
 try {
   let result = await executeRun({

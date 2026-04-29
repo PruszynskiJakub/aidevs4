@@ -5,7 +5,7 @@ import { log } from "./infra/log/logger.ts";
 import { initServices, installSignalHandlers } from "./infra/bootstrap.ts";
 import { createRuntime } from "./runtime.ts";
 import type { AgentEvent } from "./types/events.ts";
-import type { RunExit } from "./agent/run-exit.ts";
+import { foldExit, type RunExit } from "./agent/run-exit.ts";
 import {
   deriveSessionId,
   toSlackMarkdown,
@@ -164,18 +164,13 @@ async function handleResult(
 }
 
 function exitToText(exit: RunExit): string {
-  switch (exit.kind) {
-    case "completed":
-      return exit.result;
-    case "failed":
-      return `Error: ${exit.error.message.slice(0, 500)}`;
-    case "cancelled":
-      return `Cancelled: ${exit.reason}`;
-    case "exhausted":
-      return `Run exhausted after ${exit.cycleCount} cycles.`;
-    case "waiting":
-      return "";
-  }
+  return foldExit(exit, {
+    completed: (result) => result,
+    failed: (message) => `Error: ${message.slice(0, 500)}`,
+    cancelled: (reason) => `Cancelled: ${reason}`,
+    exhausted: (cycleCount) => `Run exhausted after ${cycleCount} cycles.`,
+    waiting: () => "",
+  });
 }
 
 async function handleMessage(
