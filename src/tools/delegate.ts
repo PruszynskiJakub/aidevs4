@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
-import { getRunId, getRootRunId, getTraceId, getDepth, getLogger } from "../agent/context.ts";
 import { assertMaxLength } from "../utils/parse.ts";
 import { createChildRun } from "../agent/orchestrator.ts";
 import { bus } from "../infra/events.ts";
@@ -18,30 +17,35 @@ async function delegate(args: Record<string, unknown>, ctx?: ToolCallContext): P
     throw new DomainError({ type: "validation", message: "prompt must not be empty" });
   }
 
-  const parentRunId = getRunId();
-  if (!parentRunId) throw new DomainError({ type: "validation", message: "delegate requires an active run context" });
-
-  const rootRunId = getRootRunId() ?? parentRunId;
-  const logger = getLogger();
+  const runCtx = ctx?.runCtx;
+  if (!runCtx?.runId) {
+    throw new DomainError({ type: "validation", message: "delegate requires an active run context" });
+  }
+  const parentRunId = runCtx.runId;
+  const rootRunId = runCtx.rootRunId ?? parentRunId;
 
   const child = await createChildRun({
     prompt,
     assistant: agent,
     parentRunId,
     rootRunId,
-    parentTraceId: getTraceId(),
-    parentDepth: getDepth(),
+    parentTraceId: runCtx.traceId,
+    parentDepth: runCtx.depth,
     sourceCallId: ctx?.toolCallId,
-  });
+  }, runCtx.runtime);
 
-  if (logger) {
-    logger.info(`[delegate] created child run ${child.runId} (agent: ${agent})`);
-  }
+  runCtx.log.info(`[delegate] created child run ${child.runId} (agent: ${agent})`);
 
   bus.emit("run.delegated", {
     childRunId: child.runId,
     childAgent: agent,
     task: prompt,
+  }, {
+    sessionId: runCtx.sessionId,
+    runId: parentRunId,
+    rootRunId,
+    traceId: runCtx.traceId,
+    depth: runCtx.depth,
   });
 
   // Signal the parent to park — the continuation subscriber will resume it

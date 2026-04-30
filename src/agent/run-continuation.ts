@@ -32,6 +32,10 @@ async function handleChildTerminal(
   bus.emit("run.child_terminal", {
     childRunId,
     childStatus: childRun.status,
+  }, {
+    sessionId: parent.sessionId,
+    runId: parent.id,
+    rootRunId: parent.rootRunId ?? parent.id,
   });
 
   try {

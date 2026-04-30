@@ -2,6 +2,7 @@ import { runAgent } from "./loop.ts";
 import { log } from "../infra/log/logger.ts";
 import { moderateInput, assertNotFlagged } from "../infra/guard.ts";
 import { bus } from "../infra/events.ts";
+import type { EventEnvelope } from "../types/events.ts";
 import { randomUUID } from "node:crypto";
 import { randomSessionId } from "../utils/id.ts";
 import type { LLMMessage } from "../types/llm.ts";
@@ -119,7 +120,7 @@ async function hydrateRunState(opts: HydrateOpts, runtime: Runtime): Promise<Run
   };
 }
 
-async function moderateAndAssert(prompt: string): Promise<void> {
+async function moderateAndAssert(prompt: string, env?: EventEnvelope): Promise<void> {
   const moderationStart = Date.now();
   const moderation = await moderateInput(prompt);
   const moderationDurationMs = Date.now() - moderationStart;
@@ -131,14 +132,14 @@ async function moderateAndAssert(prompt: string): Promise<void> {
     bus.emit("input.flagged", {
       categories: flaggedCategories,
       categoryScores: moderation.categoryScores,
-    });
+    }, env);
   } else {
-    bus.emit("input.clean", { durationMs: moderationDurationMs });
+    bus.emit("input.clean", { durationMs: moderationDurationMs }, env);
   }
   assertNotFlagged(moderation);
 }
 
-function persistRunExit(runId: string, exit: RunExit, tx?: dbOps.DbOrTx): void {
+function persistRunExit(runId: string, exit: RunExit, env?: EventEnvelope, tx?: dbOps.DbOrTx): void {
   switch (exit.kind) {
     case "completed":
       dbOps.updateRunStatus(runId, { status: "completed", result: exit.result, exitKind: "completed" }, tx);
@@ -157,7 +158,7 @@ function persistRunExit(runId: string, exit: RunExit, tx?: dbOps.DbOrTx): void {
         status: "waiting",
         waitingOn: JSON.stringify(exit.waitingOn),
       }, tx);
-      bus.emit("run.waiting", { waitingOn: exit.waitingOn });
+      bus.emit("run.waiting", { waitingOn: exit.waitingOn }, env);
       return;
   }
 }
@@ -189,7 +190,7 @@ export async function executeRun(
   const assistantName = pickAssistantName(session, sessionId, opts.assistant);
 
   await runtime.agents.get(assistantName);
-  await moderateAndAssert(opts.prompt);
+  await moderateAndAssert(opts.prompt, { sessionId });
 
   if (!session.assistant) runtime.sessions.setAssistant(sessionId, assistantName);
 
@@ -235,9 +236,17 @@ export async function runAndPersist(
     // Atomic terminal write: items batch + run status update land together.
     // Crash between them would otherwise leave a `running` row whose work has
     // actually finished — a silent freeze on the next request for this session.
+    const env: EventEnvelope = {
+      sessionId,
+      runId,
+      rootRunId: state.rootRunId,
+      parentRunId: state.parentRunId,
+      traceId: state.traceId,
+      depth: state.depth,
+    };
     dbOps.withTransaction((tx) => {
       runtime.sessions.appendRun(sessionId, runId, messages, tx);
-      persistRunExit(runId, exit, tx);
+      persistRunExit(runId, exit, env, tx);
     });
 
     if (exit.kind === "waiting" && exit.waitingOn.kind === "child_run") {
@@ -269,7 +278,12 @@ export async function createChildRun(
   runtime.sessions.getOrCreate(sessionId);
 
   await runtime.agents.get(opts.assistant);
-  await moderateAndAssert(opts.prompt);
+  await moderateAndAssert(opts.prompt, {
+    sessionId,
+    parentRunId: opts.parentRunId,
+    rootRunId: opts.rootRunId,
+    traceId: opts.parentTraceId,
+  });
 
   const runId = randomUUID();
   insertRunRow({

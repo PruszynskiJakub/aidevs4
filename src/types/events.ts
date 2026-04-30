@@ -95,11 +95,25 @@ export type EventOf<T extends EventType> = Extract<AgentEvent, { type: T }>;
 /** Payload portion an emitter supplies — bus injects everything in RunScoped/Unscoped. */
 export type EventInput<T extends EventType> = Omit<EventOf<T>, keyof RunScoped | "type">;
 
+/**
+ * Identity envelope passed explicitly to `bus.emit` to scope the event
+ * to a session/run/trace. When omitted the bus falls back to reading
+ * from `AsyncLocalStorage` (legacy path — being phased out).
+ */
+export interface EventEnvelope {
+  sessionId?: SessionId;
+  runId?: RunId;
+  rootRunId?: RunId;
+  parentRunId?: RunId;
+  traceId?: string;
+  depth?: number;
+}
+
 export type Listener<T extends EventType> = (event: EventOf<T>) => void;
 export type WildcardListener = (event: AgentEvent) => void;
 
 export interface EventBus {
-  emit<T extends EventType>(type: T, data: EventInput<T>): void;
+  emit<T extends EventType>(type: T, data: EventInput<T>, envelope?: EventEnvelope): void;
   on<T extends EventType>(type: T, listener: Listener<T>): () => void;
   onAny(listener: WildcardListener): () => void;
   off<T extends EventType>(type: T, listener: Listener<T>): void;

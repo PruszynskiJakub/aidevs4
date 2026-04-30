@@ -38,6 +38,8 @@ export type ToolSchema = SimpleToolSchema | MultiActionToolSchema;
 
 export interface ToolCallContext {
   toolCallId: string;
+  /** Per-run execution context. Available when called from inside the agent loop. */
+  runCtx?: import("../agent/run-ctx.ts").RunCtx;
 }
 
 export interface ToolDefinition {

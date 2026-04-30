@@ -184,8 +184,11 @@ export async function resumeRun(
     };
   }
 
-  runtime.bus.emit("run.resumed", {
-    resolution,
+  runtime.bus.emit("run.resumed", { resolution }, {
+    sessionId: run.sessionId,
+    runId,
+    rootRunId: run.rootRunId ?? runId,
+    parentRunId: run.parentId ?? undefined,
   });
 
   // Rebuild run state from DB for the next attempt

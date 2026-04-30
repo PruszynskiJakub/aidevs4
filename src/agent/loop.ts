@@ -8,7 +8,8 @@ import { confirmBatch } from "./confirmation.ts";
 import { MarkdownLogger } from "../infra/log/markdown.ts";
 import { ConsoleLogger } from "../infra/log/console.ts";
 import { createCompositeLogger } from "../infra/log/composite.ts";
-import { runWithContext, requireState } from "./context.ts";
+import { runWithContext } from "./context.ts";
+import { buildRunCtx, type RunCtx } from "./run-ctx.ts";
 import { processMemory, flushMemory } from "./memory/processor.ts";
 import { saveState } from "./memory/persistence.ts";
 import { randomUUID } from "node:crypto";
@@ -35,7 +36,7 @@ interface SessionResources {
   dispose: () => Promise<void>;
 }
 
-interface RunContext {
+interface AgentBindings {
   systemPrompt: string;
   memoryEnabled: boolean;
 }
@@ -56,8 +57,8 @@ type CycleOutcome =
   | { kind: "waiting"; waitingOn: WaitDescriptor };
 
 interface IterationDeps {
-  state: RunState;
-  ctx: RunContext;
+  runCtx: RunCtx;
+  bindings: AgentBindings;
   provider: LLMProvider;
   saveMemoryIfChanged: () => Promise<void>;
   sliceMessages: () => LLMMessage[];
@@ -96,7 +97,7 @@ function setupSession(userPrompt: string | unknown, sessionId?: string): Session
 
 // ── Agent resolution ───────────────────────────────────────
 
-async function resolveAgentForRun(state: RunState, runtime: Runtime): Promise<RunContext> {
+async function resolveAgentForRun(state: RunState, runtime: Runtime): Promise<AgentBindings> {
   const resolved = await runtime.agents.resolve(state.assistant);
   if (!state.model) state.model = resolved.model;
   state.tools = resolved.tools;
@@ -111,14 +112,15 @@ async function resolveAgentForRun(state: RunState, runtime: Runtime): Promise<Ru
 // ── LLM execution ──────────────────────────────────────────
 
 async function executeActPhase(
+  ctx: RunCtx,
   actSystemPrompt: string,
   provider: LLMProvider,
 ): Promise<LLMChatResponse> {
-  const state = requireState();
+  const { state } = ctx;
   const actMessages: LLMMessage[] = [{ role: "system", content: actSystemPrompt }, ...state.messages];
 
   const startTime = Date.now();
-  emitGenerationStarted({ name: "act", model: state.model, startTime });
+  emitGenerationStarted(ctx, { name: "act", model: state.model, startTime });
 
   const actStart = performance.now();
   const response = await provider.chatCompletion({
@@ -133,7 +135,7 @@ async function executeActPhase(
   state.tokens.promptTokens += tokensIn;
   state.tokens.completionTokens += tokensOut;
 
-  emitGenerationCompleted({
+  emitGenerationCompleted(ctx, {
     name: "act",
     model: state.model,
     input: actMessages,
@@ -171,22 +173,23 @@ function recordDeniedToolCalls(state: RunState, denied: { call: LLMToolCall }[])
   }
 }
 
-async function executeApprovedToolCalls(approved: LLMToolCall[]): Promise<SettledOutcome[]> {
+async function executeApprovedToolCalls(ctx: RunCtx, approved: LLMToolCall[]): Promise<SettledOutcome[]> {
   return Promise.allSettled(
     approved.map(async (tc) => {
       const start = performance.now();
-      const result = await dispatch(tc.function.name, tc.function.arguments, tc.id);
+      const result = await dispatch(tc.function.name, tc.function.arguments, tc.id, ctx);
       return { ...result, durationMs: performance.now() - start };
     }),
   ) as Promise<SettledOutcome[]>;
 }
 
 function recordToolOutcome(
-  state: RunState,
+  ctx: RunCtx,
   call: LLMToolCall,
   outcome: SettledOutcome,
   dispatchTime: number,
 ): "succeeded" | "failed" {
+  const { state } = ctx;
   const base = {
     toolCallId: call.id,
     name: call.function.name,
@@ -196,14 +199,14 @@ function recordToolOutcome(
 
   if (outcome.status === "fulfilled") {
     const { content, isError, durationMs } = outcome.value;
-    if (isError) emitToolFailed({ ...base, durationMs, error: content });
-    else emitToolSucceeded({ ...base, durationMs, result: content });
+    if (isError) emitToolFailed(ctx, { ...base, durationMs, error: content });
+    else emitToolSucceeded(ctx, { ...base, durationMs, result: content });
     state.messages.push({ role: "tool", toolCallId: call.id, content });
     return isError ? "failed" : "succeeded";
   }
 
   const errorMsg = errorMessage(outcome.reason);
-  emitToolFailed({ ...base, durationMs: 0, error: errorMsg });
+  emitToolFailed(ctx, { ...base, durationMs: 0, error: errorMsg });
   state.messages.push({
     role: "tool",
     toolCallId: call.id,
@@ -212,8 +215,8 @@ function recordToolOutcome(
   return "failed";
 }
 
-async function dispatchTools(functionCalls: LLMToolCall[]): Promise<WaitDescriptor | undefined> {
-  const state = requireState();
+async function dispatchTools(ctx: RunCtx, functionCalls: LLMToolCall[]): Promise<WaitDescriptor | undefined> {
+  const { state } = ctx;
   const batchId = randomUUID();
   const dispatchTime = Date.now();
 
@@ -222,27 +225,27 @@ async function dispatchTools(functionCalls: LLMToolCall[]): Promise<WaitDescript
 
   if (approved.length > 0) {
     if (approved.length > 1) {
-      emitBatchStarted({ batchId, toolCallIds: approved.map((tc) => tc.id), count: approved.length });
+      emitBatchStarted(ctx, { batchId, toolCallIds: approved.map((tc) => tc.id), count: approved.length });
     }
     for (let idx = 0; idx < approved.length; idx++) {
       const tc = approved[idx];
-      emitToolCalled({
+      emitToolCalled(ctx, {
         toolCallId: tc.id, name: tc.function.name, args: tc.function.arguments,
         batchIndex: idx, batchSize: approved.length, startTime: dispatchTime,
       });
     }
 
     const batchStart = performance.now();
-    const settled = await executeApprovedToolCalls(approved);
+    const settled = await executeApprovedToolCalls(ctx, approved);
 
     let succeeded = 0, failed = 0;
     for (let j = 0; j < approved.length; j++) {
-      const result = recordToolOutcome(state, approved[j], settled[j], dispatchTime);
+      const result = recordToolOutcome(ctx, approved[j], settled[j], dispatchTime);
       if (result === "succeeded") succeeded++; else failed++;
     }
 
     if (approved.length > 1) {
-      emitBatchCompleted({
+      emitBatchCompleted(ctx, {
         batchId, count: approved.length,
         durationMs: performance.now() - batchStart,
         succeeded, failed,
@@ -265,6 +268,7 @@ async function dispatchTools(functionCalls: LLMToolCall[]): Promise<WaitDescript
 // ── Memory management ──────────────────────────────────────
 
 async function buildCycleContext(
+  ctx: RunCtx,
   actSystemPrompt: string,
   state: RunState,
   memoryEnabled: boolean,
@@ -279,7 +283,7 @@ async function buildCycleContext(
   }
 
   const { context, state: updatedMemory } = await processMemory(
-    actSystemPrompt, state.messages, state.memory, provider, state.sessionId,
+    actSystemPrompt, state.messages, state.memory, provider, state.sessionId, ctx,
   );
   state.memory = updatedMemory;
 
@@ -305,13 +309,14 @@ function createMemorySaver(state: RunState) {
 // ── Cycle & iteration ──────────────────────────────────────
 
 async function runCycle(
-  state: RunState,
-  ctx: RunContext,
+  runCtx: RunCtx,
+  bindings: AgentBindings,
   provider: LLMProvider,
   saveMemoryIfChanged: () => Promise<void>,
 ): Promise<CycleOutcome> {
-  const cycleCtx = await buildCycleContext(ctx.systemPrompt, state, ctx.memoryEnabled, provider);
-  const response = await executeActPhase(cycleCtx.systemPrompt, provider);
+  const { state } = runCtx;
+  const cycleCtx = await buildCycleContext(runCtx, bindings.systemPrompt, state, bindings.memoryEnabled, provider);
+  const response = await executeActPhase(runCtx, cycleCtx.systemPrompt, provider);
 
   const newMessages = state.messages.slice(cycleCtx.contextLength);
   state.messages = cycleCtx.messagesSnapshot.concat(newMessages);
@@ -323,7 +328,7 @@ async function runCycle(
   }
 
   const functionCalls = response.toolCalls.filter((tc) => tc.type === "function");
-  const waitingOn = await dispatchTools(functionCalls);
+  const waitingOn = await dispatchTools(runCtx, functionCalls);
   if (waitingOn) return { kind: "waiting", waitingOn };
   return { kind: "continue" };
 }
@@ -332,29 +337,30 @@ async function runIteration(
   deps: IterationDeps,
   i: number,
 ): Promise<LoopResult | { continue: true; turnStartTime: number }> {
-  const { state, ctx, provider, saveMemoryIfChanged, sliceMessages, runStartTime } = deps;
+  const { runCtx, bindings, provider, saveMemoryIfChanged, sliceMessages, runStartTime } = deps;
+  const { state } = runCtx;
   state.iteration = i;
   const turnStartTime = performance.now();
   const iterationsRun = i + 1;
   if (state.runId) dbOps.incrementCycleCount(state.runId);
 
-  emitTurnStarted({
+  emitTurnStarted(runCtx, {
     index: i,
     maxTurns: config.limits.maxIterations,
     model: state.model,
     messageCount: state.messages.length,
   });
 
-  const outcome = await runCycle(state, ctx, provider, saveMemoryIfChanged);
+  const outcome = await runCycle(runCtx, bindings, provider, saveMemoryIfChanged);
 
   if (outcome.kind === "completed") {
     const exit: RunExit = { kind: "completed", result: outcome.text ?? "" };
-    await finalizeTerminal(state, exit, ctx, provider, saveMemoryIfChanged,
+    await finalizeTerminal(runCtx, exit, bindings, provider, saveMemoryIfChanged,
       { runStartTime, turnStartTime, iterationsRun }, outcome.text);
     return { exit, messages: sliceMessages() };
   }
 
-  emitTurnCompleted({
+  emitTurnCompleted(runCtx, {
     index: i, outcome: "continue",
     durationMs: performance.now() - turnStartTime,
     tokens: state.tokens,
@@ -368,13 +374,14 @@ async function runIteration(
 
 // ── Terminal finalization ──────────────────────────────────
 
-function emitRunStartEvents(state: RunState, userPrompt: string | unknown): void {
-  emitRunStarted({
+function emitRunStartEvents(ctx: RunCtx, userPrompt: string | unknown): void {
+  const { state } = ctx;
+  emitRunStarted(ctx, {
     assistant: state.assistant,
     model: state.model,
     userInput: typeof userPrompt === "string" ? userPrompt : undefined,
   });
-  emitAgentStarted({
+  emitAgentStarted(ctx, {
     agentName: state.agentName ?? state.assistant,
     model: state.model,
     task: typeof userPrompt === "string" ? userPrompt : "(structured)",
@@ -383,16 +390,17 @@ function emitRunStartEvents(state: RunState, userPrompt: string | unknown): void
 }
 
 async function finalizeTerminal(
-  state: RunState,
+  ctx: RunCtx,
   exit: RunExit,
-  ctx: RunContext,
+  bindings: AgentBindings,
   provider: LLMProvider,
   saveMemoryIfChanged: () => Promise<void>,
   timing: { runStartTime: number; turnStartTime: number; iterationsRun: number },
   answerText?: string | null,
 ): Promise<void> {
-  if (ctx.memoryEnabled && (exit.kind === "completed" || exit.kind === "exhausted")) {
-    state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId);
+  const { state } = ctx;
+  if (bindings.memoryEnabled && (exit.kind === "completed" || exit.kind === "exhausted")) {
+    state.memory = await flushMemory(state.messages, state.memory, provider, state.sessionId, ctx);
     await saveMemoryIfChanged();
   }
 
@@ -401,7 +409,7 @@ async function finalizeTerminal(
   const turnDurationMs = performance.now() - timing.turnStartTime;
 
   if (exit.kind === "completed") {
-    emitAnswerTerminal({
+    emitAnswerTerminal(ctx, {
       agentName,
       iterationIndex: timing.iterationsRun - 1,
       iterationCount: timing.iterationsRun,
@@ -409,7 +417,7 @@ async function finalizeTerminal(
       answerText: answerText ?? null,
     });
   } else if (exit.kind === "exhausted") {
-    emitMaxIterationsTerminal({
+    emitMaxIterationsTerminal(ctx, {
       agentName, maxIterations: config.limits.maxIterations,
       turnDurationMs, runDurationMs, tokens: state.tokens,
     });
@@ -432,11 +440,16 @@ export async function runAgent(
   return runWithContext(state, log, async () => {
     const saveMemoryIfChanged = createMemorySaver(state);
     const runStartTime = performance.now();
+    // Build runCtx eagerly so the failure path also has an envelope.
+    // Fields read off `state` here are stable for the run; later
+    // `resolveAgentForRun` may set state.model/state.tools but those
+    // aren't part of the envelope.
+    const runCtx = buildRunCtx(runtime, state, log);
 
     try {
-      const ctx = await resolveAgentForRun(state, runtime);
-      emitRunStartEvents(state, userPrompt);
-      const deps: IterationDeps = { state, ctx, provider, saveMemoryIfChanged, sliceMessages, runStartTime };
+      const bindings = await resolveAgentForRun(state, runtime);
+      emitRunStartEvents(runCtx, userPrompt);
+      const deps: IterationDeps = { runCtx, bindings, provider, saveMemoryIfChanged, sliceMessages, runStartTime };
 
       let lastTurnStartTime = performance.now();
       for (let i = 0; i < config.limits.maxIterations; i++) {
@@ -446,11 +459,11 @@ export async function runAgent(
       }
 
       const exit: RunExit = { kind: "exhausted", cycleCount: config.limits.maxIterations };
-      await finalizeTerminal(state, exit, ctx, provider, saveMemoryIfChanged,
+      await finalizeTerminal(runCtx, exit, bindings, provider, saveMemoryIfChanged,
         { runStartTime, turnStartTime: lastTurnStartTime, iterationsRun: config.limits.maxIterations });
       return { exit, messages: sliceMessages() };
     } catch (err) {
-      emitFailureTerminal({
+      emitFailureTerminal(runCtx, {
         agentName: state.agentName ?? state.assistant,
         iterations: state.iteration + 1,
         runDurationMs: performance.now() - runStartTime,

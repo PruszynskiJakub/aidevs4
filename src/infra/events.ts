@@ -3,6 +3,7 @@ import type {
   AgentEvent,
   EventType,
   EventInput,
+  EventEnvelope,
   Listener,
   WildcardListener,
   EventBus,
@@ -15,17 +16,23 @@ function createEventBus(): EventBus {
   const exact = new Map<EventType, Set<Listener<any>>>();
   const wildcards = new Set<WildcardListener>();
 
-  function emit<T extends EventType>(type: T, data: EventInput<T>): void {
+  function emit<T extends EventType>(
+    type: T,
+    data: EventInput<T>,
+    envelope?: EventEnvelope,
+  ): void {
+    // Prefer explicit envelope; fall back to ALS for legacy callers.
+    // The ALS fallback will be removed once every caller passes ctx.
     const event = {
       id: randomUUID(),
       type,
       ts: Date.now(),
-      sessionId: getSessionId(),
-      runId: getRunId(),
-      rootRunId: getRootRunId(),
-      parentRunId: getParentRunId(),
-      traceId: getTraceId(),
-      depth: getDepth(),
+      sessionId: envelope?.sessionId ?? getSessionId(),
+      runId: envelope?.runId ?? getRunId(),
+      rootRunId: envelope?.rootRunId ?? getRootRunId(),
+      parentRunId: envelope?.parentRunId ?? getParentRunId(),
+      traceId: envelope?.traceId ?? getTraceId(),
+      depth: envelope?.depth ?? getDepth(),
       ...data,
     } as AgentEvent;
 

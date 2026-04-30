@@ -141,9 +141,10 @@ async function tryDispatch(
   tool: ToolDefinition,
   args: Record<string, unknown>,
   toolCallId: string,
+  runCtx?: import("../agent/run-ctx.ts").RunCtx,
 ): Promise<DispatchResult> {
   try {
-    const result = await tool.handler(args, { toolCallId });
+    const result = await tool.handler(args, { toolCallId, runCtx });
     const content = serializeContent(result.content);
     const tokens = estimateTokens(content);
     resultStore.complete(toolCallId, result, tokens);
@@ -158,13 +159,18 @@ async function tryDispatch(
   }
 }
 
-export async function dispatch(name: string, argsJson: string, toolCallId: string = ""): Promise<DispatchResult> {
+export async function dispatch(
+  name: string,
+  argsJson: string,
+  toolCallId: string = "",
+  runCtx?: import("../agent/run-ctx.ts").RunCtx,
+): Promise<DispatchResult> {
   const parsed = safeParse<Record<string, unknown>>(argsJson, name);
 
   const tool = handlers.get(name);
   if (tool) {
     resultStore.create(toolCallId, name, parsed);
-    return tryDispatch(name, tool, parsed, toolCallId);
+    return tryDispatch(name, tool, parsed, toolCallId, runCtx);
   }
 
   // Multi-action routing: tool_name__action_name -> handler(tool_name) with { action, payload }
@@ -177,7 +183,7 @@ export async function dispatch(name: string, argsJson: string, toolCallId: strin
     if (multiTool) {
       const multiArgs = { action: actionName, payload: parsed };
       resultStore.create(toolCallId, name, multiArgs);
-      return tryDispatch(name, multiTool, multiArgs, toolCallId);
+      return tryDispatch(name, multiTool, multiArgs, toolCallId, runCtx);
     }
   }
 

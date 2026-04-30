@@ -1,11 +1,25 @@
 import type { LLMProvider, LLMMessage } from "../../types/llm.ts";
 import type { MemoryState, ProcessedContext } from "../../types/memory.ts";
+import type { EventEnvelope } from "../../types/events.ts";
 import { config } from "../../config/index.ts";
 import { estimateTokens, estimateMessagesTokens } from "../../utils/tokens.ts";
 import { observe } from "./observer.ts";
 import { reflect } from "./reflector.ts";
 import { saveDebugArtifact } from "./persistence.ts";
 import { bus } from "../../infra/events.ts";
+import type { RunCtx } from "../run-ctx.ts";
+
+function envelopeOf(ctx: RunCtx | undefined): EventEnvelope | undefined {
+  if (!ctx) return undefined;
+  return {
+    sessionId: ctx.sessionId,
+    runId: ctx.runId,
+    rootRunId: ctx.rootRunId,
+    parentRunId: ctx.parentRunId,
+    traceId: ctx.traceId,
+    depth: ctx.depth,
+  };
+}
 
 const OBSERVATION_HEADER = "\n\n---\n\n## Memory Observations\n\n";
 
@@ -42,7 +56,9 @@ export async function processMemory(
   state: MemoryState,
   provider: LLMProvider,
   sessionId: string,
+  ctx?: RunCtx,
 ): Promise<{ context: ProcessedContext; state: MemoryState }> {
+  const env = envelopeOf(ctx);
   const memConfig = config.memory;
 
   // Calculate unobserved message tokens (from lastObservedIndex to end)
@@ -88,7 +104,7 @@ export async function processMemory(
 
   // Run observer
   const tokensBefore = state.observationTokenCount;
-  bus.emit("memory.observation.started", { tokensBefore });
+  bus.emit("memory.observation.started", { tokensBefore }, env);
 
   let newObservations: string;
   let observationGeneration;
@@ -102,7 +118,7 @@ export async function processMemory(
     observationGeneration = result.generation;
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    bus.emit("memory.observation.failed", { error });
+    bus.emit("memory.observation.failed", { error }, env);
     return passThrough(systemPrompt, messages, state);
   }
 
@@ -113,7 +129,7 @@ export async function processMemory(
     tokensBefore,
     tokensAfter: observationTokens,
     generation: observationGeneration,
-  });
+  }, env);
 
   // Save observer debug artifact
   await saveDebugArtifact(sessionId, "observer", newObservations || "(no new observations)", {
@@ -136,7 +152,7 @@ export async function processMemory(
   if (observationTokens > memConfig.reflectionThreshold) {
     const reflectTokensBefore = observationTokens;
     const level = newState.generationCount + 1;
-    bus.emit("memory.reflection.started", { level, tokensBefore: reflectTokensBefore });
+    bus.emit("memory.reflection.started", { level, tokensBefore: reflectTokensBefore }, env);
 
     try {
       const reflectResult = await reflect(
@@ -155,7 +171,7 @@ export async function processMemory(
         tokensBefore: reflectTokensBefore,
         tokensAfter: compressedTokens,
         generations: reflectResult.generations,
-      });
+      }, env);
 
       // Save reflector debug artifact
       await saveDebugArtifact(sessionId, "reflector", reflectResult.text, {
@@ -166,7 +182,7 @@ export async function processMemory(
       });
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      bus.emit("memory.reflection.failed", { level, error });
+      bus.emit("memory.reflection.failed", { level, error }, env);
       // Continue with unreflected observations — graceful degradation
     }
   }
@@ -187,7 +203,9 @@ export async function flushMemory(
   state: MemoryState,
   provider: LLMProvider,
   sessionId: string,
+  ctx?: RunCtx,
 ): Promise<MemoryState> {
+  const env = envelopeOf(ctx);
   const unobservedMessages = messages.slice(state.lastObservedIndex);
   if (unobservedMessages.length === 0) return state;
 
@@ -196,7 +214,7 @@ export async function flushMemory(
   if (unobservedTokens < 1_000) return state;
 
   const tokensBefore = state.observationTokenCount;
-  bus.emit("memory.observation.started", { tokensBefore });
+  bus.emit("memory.observation.started", { tokensBefore }, env);
 
   let newObservations: string;
   let observationGeneration;
@@ -210,7 +228,7 @@ export async function flushMemory(
     observationGeneration = result.generation;
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    bus.emit("memory.observation.failed", { error });
+    bus.emit("memory.observation.failed", { error }, env);
     return state;
   }
 
@@ -223,7 +241,7 @@ export async function flushMemory(
     tokensBefore,
     tokensAfter: observationTokens,
     generation: observationGeneration,
-  });
+  }, env);
 
   await saveDebugArtifact(sessionId, "observer", newObservations, {
     flush: true,
