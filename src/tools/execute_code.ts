@@ -2,7 +2,7 @@ import { join, resolve } from "path";
 import * as fs from "../infra/fs.ts";
 import { z } from "zod";
 import { config } from "../config/index.ts";
-import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import { getSessionWorkingDir } from "../agent/session.ts";
@@ -53,7 +53,7 @@ function sanitizeOutput(
   return sanitized;
 }
 
-async function executeCode(args: Record<string, unknown>): Promise<ToolResult> {
+async function executeCode(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
   const code = args.code;
   const description = args.description;
 
@@ -74,7 +74,7 @@ async function executeCode(args: Record<string, unknown>): Promise<ToolResult> {
     typeof args.timeout === "number" ? args.timeout : DEFAULT_TIMEOUT;
   const timeout = Math.max(1000, Math.min(MAX_TIMEOUT, Math.round(rawTimeout)));
 
-  const sessionDir = getSessionWorkingDir();
+  const sessionDir = getSessionWorkingDir(ctx?.runCtx?.sessionId);
   const projectRoot = resolve(config.paths.projectRoot);
 
   await fs.fsMkdir(sessionDir);

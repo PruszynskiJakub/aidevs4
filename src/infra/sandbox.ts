@@ -13,8 +13,11 @@ function toRelative(absolutePath: string): string {
   return rel || ".";
 }
 
-function narrowOutputPaths(allowedDirs: string[], sessionsDir: string): string[] {
-  const sessionId = getSessionId();
+function narrowOutputPaths(
+  allowedDirs: string[],
+  sessionsDir: string,
+  sessionId: string | undefined,
+): string[] {
   if (!sessionId) return allowedDirs;
 
   const resolvedSessions = resolve(sessionsDir);
@@ -32,10 +35,11 @@ function assertPathAllowed(
   blockedDirs: string[],
   operation: "read" | "write",
   sessionsDir: string,
+  sessionId: string | undefined,
 ): void {
   const resolved = resolve(targetPath);
   const effective = operation === "write"
-    ? narrowOutputPaths(allowedDirs, sessionsDir)
+    ? narrowOutputPaths(allowedDirs, sessionsDir, sessionId)
     : allowedDirs;
 
   const allowed = effective.some((dir) => {
@@ -72,6 +76,13 @@ export interface SandboxOptions {
   writePaths?: string[];
   blockedWritePaths?: string[];
   sessionsDir?: string;
+  /**
+   * Bound sessionId for write-path narrowing. When set, writes to
+   * `sessionsDir` are narrowed to its per-session subfolder. When unset,
+   * the legacy ALS fallback (`getSessionId()`) is consulted — this keeps
+   * unmigrated callers working until every tool threads ctx.
+   */
+  sessionId?: string;
 }
 
 export function createSandbox(opts: SandboxOptions = {}): FileProvider {
@@ -79,13 +90,18 @@ export function createSandbox(opts: SandboxOptions = {}): FileProvider {
   const writePaths = opts.writePaths ?? [...config.sandbox.allowedWritePaths];
   const blockedWritePaths = opts.blockedWritePaths ?? [...config.sandbox.blockedWritePaths];
   const sessionsDir = opts.sessionsDir ?? config.paths.sessionsDir;
+  const boundSessionId = opts.sessionId;
+
+  function effectiveSessionId(): string | undefined {
+    return boundSessionId ?? getSessionId();
+  }
 
   function assertRead(path: string): void {
-    assertPathAllowed(path, readPaths, [], "read", sessionsDir);
+    assertPathAllowed(path, readPaths, [], "read", sessionsDir, effectiveSessionId());
   }
 
   function assertWrite(path: string): void {
-    assertPathAllowed(path, writePaths, blockedWritePaths, "write", sessionsDir);
+    assertPathAllowed(path, writePaths, blockedWritePaths, "write", sessionsDir, effectiveSessionId());
   }
 
   const svc: FileProvider = {
@@ -152,6 +168,20 @@ export function createSandbox(opts: SandboxOptions = {}): FileProvider {
     async checkFileSize(path: string, maxBytes: number = config.limits.maxFileSize): Promise<void> {
       const s = await svc.stat(path);
       fs.checkFileSize(s, maxBytes, toRelative(path));
+    },
+
+    scoped(sessionId?: string): FileProvider {
+      // Re-bake the same paths config with a different (or no) sessionId.
+      // Note: read/write/blocked path arrays are passed through as-is so
+      // both instances enforce the same outer policy — only the in-flight
+      // sessions-dir narrowing changes.
+      return createSandbox({
+        readPaths,
+        writePaths,
+        blockedWritePaths,
+        sessionsDir,
+        sessionId,
+      });
     },
   };
 

@@ -22,6 +22,7 @@
 
 import type { RunState } from "../types/run-state.ts";
 import type { Logger } from "../types/logger.ts";
+import type { FileProvider } from "../types/file.ts";
 import type { Runtime } from "../runtime.ts";
 
 export interface RunCtx {
@@ -31,6 +32,11 @@ export interface RunCtx {
   log: Logger;
   /** Mutable run state — messages, tokens, iteration counter, model, tools. */
   state: RunState;
+  /**
+   * Session-scoped file provider. Writes to `sessionsDir` are narrowed
+   * to this run's per-session subfolder without consulting ALS.
+   */
+  files: FileProvider;
   /** Stable identity fields, snapshotted from state at ctx-build time. */
   sessionId: string;
   runId?: string;
@@ -60,6 +66,7 @@ export function buildRunCtx(runtime: Runtime, state: RunState, log: Logger): Run
     runtime,
     log,
     state,
+    files: runtime.files.scoped(state.sessionId),
     sessionId: state.sessionId,
     runId: state.runId,
     rootRunId: state.rootRunId,

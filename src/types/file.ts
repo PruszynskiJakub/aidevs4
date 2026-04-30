@@ -21,4 +21,12 @@ export interface FileProvider {
   unlink(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
   checkFileSize(path: string, maxBytes?: number): Promise<void>;
+  /**
+   * Return a FileProvider whose write-path narrowing is scoped to the
+   * given sessionId. Reads are unaffected. The original instance is not
+   * mutated. When sessionId is omitted, an instance with no session
+   * scope is returned (writes that target `sessionsDir` will not be
+   * narrowed to a per-session subfolder).
+   */
+  scoped(sessionId?: string): FileProvider;
 }

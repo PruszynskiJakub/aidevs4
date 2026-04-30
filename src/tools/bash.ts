@@ -1,7 +1,7 @@
 import { resolve } from "path";
 import { $ } from "bun";
 import { z } from "zod";
-import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import { getSessionWorkingDir } from "../agent/session.ts";
@@ -35,14 +35,14 @@ function assertWritesInSessionDir(command: string, cwd: string): void {
   }
 }
 
-async function bash(args: Record<string, unknown>): Promise<ToolResult> {
+async function bash(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
   const { command } = args as { command: string };
 
   // Clamp timeout to [1000, 120000], default 30000
   const rawTimeout = typeof args.timeout === "number" ? args.timeout : 30_000;
   const timeout = Math.max(1000, Math.min(120_000, Math.round(rawTimeout)));
 
-  const cwd = getSessionWorkingDir();
+  const cwd = getSessionWorkingDir(ctx?.runCtx?.sessionId);
   assertWritesInSessionDir(command, cwd);
 
   const shellPromise = $`bash -c ${command}`.cwd(cwd).quiet().nothrow();

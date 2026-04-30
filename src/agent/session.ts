@@ -202,11 +202,13 @@ function dateFolderNow(): string {
 /**
  * Resolve the working directory for the current session.
  * Used by tools that need a per-session CWD (bash, execute_code).
+ * Pass an explicit `sessionId` to avoid the ALS lookup — preferred for
+ * any tool that has access to a `RunCtx`.
  */
-export function getSessionWorkingDir(): string {
-  const sessionId = getSessionId();
-  if (sessionId) {
-    return resolve(join(defaultConfig.paths.sessionsDir, dateFolderNow(), sessionId));
+export function getSessionWorkingDir(sessionId?: string): string {
+  const id = sessionId ?? getSessionId();
+  if (id) {
+    return resolve(join(defaultConfig.paths.sessionsDir, dateFolderNow(), id));
   }
   return resolve(defaultConfig.paths.sessionsDir);
 }
