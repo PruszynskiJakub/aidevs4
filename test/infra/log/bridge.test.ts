@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { attachLoggerListener } from "../../../src/infra/log/bridge.ts";
-import { createEventBus } from "../../../src/infra/events.ts";
-import type { EventBus } from "../../../src/types/events.ts";
-import type { Logger } from "../../../src/types/logger.ts";
+import { attachLoggerListener } from "../../../apps/server/src/infra/log/bridge.ts";
+import { createEventBus } from "../../../apps/server/src/infra/events.ts";
+import type { EventBus } from "../../../apps/server/src/types/events.ts";
+import type { Logger } from "../../../apps/server/src/types/logger.ts";
 
 function createSpyLogger() {
   const calls: { method: string; args: unknown[] }[] = [];

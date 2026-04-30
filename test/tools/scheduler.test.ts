@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import schedulerTool from "../../src/tools/scheduler.ts";
-import { scheduler } from "../../src/infra/scheduler.ts";
-import * as dbOps from "../../src/infra/db/index.ts";
+import schedulerTool from "../../apps/server/src/tools/scheduler.ts";
+import { scheduler } from "../../apps/server/src/infra/scheduler.ts";
+import * as dbOps from "../../apps/server/src/infra/db/index.ts";
 
 const handle = schedulerTool.handler;
 

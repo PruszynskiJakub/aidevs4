@@ -2,9 +2,9 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { createPromptService } from "../../src/llm/prompt.ts";
-import { createSandbox, _setSandboxForTest } from "../../src/infra/sandbox.ts";
-import { config } from "../../src/config/index.ts";
+import { createPromptService } from "../../apps/server/src/llm/prompt.ts";
+import { createSandbox, _setSandboxForTest } from "../../apps/server/src/infra/sandbox.ts";
+import { config } from "../../apps/server/src/config/index.ts";
 
 let tmp: string;
 let restoreFiles: () => void;

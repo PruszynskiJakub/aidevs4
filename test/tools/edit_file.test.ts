@@ -3,9 +3,9 @@ import { join } from "path";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { createHash } from "crypto";
-import type { ToolResult } from "../../src/types/tool-result.ts";
-import { createSandbox, _setSandboxForTest } from "../../src/infra/sandbox.ts";
-import edit_file from "../../src/tools/edit_file.ts";
+import type { ToolResult } from "../../apps/server/src/types/tool-result.ts";
+import { createSandbox, _setSandboxForTest } from "../../apps/server/src/infra/sandbox.ts";
+import edit_file from "../../apps/server/src/tools/edit_file.ts";
 
 let tmpDir: string;
 let restore: () => void;

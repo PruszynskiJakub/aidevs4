@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { sessionService } from "../src/agent/session.ts";
-import { config } from "../src/config/index.ts";
-import { llm } from "../src/llm/llm.ts";
-import type { LLMChatResponse } from "../src/types/llm.ts";
-import * as dbOps from "../src/infra/db/index.ts";
+import { sessionService } from "../apps/server/src/agent/session.ts";
+import { config } from "../apps/server/src/config/index.ts";
+import { llm } from "../apps/server/src/llm/llm.ts";
+import type { LLMChatResponse } from "../apps/server/src/types/llm.ts";
+import * as dbOps from "../apps/server/src/infra/db/index.ts";
 
 // Install a stub LLM provider by monkey-patching the singleton — this
 // avoids `mock.module` on `./agent/orchestrator.ts`, which would leak
@@ -18,7 +18,7 @@ import * as dbOps from "../src/infra/db/index.ts";
 });
 
 // Import after the LLM is stubbed so server.ts sees the patched singleton.
-const { default: server } = await import("../src/server.ts");
+const { default: server } = await import("../apps/server/src/server.ts");
 
 /** Build auth headers if API_SECRET is configured. */
 function authHeaders(): Record<string, string> {

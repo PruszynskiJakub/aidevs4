@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { createBrowserFeedbackTracker } from "../../src/infra/browser-feedback.ts";
+import { createBrowserFeedbackTracker } from "../../apps/server/src/infra/browser-feedback.ts";
 
 describe("BrowserFeedbackTracker", () => {
   it("starts with zero stats", () => {

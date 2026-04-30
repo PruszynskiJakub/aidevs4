@@ -21,7 +21,7 @@
   },
   {
     "id": "ts-003",
-    "message": "Read the contents of the file src/config/index.ts",
+    "message": "Read the contents of the file apps/server/src/config/index.ts",
     "expect": {
       "shouldUseTools": true,
       "requiredTools": ["read_file"],
@@ -66,7 +66,7 @@
   },
   {
     "id": "ts-008",
-    "message": "Find all TypeScript files in src/tools/ and tell me how many there are",
+    "message": "Find all TypeScript files in apps/server/src/tools/ and tell me how many there are",
     "expect": {
       "shouldUseTools": true,
       "requiredTools": ["glob"],
@@ -123,7 +123,7 @@
   },
   {
     "id": "ts-014",
-    "message": "Read the file src/agent/orchestrator.ts and find the executeTurn function signature",
+    "message": "Read the file apps/server/src/agent/orchestrator.ts and find the executeTurn function signature",
     "expect": {
       "shouldUseTools": true,
       "requiredTools": ["read_file"],

@@ -1,17 +1,17 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import type { ToolResult } from "../../src/types/tool-result.ts";
+import type { ToolResult } from "../../apps/server/src/types/tool-result.ts";
 
 // Mock llm before importing the tool
 const completionMock = mock(() => Promise.resolve("The best approach is to call the API endpoint first."));
 
-mock.module("../../src/llm/llm.ts", () => ({
+mock.module("../../apps/server/src/llm/llm.ts", () => ({
   llm: {
     completion: completionMock,
     chatCompletion: mock(),
   },
 }));
 
-const { default: thinkTool } = await import("../../src/tools/think.ts");
+const { default: thinkTool } = await import("../../apps/server/src/tools/think.ts");
 
 /** Extract text from ToolResult */
 function getText(result: ToolResult): string {

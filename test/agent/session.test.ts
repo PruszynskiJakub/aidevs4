@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, beforeAll, afterAll } from "bun:test"
 import { mkdtemp, rm, stat } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { createSessionService, sessionService } from "../../src/agent/session.ts";
-import { inferCategory } from "../../src/utils/media-types.ts";
-import { createSandbox, _setSandboxForTest } from "../../src/infra/sandbox.ts";
-import { config } from "../../src/config/index.ts";
-import * as dbOps from "../../src/infra/db/index.ts";
+import { createSessionService, sessionService } from "../../apps/server/src/agent/session.ts";
+import { inferCategory } from "../../apps/server/src/utils/media-types.ts";
+import { createSandbox, _setSandboxForTest } from "../../apps/server/src/infra/sandbox.ts";
+import { config } from "../../apps/server/src/config/index.ts";
+import * as dbOps from "../../apps/server/src/infra/db/index.ts";
 
 /** Create a session + run pair for testing message operations */
 function setupSessionRun(sessionId: string, runId: string): void {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { elapsed } from "../../src/utils/timing.ts";
+import { elapsed } from "../../apps/server/src/utils/timing.ts";
 
 describe("elapsed", () => {
   it("returns formatted elapsed time", () => {

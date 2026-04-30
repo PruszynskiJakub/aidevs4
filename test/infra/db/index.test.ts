@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { randomUUID } from "node:crypto";
-import * as dbOps from "../../../src/infra/db/index.ts";
-import { messagesToItems, itemsToMessages } from "../../../src/agent/session.ts";
-import type { LLMMessage } from "../../../src/types/llm.ts";
+import * as dbOps from "../../../apps/server/src/infra/db/index.ts";
+import { messagesToItems, itemsToMessages } from "../../../apps/server/src/agent/session.ts";
+import type { LLMMessage } from "../../../apps/server/src/types/llm.ts";
 
 beforeEach(() => {
   dbOps._clearAll();

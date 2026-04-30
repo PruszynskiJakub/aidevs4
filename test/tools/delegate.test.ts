@@ -1,8 +1,8 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import type { ToolResult } from "../../src/types/tool-result.ts";
-import type { ToolCallContext } from "../../src/types/tool.ts";
-import type { RunCtx } from "../../src/agent/run-ctx.ts";
-import { createIsolatedRuntime } from "../../src/runtime.ts";
+import type { ToolResult } from "../../apps/server/src/types/tool-result.ts";
+import type { ToolCallContext } from "../../apps/server/src/types/tool.ts";
+import type { RunCtx } from "../../apps/server/src/agent/run-ctx.ts";
+import { createIsolatedRuntime } from "../../apps/server/src/runtime.ts";
 
 // Mock orchestrator (no circular dep — delegate lazy-imports it)
 const mockCreateChildRun = mock(() =>
@@ -11,12 +11,12 @@ const mockCreateChildRun = mock(() =>
     runId: "r-child",
   }),
 );
-mock.module("../../src/agent/orchestrator.ts", () => ({
+mock.module("../../apps/server/src/agent/orchestrator.ts", () => ({
   createChildRun: mockCreateChildRun,
 }));
 
 // Import the tool — scanAgents runs at top level, reads real agent files
-const { default: delegateTool } = await import("../../src/tools/delegate.ts");
+const { default: delegateTool } = await import("../../apps/server/src/tools/delegate.ts");
 
 /** Extract text from ToolResult */
 function getText(result: ToolResult): string {

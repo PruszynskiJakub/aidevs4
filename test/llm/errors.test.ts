@@ -10,9 +10,9 @@ import {
   NotFoundError,
   ConflictError,
 } from "openai";
-import { toOpenAIDomainError } from "../../src/llm/openai.ts";
-import { toGeminiDomainError } from "../../src/llm/gemini.ts";
-import { isDomainError } from "../../src/types/errors.ts";
+import { toOpenAIDomainError } from "../../apps/server/src/llm/openai.ts";
+import { toGeminiDomainError } from "../../apps/server/src/llm/gemini.ts";
+import { isDomainError } from "../../apps/server/src/types/errors.ts";
 
 // Helper to construct OpenAI SDK errors with the expected ctor signature.
 function makeAPIError(

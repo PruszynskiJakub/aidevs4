@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { registerRaw, getTools, getToolsByName, dispatch, reset } from "../../src/tools/registry.ts";
+import { registerRaw, getTools, getToolsByName, dispatch, reset } from "../../apps/server/src/tools/registry.ts";
 
 beforeEach(() => {
   reset();

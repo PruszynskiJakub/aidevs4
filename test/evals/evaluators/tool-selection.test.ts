@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { toolSelectionEvaluator } from "../../../src/evals/evaluators/tool-selection.ts";
-import type { EvalCase, AgentOutput } from "../../../src/evals/types.ts";
+import { toolSelectionEvaluator } from "../../../apps/server/src/evals/evaluators/tool-selection.ts";
+import type { EvalCase, AgentOutput } from "../../../apps/server/src/evals/types.ts";
 
 function makeCase(expect: Record<string, unknown>): EvalCase {
   return { id: "test", message: "test message", expect };

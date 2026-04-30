@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, mock, beforeEach } from "bun:test";
-import type { ToolResult } from "../../src/types/tool-result.ts";
-import { config } from "../../src/config/index.ts";
-import shipping from "../../src/tools/shipping.ts";
+import type { ToolResult } from "../../apps/server/src/types/tool-result.ts";
+import { config } from "../../apps/server/src/config/index.ts";
+import shipping from "../../apps/server/src/tools/shipping.ts";
 
 const handler = shipping.handler;
 

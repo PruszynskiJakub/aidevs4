@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, rm, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { createSandbox, _setSandboxForTest } from "../../src/infra/sandbox.ts";
+import { createSandbox, _setSandboxForTest } from "../../apps/server/src/infra/sandbox.ts";
 
 let allowedDir: string;
 let siblingDir: string;

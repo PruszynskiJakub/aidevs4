@@ -4,7 +4,7 @@ import {
   isDomainError,
   toHttpStatus,
   type DomainErrorType,
-} from "../../src/types/errors.ts";
+} from "../../apps/server/src/types/errors.ts";
 
 describe("DomainError", () => {
   it("constructs with type and message", () => {

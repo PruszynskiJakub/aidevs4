@@ -1,10 +1,10 @@
 import { describe, test, expect } from "bun:test";
 import { join, resolve } from "path";
 import { mkdir } from "fs/promises";
-import type { ToolResult } from "../../src/types/tool-result.ts";
-import type { ToolCallContext } from "../../src/types/tool.ts";
-import type { RunCtx } from "../../src/agent/run-ctx.ts";
-import executeCode from "../../src/tools/execute_code.ts";
+import type { ToolResult } from "../../apps/server/src/types/tool-result.ts";
+import type { ToolCallContext } from "../../apps/server/src/types/tool.ts";
+import type { RunCtx } from "../../apps/server/src/agent/run-ctx.ts";
+import executeCode from "../../apps/server/src/tools/execute_code.ts";
 
 const mockSessionId = "test-session-code-001";
 const stubCtx: ToolCallContext = {
@@ -13,7 +13,7 @@ const stubCtx: ToolCallContext = {
 };
 
 // Resolve session dir for test setup
-import { config } from "../../src/config/index.ts";
+import { config } from "../../apps/server/src/config/index.ts";
 const sessionDir = resolve(
   join(
     config.paths.sessionsDir,

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import * as dbOps from "../../../src/infra/db/index.ts";
-import { sqlite } from "../../../src/infra/db/connection.ts";
+import * as dbOps from "../../../apps/server/src/infra/db/index.ts";
+import { sqlite } from "../../../apps/server/src/infra/db/connection.ts";
 
 beforeEach(() => {
   dbOps._clearAll();

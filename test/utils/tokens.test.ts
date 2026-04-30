@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { estimateTokens, estimateMessagesTokens } from "../../src/utils/tokens.ts";
-import type { LLMMessage } from "../../src/types/llm.ts";
+import { estimateTokens, estimateMessagesTokens } from "../../apps/server/src/utils/tokens.ts";
+import type { LLMMessage } from "../../apps/server/src/types/llm.ts";
 
 describe("estimateTokens", () => {
   test("returns 0 for empty string", () => {

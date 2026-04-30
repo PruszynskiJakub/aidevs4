@@ -2,10 +2,10 @@ import { describe, it, expect, beforeAll, afterAll, mock, beforeEach } from "bun
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import type { ToolResult } from "../../src/types/tool-result.ts";
-import agentsHub from "../../src/tools/agents_hub.ts";
-import { config } from "../../src/config/index.ts";
-import { createSandbox, _setSandboxForTest } from "../../src/infra/sandbox.ts";
+import type { ToolResult } from "../../apps/server/src/types/tool-result.ts";
+import agentsHub from "../../apps/server/src/tools/agents_hub.ts";
+import { config } from "../../apps/server/src/config/index.ts";
+import { createSandbox, _setSandboxForTest } from "../../apps/server/src/infra/sandbox.ts";
 
 const handler = agentsHub.handler;
 

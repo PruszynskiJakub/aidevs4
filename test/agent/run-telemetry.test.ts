@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { bus } from "../../src/infra/events.ts";
-import type { AgentEvent, EventType } from "../../src/types/events.ts";
-import type { RunCtx } from "../../src/agent/run-ctx.ts";
+import { bus } from "../../apps/server/src/infra/events.ts";
+import type { AgentEvent, EventType } from "../../apps/server/src/types/events.ts";
+import type { RunCtx } from "../../apps/server/src/agent/run-ctx.ts";
 import {
   emitRunStarted,
   emitAgentStarted,
@@ -17,7 +17,7 @@ import {
   emitAnswerTerminal,
   emitMaxIterationsTerminal,
   emitFailureTerminal,
-} from "../../src/agent/run-telemetry.ts";
+} from "../../apps/server/src/agent/run-telemetry.ts";
 
 /** Minimal stub ctx — only the fields the telemetry helpers read. */
 const stubCtx = {

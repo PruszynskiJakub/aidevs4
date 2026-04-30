@@ -2,9 +2,9 @@ import { describe, it, expect, afterEach } from "bun:test";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createJsonlWriter } from "../../../src/infra/log/jsonl.ts";
-import { createEventBus } from "../../../src/infra/events.ts";
-import type { AgentEvent } from "../../../src/types/events.ts";
+import { createJsonlWriter } from "../../../apps/server/src/infra/log/jsonl.ts";
+import { createEventBus } from "../../../apps/server/src/infra/events.ts";
+import type { AgentEvent } from "../../../apps/server/src/types/events.ts";
 
 describe("JsonlWriter", () => {
   let tmpDir: string;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { text, error, resource } from "../../src/types/tool-result.ts";
+import { text, error, resource } from "../../apps/server/src/types/tool-result.ts";
 
 describe("text()", () => {
   it("creates ToolResult with single text part", () => {

@@ -1,9 +1,9 @@
-import type { LLMMessage, LLMToolCall } from "../../src/types/llm.ts";
-import { llm } from "../../src/services/ai/llm.ts";
-import { config } from "../../src/config/index.ts";
-import { getTools, dispatch } from "../../src/tools/index.ts";
-import { promptService } from "../../src/services/ai/prompt.ts";
-import { agentsService as agents } from "../../src/services/agent/agents/agents.ts";
+import type { LLMMessage, LLMToolCall } from "../../apps/server/src/types/llm.ts";
+import { llm } from "../../apps/server/src/services/ai/llm.ts";
+import { config } from "../../apps/server/src/config/index.ts";
+import { getTools, dispatch } from "../../apps/server/src/tools/index.ts";
+import { promptService } from "../../apps/server/src/services/ai/prompt.ts";
+import { agentsService as agents } from "../../apps/server/src/services/agent/agents/agents.ts";
 import { AgentEventEmitter } from "./event_emitter.ts";
 import { makeEventId, parsePlanSteps } from "./types.ts";
 import type { AgentEvent } from "./types.ts";

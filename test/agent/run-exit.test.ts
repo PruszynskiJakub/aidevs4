@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { LLMChatResponse, LLMProvider, LLMToolCall, LLMMessage, LLMAssistantMessage } from "../../src/types/llm.ts";
-import type { RunState } from "../../src/types/run-state.ts";
-import type { RunExit } from "../../src/agent/run-exit.ts";
-import type { WaitResolution } from "../../src/types/wait.ts";
-import { emptyMemoryState } from "../../src/types/memory.ts";
+import type { LLMChatResponse, LLMProvider, LLMToolCall, LLMMessage, LLMAssistantMessage } from "../../apps/server/src/types/llm.ts";
+import type { RunState } from "../../apps/server/src/types/run-state.ts";
+import type { RunExit } from "../../apps/server/src/agent/run-exit.ts";
+import type { WaitResolution } from "../../apps/server/src/types/wait.ts";
+import { emptyMemoryState } from "../../apps/server/src/types/memory.ts";
 
 // Install our own stub registry before loading any agent/loop modules.
 // This shields us from cross-file `mock.module` contamination that
@@ -27,7 +27,7 @@ const toolHandlers: Record<string, () => Promise<{ content: string; isError: boo
   sp87_noop_tool: async () => ({ content: "noop", isError: false }),
 };
 
-mock.module("../../src/tools/registry.ts", () => ({
+mock.module("../../apps/server/src/tools/registry.ts", () => ({
   SEPARATOR: "__",
   getToolMeta: (name: string) => toolMetaByName[name],
   dispatch: async (name: string) => {
@@ -43,15 +43,15 @@ mock.module("../../src/tools/registry.ts", () => ({
   serializeContent: () => "",
 }));
 
-const { runAgent } = await import("../../src/agent/loop.ts");
-const { sessionService } = await import("../../src/agent/session.ts");
-const { bus } = await import("../../src/infra/events.ts");
-const { config } = await import("../../src/config/index.ts");
-const dbOps = await import("../../src/infra/db/index.ts");
+const { runAgent } = await import("../../apps/server/src/agent/loop.ts");
+const { sessionService } = await import("../../apps/server/src/agent/session.ts");
+const { bus } = await import("../../apps/server/src/infra/events.ts");
+const { config } = await import("../../apps/server/src/config/index.ts");
+const dbOps = await import("../../apps/server/src/infra/db/index.ts");
 
-// NOTE: we deliberately do NOT import from "../../src/agent/orchestrator.ts" in this
+// NOTE: we deliberately do NOT import from "../../apps/server/src/agent/orchestrator.ts" in this
 // test file. Other test files (`src/tools/delegate.test.ts`) install
-// process-wide `mock.module("../../src/agent/orchestrator.ts", ...)` stubs, and Bun's
+// process-wide `mock.module("../../apps/server/src/agent/orchestrator.ts", ...)` stubs, and Bun's
 // test runner does not isolate those mocks between files. Instead we
 // reimplement the orchestrator's status-persistence wrapper locally so
 // the real loop code is exercised end-to-end.
@@ -236,7 +236,7 @@ async function localExecuteRun(
   };
 
   // Install our stub LLM provider for the duration of the run.
-  const { llm } = await import("../../src/llm/llm.ts");
+  const { llm } = await import("../../apps/server/src/llm/llm.ts");
   const holder = llm as unknown as Record<string, unknown>;
   const original = holder.chatCompletion;
   holder.chatCompletion = provider.chatCompletion.bind(provider);
@@ -316,7 +316,7 @@ describe("executeRun HITL cycle", () => {
     ]);
 
     // Install the provider for both runAgent calls (initial + resume).
-    const { llm } = await import("../../src/llm/llm.ts");
+    const { llm } = await import("../../apps/server/src/llm/llm.ts");
     const holder = llm as unknown as Record<string, unknown>;
     const original = holder.chatCompletion;
     holder.chatCompletion = provider.chatCompletion.bind(provider);

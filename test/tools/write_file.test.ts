@@ -2,9 +2,9 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { join } from "path";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
-import type { ToolResult } from "../../src/types/tool-result.ts";
-import { createSandbox, _setSandboxForTest } from "../../src/infra/sandbox.ts";
-import write_file from "../../src/tools/write_file.ts";
+import type { ToolResult } from "../../apps/server/src/types/tool-result.ts";
+import { createSandbox, _setSandboxForTest } from "../../apps/server/src/infra/sandbox.ts";
+import write_file from "../../apps/server/src/tools/write_file.ts";
 
 let tmpDir: string;
 let restore: () => void;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { ProviderRegistry } from "../../src/llm/router.ts";
-import type { LLMProvider, LLMChatResponse, ChatCompletionParams, CompletionParams } from "../../src/types/llm.ts";
+import { ProviderRegistry } from "../../apps/server/src/llm/router.ts";
+import type { LLMProvider, LLMChatResponse, ChatCompletionParams, CompletionParams } from "../../apps/server/src/types/llm.ts";
 
 function stubProvider(label: string): LLMProvider & { label: string } {
   return {

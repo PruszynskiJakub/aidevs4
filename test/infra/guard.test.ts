@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { moderateInput, assertNotFlagged, _setClient } from "../../src/infra/guard.ts";
-import type { ModerationResult } from "../../src/types/moderation.ts";
+import { moderateInput, assertNotFlagged, _setClient } from "../../apps/server/src/infra/guard.ts";
+import type { ModerationResult } from "../../apps/server/src/types/moderation.ts";
 
 function makeFakeClient(overrides: {
   flagged?: boolean;

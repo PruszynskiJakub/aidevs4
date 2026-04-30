@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { resolve } from "path";
-import { config } from "../../src/config/index.ts";
+import { config } from "../../apps/server/src/config/index.ts";
 
 // For subprocess tests — avoids depending on config for cwd
 const PROJECT_ROOT = resolve(import.meta.dir, "../..");
@@ -76,7 +76,7 @@ describe("config module", () => {
 describe("config validation (subprocess)", () => {
   it("throws when HUB_API_KEY is missing", async () => {
     const proc = Bun.spawn(
-      ["bun", "-e", "await import('../../src/config/src/config/index.ts')"],
+      ["bun", "-e", "await import('./apps/server/src/config/index.ts')"],
       {
         cwd: PROJECT_ROOT,
         env: { ...process.env, HUB_API_KEY: "" },
@@ -92,7 +92,7 @@ describe("config validation (subprocess)", () => {
 
   it("throws when OPENAI_API_KEY is missing", async () => {
     const proc = Bun.spawn(
-      ["bun", "-e", "await import('../../src/config/src/config/index.ts')"],
+      ["bun", "-e", "await import('./apps/server/src/config/index.ts')"],
       {
         cwd: PROJECT_ROOT,
         env: { ...process.env, OPENAI_API_KEY: "" },
@@ -108,7 +108,7 @@ describe("config validation (subprocess)", () => {
 
   it("lists all missing vars when multiple are absent", async () => {
     const proc = Bun.spawn(
-      ["bun", "-e", "await import('../../src/config/src/config/index.ts')"],
+      ["bun", "-e", "await import('./apps/server/src/config/index.ts')"],
       {
         cwd: PROJECT_ROOT,
         env: { ...process.env, HUB_API_KEY: "", OPENAI_API_KEY: "" },

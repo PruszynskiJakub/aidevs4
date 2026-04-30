@@ -3,10 +3,10 @@ import { join } from "path";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { createHash } from "crypto";
-import type { ToolResult } from "../../src/types/tool-result.ts";
-import type { FileProvider } from "../../src/types/file.ts";
-import { createSandbox, _setSandboxForTest } from "../../src/infra/sandbox.ts";
-import read_file from "../../src/tools/read_file.ts";
+import type { ToolResult } from "../../apps/server/src/types/tool-result.ts";
+import type { FileProvider } from "../../apps/server/src/types/file.ts";
+import { createSandbox, _setSandboxForTest } from "../../apps/server/src/infra/sandbox.ts";
+import read_file from "../../apps/server/src/tools/read_file.ts";
 
 let tmpDir: string;
 let restore: () => void;

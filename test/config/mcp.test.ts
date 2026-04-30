@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { loadMcpConfig } from "../../src/config/mcp.ts";
+import { loadMcpConfig } from "../../apps/server/src/config/mcp.ts";
 
 describe("loadMcpConfig", () => {
   test("loads servers from workspace/system/mcp.json", async () => {

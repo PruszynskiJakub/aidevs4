@@ -1,5 +1,5 @@
 import { describe, it, expect, spyOn, beforeEach, afterEach } from "bun:test";
-import { ConsoleLogger } from "../../../src/infra/log/console.ts";
+import { ConsoleLogger } from "../../../apps/server/src/infra/log/console.ts";
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";

@@ -4,7 +4,7 @@
  * `Runtime` is the typed bag of services every layer ultimately needs.
  * It replaces the constellation of module-level singletons (`bus`,
  * `llm`, `sandbox`, `sessionService`, `agentsService`) that are currently
- * imported ad-hoc across `src/agent/`, `src/infra/`, `src/tools/`.
+ * imported ad-hoc across `agent/`, `infra/`, `tools/`.
  *
  * This file intentionally does NOT wire `Runtime` into any caller. It only
  * defines the shape and the factory. Wiring lands incrementally:

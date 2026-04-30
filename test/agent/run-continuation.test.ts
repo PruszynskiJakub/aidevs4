@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import * as dbOps from "../../src/infra/db/index.ts";
+import * as dbOps from "../../apps/server/src/infra/db/index.ts";
 
 beforeEach(() => {
   dbOps._clearAll();

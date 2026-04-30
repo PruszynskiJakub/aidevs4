@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { escapeXml } from "../../src/utils/xml.ts";
+import { escapeXml } from "../../apps/server/src/utils/xml.ts";
 
 describe("escapeXml", () => {
   it("escapes ampersands", () => {

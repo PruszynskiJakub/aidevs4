@@ -71,7 +71,7 @@ the AG3NTS hub platform (hub.ag3nts.org).
 Workflow per task:
 1. Read the AI Devs 4 task description
 2. Decompose it into small, quasi-tool scripts — each prototyped in playground/
-3. Once a script works, promote it to a generic, reusable tool in src/tools/
+3. Once a script works, promote it to a generic, reusable tool in apps/server/src/tools/
    (or extend an existing one). Tools must not be task-specific — they should be
    broadly applicable across many tasks
 4. Pass the original task to the agent, which can use the new tool alongside
@@ -113,47 +113,22 @@ The agent's toolbox grows with each completed task.
   ├── playground/<task_name>/         # Prototyping area — one dir per task
   │   ├── <task_name>.ts              # Standalone script
   │   └── output/                     # Generated artifacts (gitignored)
-  ├── src/                            # Production agent system
-  │   ├── agent/                      # The brain — loop, orchestration, session, memory
-  │   │   ├── loop.ts                 # Plan/Act state machine
-  │   │   ├── orchestrator.ts         # executeTurn entry point
-  │   │   ├── session.ts              # Session store + output paths
-  │   │   ├── agents.ts               # Agent config loader (.agent.md)
-  │   │   ├── context.ts              # AsyncLocalStorage session context
-  │   │   └── memory/                 # observer, processor, reflector, persistence, generation
-  │   ├── llm/                        # Everything LLM: routing, providers, prompts
-  │   │   ├── llm.ts                  # Provider registry singleton + factory
-  │   │   ├── router.ts               # Model→provider routing logic
-  │   │   ├── openai.ts               # OpenAI adapter
-  │   │   ├── gemini.ts               # Gemini adapter
-  │   │   ├── errors.ts               # LLM error types
-  │   │   └── prompt.ts               # Prompt loader (.md + YAML frontmatter)
-  │   ├── infra/                      # I/O, side effects, external world
-  │   │   ├── file.ts                 # Sandboxed file service
-  │   │   ├── result-store.ts         # Tool call result store (by toolCallId)
-  │   │   ├── guard.ts                # Input moderation (OpenAI Moderation API)
-  │   │   ├── events.ts               # Event bus
-  │   │   ├── browser.ts              # Browser automation (Playwright)
-  │   │   ├── browser-feedback.ts     # Browser visual feedback
-  │   │   ├── browser-interventions.ts # Browser intervention handling
-  │   │   ├── condense.ts             # Context condensation
-  │   │   ├── mcp.ts                  # MCP integration
-  │   │   ├── serper.ts               # Serper search API client
-  │   │   ├── tracing.ts              # Tracing (Langfuse)
-  │   │   ├── langfuse-subscriber.ts  # Langfuse event subscriber
-  │   │   └── log/                    # Logging (console, markdown, composite, jsonl)
-  │   ├── tools/                      # Tool implementations (auto-registered)
-  │   │   ├── registry.ts             # Tool registry and dispatch logic
-  │   │   ├── index.ts                # Explicit tool + schema registration
-  │   │   ├── <tool_name>.ts          # Each exports default ToolDefinition
-  │   │   └── sandbox/                # Code execution sandbox (bridge, prelude)
-  │   ├── config/                     # Environment, paths, MCP configuration
-  │   ├── types/                      # Shared TypeScript interfaces
-  │   ├── prompts/                    # Markdown prompt files (.md + YAML frontmatter)
-  │   ├── utils/                      # Pure helpers (parse, tokens, xml, id, timing, uri)
-  │   ├── cli.ts                      # CLI entry point
-  │   ├── server.ts                   # HTTP server (Hono)
-  │   └── slack.ts                    # Slack bot entry point
+  ├── apps/
+  │   ├── client/                    # Command center web UI scaffold
+  │   │   └── src/
+  │   └── server/
+  │       └── src/                   # Production agent system
+  │           ├── agent/             # The brain — loop, orchestration, session, memory
+  │           ├── llm/               # Everything LLM: routing, providers, prompts
+  │           ├── infra/             # I/O, side effects, external world
+  │           ├── tools/             # Tool implementations
+  │           ├── config/            # Environment, paths, MCP configuration
+  │           ├── types/             # Shared TypeScript interfaces
+  │           ├── prompts/           # Markdown prompt files (.md + YAML frontmatter)
+  │           ├── utils/             # Pure helpers
+  │           ├── cli.ts             # CLI entry point
+  │           ├── server.ts          # HTTP server (Hono)
+  │           └── slack.ts           # Slack bot entry point
   ├── data/                            # Technical runtime data (DB files) — NOT for agent content
   ├── _specs/                         # Task specifications & backlog
   ├── _aidocs/                        # Internal docs (tool standard, course materials)
@@ -166,7 +141,7 @@ The agent's toolbox grows with each completed task.
 
 - Runner: bun test
 - Convention: Test files live next to the source file — xyz.ts → xyz.test.ts
-- Scope: Test src/ code (tools, utils). Playground scripts don't need tests.
+- Scope: Test apps/server/src/ code (tools, utils). Playground scripts don't need tests.
 
 ## Commands
 
@@ -197,7 +172,7 @@ The agent's toolbox grows with each completed task.
 
 ### Errors
 
-- **Throw `DomainError`, not `new Error`.** Defined in `src/types/errors.ts`.
+- **Throw `DomainError`, not `new Error`.** Defined in `apps/server/src/types/errors.ts`.
   Constructor takes `{ type, message, internalMessage?, cause?, provider? }`.
 - **Pick the right `type`** from the 8 categories: `validation` (400),
   `auth` (401), `permission` (403), `not_found` (404), `conflict` (409),
@@ -206,7 +181,7 @@ The agent's toolbox grows with each completed task.
   and the LLM tool result. Never put filesystem paths, env names, raw
   upstream bodies, or stack traces in `message`.
 - **`internalMessage` is for logs only.** Put the diagnostic detail there.
-  The HTTP boundary in `src/server.ts` logs it but does not echo it.
+  The HTTP boundary in `apps/server/src/server.ts` logs it but does not echo it.
 - **At provider boundaries**, map SDK errors via the adapter mapper
   (`toOpenAIDomainError`, `toGeminiDomainError`). Never let raw
   `RateLimitError` etc. flow into application code.
@@ -217,7 +192,7 @@ The agent's toolbox grows with each completed task.
 
 ### Events
 
-- **Registry**: `AgentEvent` flat discriminated union in `src/types/events.ts` —
+- **Registry**: `AgentEvent` flat discriminated union in `apps/server/src/types/events.ts` —
   each variant owns its `type` literal and all fields (envelope + payload) in
   one shape. `switch (e.type)` narrows everything at once.
 - **Helpers**: `EventType = AgentEvent["type"]`,
@@ -237,7 +212,7 @@ The agent's toolbox grows with each completed task.
 
 ## Prompts
 
-- **Format**: Every prompt is a `.md` file in `src/prompts/` with YAML frontmatter.
+- **Format**: Every prompt is a `.md` file in `apps/server/src/prompts/` with YAML frontmatter.
 - **Frontmatter fields**: `model` (required by convention), `temperature` (optional).
   ```yaml
   ---
@@ -247,7 +222,7 @@ The agent's toolbox grows with each completed task.
   ```
 - **Placeholders**: Use `{{variable_name}}` — rendered by `promptService.load()`.
   Missing variables throw; extra variables are silently ignored.
-- **Service**: `promptService` from `src/llm/prompt.ts`. Call
+- **Service**: `promptService` from `apps/server/src/llm/prompt.ts`. Call
   `promptService.load("name", { key: "value" })` → returns
   `{ model?, temperature?, content }`.
 - **Consumers wire the result** into the LLM service themselves — the prompt
@@ -259,17 +234,17 @@ The agent's toolbox grows with each completed task.
 ## Tools
 
 - **Interface**: Each tool is a `{ name, handler }` satisfying `ToolDefinition`
-  (src/types/tool.ts). Export as `export default { … } satisfies ToolDefinition`.
+  (apps/server/src/types/tool.ts). Export as `export default { … } satisfies ToolDefinition`.
 - **Return type**: Handlers return `Promise<ToolResult>` (from
-  `src/types/tool-result.ts`). Use the `text(s)` helper for simple text results,
+  `apps/server/src/types/tool-result.ts`). Use the `text(s)` helper for simple text results,
   or construct `{ content: ContentPart[] }` for multi-part results (e.g. text +
   resource refs). Use `resource(uri, description, mimeType?)` to create
   `ResourceRef` content parts for large files. Never return `Document` — that
   type no longer exists.
-- **File convention**: `src/tools/<tool_name>.ts` — naming is snake_case.
+- **File convention**: `apps/server/src/tools/<tool_name>.ts` — naming is snake_case.
   Schemas are Zod objects co-located in the tool file (not separate JSON files).
 - **Registration**: Add the tool import and `register()` call in
-  `src/tools/index.ts`. No auto-discovery — every tool is explicitly wired.
+  `apps/server/src/tools/index.ts`. No auto-discovery — every tool is explicitly wired.
 - **Schemas**: Zod schemas in the tool file. Registry converts to JSON Schema
   via `z.toJSONSchema()` with OpenAI `strict: true`. Avoid `oneOf`, `anyOf`,
   type arrays — these are not supported by OpenAI strict mode.
@@ -279,9 +254,9 @@ The agent's toolbox grows with each completed task.
   `${tool}__${action}` (double-underscore separator). Each action has its own
   `description` and `parameters`. Handler switches on `action`.
   See `agents_hub` as the reference pattern.
-- **File I/O**: Always use `files` service (`src/infra/file.ts`), never raw `fs`.
+- **File I/O**: Always use the sandbox/file infrastructure (`apps/server/src/infra/sandbox.ts`, `apps/server/src/infra/fs.ts`), never raw `fs`.
 - **Output files**: Use `sessionService.outputPath(filename)` from
-  `src/agent/session.ts` for any tool-generated files. Output lands under
+  `apps/server/src/agent/session.ts` for any tool-generated files. Output lands under
   `workspace/sessions/{date}/{sessionId}/{agentName}/output/`.
 - **Errors**: Throw `Error` — dispatcher catches and returns error as plain text
   with `isError: true`.
@@ -298,4 +273,3 @@ The agent's toolbox grows with each completed task.
   and documenting requirements before implementation.
 
 ## Playground
-

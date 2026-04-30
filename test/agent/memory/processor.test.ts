@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { processMemory, flushMemory } from "../../../src/agent/memory/processor.ts";
-import { emptyMemoryState } from "../../../src/types/memory.ts";
-import type { MemoryState } from "../../../src/types/memory.ts";
-import type { LLMProvider, LLMMessage } from "../../../src/types/llm.ts";
+import { processMemory, flushMemory } from "../../../apps/server/src/agent/memory/processor.ts";
+import { emptyMemoryState } from "../../../apps/server/src/types/memory.ts";
+import type { MemoryState } from "../../../apps/server/src/types/memory.ts";
+import type { LLMProvider, LLMMessage } from "../../../apps/server/src/types/llm.ts";
 
 function createMockProvider(content: string = "🟡 New observation"): LLMProvider {
   return {

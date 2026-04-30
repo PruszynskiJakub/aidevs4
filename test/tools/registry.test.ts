@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { describe, it, expect, beforeEach } from "bun:test";
-import { register, getTools, getToolsByName, dispatch, reset, serializeContent, getToolMeta } from "../../src/tools/registry.ts";
-import type { ToolDefinition } from "../../src/types/tool.ts";
-import { text } from "../../src/types/tool-result.ts";
+import { register, getTools, getToolsByName, dispatch, reset, serializeContent, getToolMeta } from "../../apps/server/src/tools/registry.ts";
+import type { ToolDefinition } from "../../apps/server/src/types/tool.ts";
+import { text } from "../../apps/server/src/types/tool-result.ts";
 
 beforeEach(() => {
   reset();

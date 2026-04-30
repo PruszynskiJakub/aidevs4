@@ -7,13 +7,13 @@
     "read_csv_structure": "bun run playground/read_csv_structure/read_csv_structure.ts",
     "search_csv": "bun run playground/search_csv/search_csv.ts",
     "transform_csv": "bun run playground/transform_csv/transform_csv.ts",
-    "agent": "bun run src/cli.ts",
-    "server": "bun run src/server.ts",
-    "slack": "bun run src/slack.ts",
+    "agent": "bun run apps/server/src/cli.ts",
+    "server": "bun run apps/server/src/server.ts",
+    "slack": "bun run apps/server/src/slack.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "bun run src/infra/db/migrate.ts",
-    "eval": "bun run src/evals/runner.ts",
-    "eval:tool-selection": "bun run src/evals/runner.ts --dataset tool-selection"
+    "db:migrate": "bun run apps/server/src/infra/db/migrate.ts",
+    "eval": "bun run apps/server/src/evals/runner.ts",
+    "eval:tool-selection": "bun run apps/server/src/evals/runner.ts --dataset tool-selection"
   },
   "devDependencies": {
     "@types/bun": "latest",

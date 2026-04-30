@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { serializeMessages } from "../../../src/agent/memory/observer.ts";
-import type { LLMMessage } from "../../../src/types/llm.ts";
+import { serializeMessages } from "../../../apps/server/src/agent/memory/observer.ts";
+import type { LLMMessage } from "../../../apps/server/src/types/llm.ts";
 
 describe("serializeMessages", () => {
   test("serializes user messages", () => {

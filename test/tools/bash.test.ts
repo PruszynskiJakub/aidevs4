@@ -1,8 +1,8 @@
 import { describe, it, expect } from "bun:test";
 import { resolve } from "path";
-import { config } from "../../src/config/index.ts";
-import type { ToolResult } from "../../src/types/tool-result.ts";
-import bash from "../../src/tools/bash.ts";
+import { config } from "../../apps/server/src/config/index.ts";
+import type { ToolResult } from "../../apps/server/src/types/tool-result.ts";
+import bash from "../../apps/server/src/tools/bash.ts";
 
 /** Extract text from ToolResult */
 function getText(result: ToolResult): string {

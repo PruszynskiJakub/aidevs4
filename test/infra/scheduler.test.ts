@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
-import { scheduler, parseDelay, delayToRunAt } from "../../src/infra/scheduler.ts";
-import * as dbOps from "../../src/infra/db/index.ts";
-import type { DbJob } from "../../src/types/db.ts";
+import { scheduler, parseDelay, delayToRunAt } from "../../apps/server/src/infra/scheduler.ts";
+import * as dbOps from "../../apps/server/src/infra/db/index.ts";
+import type { DbJob } from "../../apps/server/src/types/db.ts";
 
 // ── Helpers ────────────────────────────────────────────────
 

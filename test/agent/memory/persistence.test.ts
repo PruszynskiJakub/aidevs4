@@ -1,8 +1,8 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { saveState, loadState, saveDebugArtifact } from "../../../src/agent/memory/persistence.ts";
-import { emptyMemoryState } from "../../../src/types/memory.ts";
+import { saveState, loadState, saveDebugArtifact } from "../../../apps/server/src/agent/memory/persistence.ts";
+import { emptyMemoryState } from "../../../apps/server/src/types/memory.ts";
 import { join } from "node:path";
-import { config } from "../../../src/config/index.ts";
+import { config } from "../../../apps/server/src/config/index.ts";
 import { rmSync, existsSync, readFileSync, readdirSync } from "node:fs";
 
 const TEST_SESSION = "test-persistence-" + Date.now();

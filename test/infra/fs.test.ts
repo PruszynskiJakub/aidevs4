@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import * as fs from "../../src/infra/fs.ts";
+import * as fs from "../../apps/server/src/infra/fs.ts";
 
 let dir: string;
 

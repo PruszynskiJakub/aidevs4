@@ -1,7 +1,7 @@
 import { join, resolve } from "path";
 
-// src/config/paths.ts lives in src/config/ — project root is two levels up
-export const PROJECT_ROOT = resolve(import.meta.dir, "../..");
+// apps/server/src/config/paths.ts lives four levels below the project root.
+export const PROJECT_ROOT = resolve(import.meta.dir, "../../../..");
 export const WORKSPACE_DIR = join(PROJECT_ROOT, "workspace");
 export const SESSIONS_DIR = join(WORKSPACE_DIR, "sessions");
 
@@ -14,7 +14,7 @@ export const BROWSER_DIR = join(WORKSPACE_DIR, "browser");
 
 // Well-known directories under workspace/system/
 export const AGENTS_DIR = join(SYSTEM_DIR, "agents");
-export const PROMPTS_DIR = join(PROJECT_ROOT, "src", "prompts");
+export const PROMPTS_DIR = join(PROJECT_ROOT, "apps", "server", "src", "prompts");
 
 // Data directories (outside workspace — runtime/infra data)
 export const DATA_DIR = join(PROJECT_ROOT, "data");

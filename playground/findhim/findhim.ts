@@ -1,5 +1,5 @@
 import { join } from "path";
-import { haversine } from "../../src/tools/geo_distance.ts";
+import { haversine } from "../../apps/server/src/tools/geo_distance.ts";
 
 const HUB_API_KEY = process.env.HUB_API_KEY!;
 const BASE = "https://hub.ag3nts.org";
@@ -8,7 +8,7 @@ await Bun.write(join(OUT, ".keep"), ""); // ensure dir exists
 
 // --- Step 1: Load suspects from previous task ---
 const suspects: { name: string; surname: string; born: number }[] = JSON.parse(
-  await Bun.file(join(import.meta.dir, "../../src/output/results_job_contains_transport.json")).text(),
+  await Bun.file(join(import.meta.dir, "../../apps/server/src/output/results_job_contains_transport.json")).text(),
 );
 console.log(`Suspects: ${suspects.map((s) => `${s.name} ${s.surname}`).join(", ")}`);
 

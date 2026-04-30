@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { mkdtemp, rm, readFile, readdir } from "node:fs/promises";
 import { join, basename, dirname } from "node:path";
 import { tmpdir } from "node:os";
-import { MarkdownLogger, formatJson } from "../../../src/infra/log/markdown.ts";
-import { randomSessionId } from "../../../src/utils/id.ts";
-import { createSandbox } from "../../../src/infra/sandbox.ts";
+import { MarkdownLogger, formatJson } from "../../../apps/server/src/infra/log/markdown.ts";
+import { randomSessionId } from "../../../apps/server/src/utils/id.ts";
+import { createSandbox } from "../../../apps/server/src/infra/sandbox.ts";
 
 function makeLogger(dir: string, sessionId?: string) {
   const fs = createSandbox({ writePaths: [dir], blockedWritePaths: [] });

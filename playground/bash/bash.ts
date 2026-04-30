@@ -1,5 +1,5 @@
-import { createOpenAIProvider } from "../../src/providers/openai.ts";
-import type { LLMMessage, LLMTool, LLMToolCall } from "../../src/types/llm.ts";
+import { createOpenAIProvider } from "../../apps/server/src/providers/openai.ts";
+import type { LLMMessage, LLMTool, LLMToolCall } from "../../apps/server/src/types/llm.ts";
 import { $ } from "bun";
 
 // ── Config ──────────────────────────────────────────────────────────

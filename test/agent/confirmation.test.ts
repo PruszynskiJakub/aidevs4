@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "bun:test";
 import { z } from "zod";
-import type { LLMToolCall } from "../../src/types/llm.ts";
-import type { ToolDefinition } from "../../src/types/tool.ts";
-import { text } from "../../src/types/tool-result.ts";
-import { bus } from "../../src/infra/events.ts";
-import { register, reset as resetRegistry } from "../../src/tools/registry.ts";
+import type { LLMToolCall } from "../../apps/server/src/types/llm.ts";
+import type { ToolDefinition } from "../../apps/server/src/types/tool.ts";
+import { text } from "../../apps/server/src/types/tool-result.ts";
+import { bus } from "../../apps/server/src/infra/events.ts";
+import { register, reset as resetRegistry } from "../../apps/server/src/tools/registry.ts";
 import {
   confirmBatch,
   takePendingConfirmation,
-} from "../../src/agent/confirmation.ts";
+} from "../../apps/server/src/agent/confirmation.ts";
 
 // Register real test tools — avoids mock.module leakage across test files.
 const scrapeTool: ToolDefinition = {

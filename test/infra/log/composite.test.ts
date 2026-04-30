@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { createCompositeLogger } from "../../../src/infra/log/composite.ts";
-import type { Logger } from "../../../src/types/logger.ts";
+import { createCompositeLogger } from "../../../apps/server/src/infra/log/composite.ts";
+import type { Logger } from "../../../apps/server/src/types/logger.ts";
 
 function mockLogger(): Logger & { calls: Record<string, unknown[][]> } {
   const calls: Record<string, unknown[][]> = {};

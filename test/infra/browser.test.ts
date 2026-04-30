@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, mock } from "bun:test";
-import { _setBrowserPoolForTest, type BrowserPool, type BrowserSession } from "../../src/infra/browser.ts";
-import { createBrowserFeedbackTracker } from "../../src/infra/browser-feedback.ts";
-import { createBrowserInterventions } from "../../src/infra/browser-interventions.ts";
+import { _setBrowserPoolForTest, type BrowserPool, type BrowserSession } from "../../apps/server/src/infra/browser.ts";
+import { createBrowserFeedbackTracker } from "../../apps/server/src/infra/browser-feedback.ts";
+import { createBrowserInterventions } from "../../apps/server/src/infra/browser-interventions.ts";
 
 function createMockSession(overrides?: Partial<BrowserSession>): BrowserSession {
   let running = false;

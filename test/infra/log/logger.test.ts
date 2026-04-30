@@ -1,5 +1,5 @@
 import { describe, it, expect, spyOn, beforeEach, afterEach } from "bun:test";
-import { log } from "../../../src/infra/log/logger.ts";
+import { log } from "../../../apps/server/src/infra/log/logger.ts";
 
 const RESET = "\x1b[0m";
 const CYAN = "\x1b[36m";

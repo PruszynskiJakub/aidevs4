@@ -20,7 +20,7 @@ interface LocationResult {
   response: unknown;
 }
 
-const inputPath = join(import.meta.dir, "../../src/output/results_job_contains_transport.json");
+const inputPath = join(import.meta.dir, "../../apps/server/src/output/results_job_contains_transport.json");
 const outputPath = join(import.meta.dir, "output/access_level.json");
 
 const people: Person[] = JSON.parse(await readFile(inputPath, "utf-8"));

@@ -1,6 +1,6 @@
 import { describe, expect, test, mock } from "bun:test";
-import { reflect } from "../../../src/agent/memory/reflector.ts";
-import type { LLMProvider } from "../../../src/types/llm.ts";
+import { reflect } from "../../../apps/server/src/agent/memory/reflector.ts";
+import type { LLMProvider } from "../../../apps/server/src/types/llm.ts";
 
 function createMockProvider(responses: string[]): LLMProvider {
   let callIndex = 0;
