@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createHash } from "crypto";
 import { join } from "path";
-import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import type { ContentPart } from "../types/llm.ts";
 import { text, resource } from "../types/tool-result.ts";
@@ -381,7 +381,7 @@ async function takeScreenshot(payload: { full_page: boolean }): Promise<ToolResu
 
 // ── Handler dispatch ────────────────────────────────────────────
 
-async function browserHandler(args: Record<string, unknown>): Promise<ToolResult> {
+async function browserHandler(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "navigate":

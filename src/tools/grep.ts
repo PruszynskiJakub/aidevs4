@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import { sandbox as files } from "../infra/sandbox.ts";
@@ -10,7 +10,7 @@ const MAX_TOTAL_LINES = 200;
 const MAX_FILES_WITH_MATCHES = 50;
 const PER_FILE_CAP = 20;
 
-async function grep(args: Record<string, unknown>): Promise<ToolResult> {
+async function grep(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
   validateKeys(args);
 
   const pattern = args.pattern as string;

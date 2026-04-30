@@ -1,6 +1,6 @@
 import { basename, extname } from "path";
 import { z } from "zod";
-import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import type { ContentPart } from "../types/llm.ts";
@@ -75,7 +75,7 @@ async function ask(payload: {
   return text(answer);
 }
 
-async function documentProcessor(args: Record<string, unknown>): Promise<ToolResult> {
+async function documentProcessor(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "ask":

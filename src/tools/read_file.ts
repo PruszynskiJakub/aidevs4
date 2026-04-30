@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import { sandbox as files } from "../infra/sandbox.ts";
@@ -7,7 +7,7 @@ import { assertMaxLength, validateKeys } from "../utils/parse.ts";
 import { md5 } from "../utils/hash.ts";
 import { DomainError } from "../types/errors.ts";
 
-async function read_file(args: Record<string, unknown>): Promise<ToolResult> {
+async function read_file(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
   validateKeys(args);
 
   const filePath = args.file_path as string;

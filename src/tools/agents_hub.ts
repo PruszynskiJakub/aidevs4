@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ToolDefinition } from "../types/tool.ts";
+import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import { sandbox as files, resolveInput } from "../infra/sandbox.ts";
@@ -153,7 +153,7 @@ async function verifyBatch(payload: {
   return text(parts.join("\n"));
 }
 
-async function agentsHub(args: Record<string, unknown>): Promise<ToolResult> {
+async function agentsHub(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "verify":
