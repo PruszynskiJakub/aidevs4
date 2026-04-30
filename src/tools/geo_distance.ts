@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
-import { sandbox as files } from "../infra/sandbox.ts";
+import { sandbox as defaultFiles } from "../infra/sandbox.ts";
 import { config } from "../config/index.ts";
 import { safeParse, assertMaxLength, assertNumericBounds, safePath } from "../utils/parse.ts";
 import { DomainError } from "../types/errors.ts";
@@ -60,11 +60,11 @@ async function findNearby(payload: {
   safePath(payload.queries_file, "queries_file");
   assertNumericBounds(payload.radius_km, "radius_km", 0.001, 40_075);
 
-  await files.checkFileSize(payload.references_file, config.limits.maxFileSize);
-  await files.checkFileSize(payload.queries_file, config.limits.maxFileSize);
+  await defaultFiles.checkFileSize(payload.references_file, config.limits.maxFileSize);
+  await defaultFiles.checkFileSize(payload.queries_file, config.limits.maxFileSize);
 
-  const refsRaw = await files.readText(payload.references_file);
-  const queriesRaw = await files.readText(payload.queries_file);
+  const refsRaw = await defaultFiles.readText(payload.references_file);
+  const queriesRaw = await defaultFiles.readText(payload.queries_file);
 
   const references = validatePoints(safeParse(refsRaw, "references"), "references");
   const queries = validatePoints(safeParse(queriesRaw, "queries"), "queries");
@@ -102,6 +102,7 @@ function distance(payload: {
 }
 
 async function geoDistance(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
+  const files = ctx?.runCtx?.files ?? defaultFiles;
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "find_nearby":

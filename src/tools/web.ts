@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text, resource } from "../types/tool-result.ts";
-import { sandbox as files } from "../infra/sandbox.ts";
+import { sandbox as defaultFiles } from "../infra/sandbox.ts";
 import { sessionService } from "../agent/session.ts";
 import { config } from "../config";
 import { safeFilename, assertMaxLength } from "../utils/parse.ts";
@@ -49,7 +49,7 @@ async function download(payload: { url: string; filename: string }): Promise<Too
   }
 
   const path = await sessionService.outputPath(payload.filename);
-  await files.write(path, response);
+  await defaultFiles.write(path, response);
 
   const contentTypeHeader = response.headers.get("content-type");
   const mimeType = contentTypeHeader || inferMimeType(payload.filename);
@@ -109,7 +109,7 @@ async function scrape(payload: { urls: string[] }): Promise<ToolResult> {
     if (result.status === "fulfilled") {
       summaries.push(`## ${urls[i]}\n${result.value.summary}`);
       if (result.value.fullPath) {
-        const sizeKB = Math.ceil((await files.stat(result.value.fullPath)).size / 1024);
+        const sizeKB = Math.ceil((await defaultFiles.stat(result.value.fullPath)).size / 1024);
         resourceRefs.push(resource(result.value.fullPath, `Full content of ${urls[i]} (${sizeKB}KB)`));
       }
     } else {
@@ -127,6 +127,7 @@ async function scrape(payload: { urls: string[] }): Promise<ToolResult> {
 }
 
 async function web(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
+  const files = ctx?.runCtx?.files ?? defaultFiles;
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "download":

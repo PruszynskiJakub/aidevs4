@@ -4,7 +4,7 @@ import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
 import type { ContentPart } from "../types/llm.ts";
-import { sandbox as files } from "../infra/sandbox.ts";
+import { sandbox as defaultFiles } from "../infra/sandbox.ts";
 import { llm } from "../llm/llm.ts";
 import { assertMaxLength, safePath } from "../utils/parse.ts";
 import { config } from "../config";
@@ -22,14 +22,14 @@ async function buildContentPart(path: string): Promise<ContentPart> {
     });
   }
 
-  await files.checkFileSize(path, config.limits.maxFileSize);
+  await defaultFiles.checkFileSize(path, config.limits.maxFileSize);
 
   if (IMAGE_EXTENSIONS.has(ext)) {
-    const buffer = await files.readBinary(path);
+    const buffer = await defaultFiles.readBinary(path);
     return { type: "image", data: buffer.toString("base64"), mimeType: inferMimeType(path) };
   }
 
-  const content = await files.readText(path);
+  const content = await defaultFiles.readText(path);
   return { type: "text", text: `--- FILE: ${basename(path)} ---\n${content}` };
 }
 
@@ -76,6 +76,7 @@ async function ask(payload: {
 }
 
 async function documentProcessor(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
+  const files = ctx?.runCtx?.files ?? defaultFiles;
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "ask":

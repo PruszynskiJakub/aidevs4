@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import { text } from "../types/tool-result.ts";
-import { sandbox as files, resolveInput } from "../infra/sandbox.ts";
+import { sandbox as defaultFiles, resolveInput } from "../infra/sandbox.ts";
 import { config } from "../config/index.ts";
 import { safeParse, validateKeys, assertMaxLength, safePath } from "../utils/parse.ts";
 import { hubPost, stringify } from "../utils/hub-fetch.ts";
@@ -60,10 +60,10 @@ async function apiBatch(payload: {
   const fieldMap: Record<string, string> = safeParse(payload.field_map_json, "field_map_json");
   validateKeys(fieldMap);
 
-  await files.checkFileSize(payload.data_file, config.limits.maxFileSize);
+  await defaultFiles.checkFileSize(payload.data_file, config.limits.maxFileSize);
 
   let rows: Record<string, unknown>[];
-  const content = await files.readText(payload.data_file);
+  const content = await defaultFiles.readText(payload.data_file);
   const parsed = safeParse<unknown>(content, "data_file");
   if (!Array.isArray(parsed)) {
     throw new DomainError({ type: "validation", message: "JSON data file must contain an array" });
@@ -90,7 +90,7 @@ async function apiBatch(payload: {
       results.push({ input: row, response });
     } catch (err) {
       results.push({ input: row, response: err instanceof Error ? err.message : String(err) });
-      await files.write(payload.output_file, JSON.stringify(results, null, 2));
+      await defaultFiles.write(payload.output_file, JSON.stringify(results, null, 2));
       throw new DomainError({
         type: "provider",
         provider: "ag3nts-hub",
@@ -100,7 +100,7 @@ async function apiBatch(payload: {
     }
   }
 
-  await files.write(payload.output_file, JSON.stringify(results, null, 2));
+  await defaultFiles.write(payload.output_file, JSON.stringify(results, null, 2));
 
   const parts = results.map((r, i) => `Row ${i + 1}/${results.length}: ${stringify(r.response)}`);
   return text(parts.join("\n"));
@@ -137,7 +137,7 @@ async function verifyBatch(payload: {
       results.push({ index: i, answer: answers[i], response });
     } catch (err) {
       results.push({ index: i, answer: answers[i], response: err instanceof Error ? err.message : String(err) });
-      await files.write(payload.output_file, JSON.stringify(results, null, 2));
+      await defaultFiles.write(payload.output_file, JSON.stringify(results, null, 2));
       throw new DomainError({
         type: "provider",
         provider: "ag3nts-hub",
@@ -147,13 +147,14 @@ async function verifyBatch(payload: {
     }
   }
 
-  await files.write(payload.output_file, JSON.stringify(results, null, 2));
+  await defaultFiles.write(payload.output_file, JSON.stringify(results, null, 2));
 
   const parts = results.map((r) => `Item ${r.index}: ${stringify(r.response)}`);
   return text(parts.join("\n"));
 }
 
 async function agentsHub(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
+  const files = ctx?.runCtx?.files ?? defaultFiles;
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "verify":

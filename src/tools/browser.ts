@@ -5,7 +5,7 @@ import type { ToolDefinition, ToolCallContext } from "../types/tool.ts";
 import type { ToolResult } from "../types/tool-result.ts";
 import type { ContentPart } from "../types/llm.ts";
 import { text, resource } from "../types/tool-result.ts";
-import { sandbox as files } from "../infra/sandbox.ts";
+import { sandbox as defaultFiles } from "../infra/sandbox.ts";
 import { browserPool, type BrowserSession } from "../infra/browser.ts";
 import { sessionService } from "../agent/session.ts";
 import { config } from "../config/index.ts";
@@ -98,15 +98,15 @@ async function savePageArtifacts(
   const pagesDir = config.browser.pagesDir;
   const [struct] = await Promise.all([
     extractDomStructure(page),
-    files.mkdir(pagesDir),
+    defaultFiles.mkdir(pagesDir),
   ]);
 
   const textPath = join(pagesDir, `${slug}.txt`);
   const structPath = join(pagesDir, `${slug}.struct.txt`);
 
   await Promise.all([
-    files.write(textPath, numbered),
-    files.write(structPath, struct),
+    defaultFiles.write(textPath, numbered),
+    defaultFiles.write(structPath, struct),
   ]);
 
   return { textPath, structPath, lineCount: numbered.split("\n").length };
@@ -214,7 +214,7 @@ async function navigate(payload: { url: string }): Promise<ToolResult> {
 
   const knowledgePath = join("workspace", "knowledge", "browser", `${parsed.hostname}.md`);
   const fullKnowledgePath = join(config.paths.projectRoot, knowledgePath);
-  if (await files.exists(fullKnowledgePath)) {
+  if (await defaultFiles.exists(fullKnowledgePath)) {
     content.push({
       type: "text",
       text: `\nNote: Instruction file found at ${knowledgePath} — read it for known patterns and recipes.`,
@@ -360,7 +360,7 @@ async function takeScreenshot(payload: { full_page: boolean }): Promise<ToolResu
   }
 
   const path = await sessionService.outputPath("screenshot.png");
-  await files.write(path, new Response(buffer));
+  await defaultFiles.write(path, new Response(buffer));
 
   const relativePath = sessionService.toSessionPath(path);
   const base64 = Buffer.from(buffer).toString("base64");
@@ -382,6 +382,7 @@ async function takeScreenshot(payload: { full_page: boolean }): Promise<ToolResu
 // ── Handler dispatch ────────────────────────────────────────────
 
 async function browserHandler(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
+  const files = ctx?.runCtx?.files ?? defaultFiles;
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "navigate":
@@ -414,7 +415,7 @@ export default {
         }),
       },
       evaluate: {
-        description: "Execute a JavaScript expression in the page context and return the result. Preferred way to extract data — returns only what the expression produces. Use CSS selectors from .struct.txt files.",
+        description: "Execute a JavaScript expression in the page context and return the result. Preferred way to extract data — returns only what the expression produces. Use CSS selectors from .struct.txt defaultFiles.",
         schema: z.object({
           expression: z.string().describe("JavaScript expression to evaluate in the page (max 10,000 chars). Must return a serializable value."),
         }),
