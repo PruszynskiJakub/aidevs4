@@ -3,7 +3,7 @@ import { dirname, join } from "path";
 import { config } from "../config/index.ts";
 import * as fs from "./fs.ts";
 import { safeParse } from "../utils/parse.ts";
-import { requireSessionId } from "../agent/context.ts";
+import { getSessionId } from "../agent/context.ts";
 import type { BrowserFeedbackTracker, BrowserInterventions, BrowserSession, BrowserPool } from "../types/browser.ts";
 import { createBrowserFeedbackTracker } from "./browser-feedback.ts";
 import { createBrowserInterventions } from "./browser-interventions.ts";
@@ -125,9 +125,12 @@ function createBrowserPool(): BrowserPool {
   }
 
   const pool: BrowserPool = {
-    get(): BrowserSession {
-      const sessionId = requireSessionId();
-      const existing = sessions.get(sessionId);
+    get(sessionId?: string): BrowserSession {
+      const id = sessionId ?? getSessionId();
+      if (!id) {
+        throw new DomainError({ type: "validation", message: "No active session context" });
+      }
+      const existing = sessions.get(id);
       if (existing) return existing;
 
       if (sessions.size >= config.browser.maxPoolSize) {
@@ -138,7 +141,7 @@ function createBrowserPool(): BrowserPool {
       }
 
       const session = createBrowserSession();
-      sessions.set(sessionId, session);
+      sessions.set(id, session);
       startIdleCheck();
       return session;
     },

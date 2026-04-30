@@ -106,15 +106,17 @@ async function handleStructuredContent(
   structured: unknown,
   toolName: string,
   serverName: string,
+  sessionId: string | undefined,
 ): Promise<ContentPart[]> {
   const json = JSON.stringify(structured);
   const tokens = estimateTokens(json);
 
-  if (tokens <= STRUCTURED_CONTENT_TOKEN_LIMIT || !getSessionId()) {
+  const effectiveSessionId = sessionId ?? getSessionId();
+  if (tokens <= STRUCTURED_CONTENT_TOKEN_LIMIT || !effectiveSessionId) {
     return [{ type: "text", text: json }];
   }
 
-  const path = await sessionService.outputPath(`${serverName}-${toolName}.json`);
+  const path = await sessionService.outputPath(`${serverName}-${toolName}.json`, effectiveSessionId);
   await sandbox.write(path, json);
 
   const sizeKB = Math.ceil(json.length / 1024);
@@ -293,7 +295,10 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
                 properties: {},
               };
 
-              const handler = async (args: Record<string, unknown>): Promise<ToolResult> => {
+              const handler = async (
+                args: Record<string, unknown>,
+                ctx?: import("../types/tool.ts").ToolCallContext,
+              ): Promise<ToolResult> => {
                 const srv = servers.get(serverName);
                 if (!srv) {
                   return toolError(`MCP server "${serverName}" is disconnected`);
@@ -312,7 +317,9 @@ export function createMcpService(llmProvider: LLMProvider): McpService {
 
                   const structured = (result as Record<string, unknown>).structuredContent;
                   if (structured != null) {
-                    const parts = await handleStructuredContent(structured, tool.name, serverName);
+                    const parts = await handleStructuredContent(
+                      structured, tool.name, serverName, ctx?.runCtx?.sessionId,
+                    );
                     content.push(...parts);
                   }
 

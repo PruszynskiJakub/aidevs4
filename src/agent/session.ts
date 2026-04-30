@@ -216,40 +216,45 @@ export function getSessionWorkingDir(sessionId?: string): string {
 function createSessionPaths(fileService: FileProvider, sessionsDir: string) {
   let fallbackSessionId: string | undefined;
 
-  const getEffectiveSessionId = (): string => {
-    const id = getSessionId();
-    if (id) return id;
+  /**
+   * Resolve the active sessionId. Prefer an explicitly-passed value;
+   * fall back to the ALS lookup; finally generate a one-shot fallback
+   * for callers that have no session context (tests, scripts).
+   */
+  const getEffectiveSessionId = (sessionId?: string): string => {
+    const explicit = sessionId ?? getSessionId();
+    if (explicit) return explicit;
     if (!fallbackSessionId) fallbackSessionId = randomSessionId();
     return fallbackSessionId;
   };
 
   /** workspace/sessions/{YYYY-MM-DD}/{sessionId} */
-  const sessionDir = (dateFolder?: string): string => {
+  const sessionDir = (dateFolder?: string, sessionId?: string): string => {
     const date = dateFolder ?? dateFolderNow();
-    return join(sessionsDir, date, getEffectiveSessionId());
+    return join(sessionsDir, date, getEffectiveSessionId(sessionId));
   };
 
   return {
     getEffectiveSessionId,
     sessionDir,
     /** workspace/sessions/{YYYY-MM-DD}/{sessionId}/log/ */
-    logDir(dateFolder?: string): string { return join(sessionDir(dateFolder), "log"); },
+    logDir(dateFolder?: string, sessionId?: string): string { return join(sessionDir(dateFolder, sessionId), "log"); },
     /** workspace/sessions/{YYYY-MM-DD}/{sessionId}/shared/ */
-    sharedDir(dateFolder?: string): string { return join(sessionDir(dateFolder), "shared"); },
-    async ensureSessionDir(): Promise<void> { await fileService.mkdir(sessionDir()); },
-    async outputPath(filename: string): Promise<string> {
-      const dir = join(sessionDir(), getAgentName(), "output");
+    sharedDir(dateFolder?: string, sessionId?: string): string { return join(sessionDir(dateFolder, sessionId), "shared"); },
+    async ensureSessionDir(sessionId?: string): Promise<void> { await fileService.mkdir(sessionDir(undefined, sessionId)); },
+    async outputPath(filename: string, sessionId?: string, agentName?: string): Promise<string> {
+      const dir = join(sessionDir(undefined, sessionId), agentName ?? getAgentName(), "output");
       await fileService.mkdir(dir);
       return join(dir, `${randomSessionId()}${extname(filename)}`);
     },
-    toSessionPath(absolutePath: string): string {
-      const marker = `/${getEffectiveSessionId()}/`;
+    toSessionPath(absolutePath: string, sessionId?: string): string {
+      const marker = `/${getEffectiveSessionId(sessionId)}/`;
       const idx = absolutePath.indexOf(marker);
       return idx !== -1 ? absolutePath.slice(idx + marker.length) : absolutePath;
     },
-    resolveSessionPath(pathOrRelative: string): string {
+    resolveSessionPath(pathOrRelative: string, sessionId?: string): string {
       if (pathOrRelative.startsWith("/")) return pathOrRelative;
-      return resolve(join(sessionDir(), pathOrRelative));
+      return resolve(join(sessionDir(undefined, sessionId), pathOrRelative));
     },
     _clearFallback(): void { fallbackSessionId = undefined; },
   };

@@ -63,7 +63,7 @@ export function registerRaw(
   name: string,
   description: string,
   parameters: Record<string, unknown>,
-  handler: (args: Record<string, unknown>) => Promise<ToolResult>,
+  handler: (args: Record<string, unknown>, ctx?: import("../types/tool.ts").ToolCallContext) => Promise<ToolResult>,
   annotations?: ToolAnnotations,
 ): void {
   if (handlers.has(name)) {

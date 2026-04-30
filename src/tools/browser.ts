@@ -15,8 +15,8 @@ import { DomainError } from "../types/errors.ts";
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-function getSession(): BrowserSession {
-  return browserPool.get();
+function getSession(sessionId?: string): BrowserSession {
+  return browserPool.get(sessionId);
 }
 
 function urlSlug(urlStr: string): string {
@@ -174,11 +174,11 @@ async function handlePostAction(
 
 // ── Actions ─────────────────────────────────────────────────────
 
-async function navigate(payload: { url: string }): Promise<ToolResult> {
+async function navigate(payload: { url: string }, sessionId?: string): Promise<ToolResult> {
   assertMaxLength(payload.url, "url", 2048);
 
   const parsed = new URL(payload.url);
-  const session = getSession();
+  const session = getSession(sessionId);
   const page = await session.getPage();
 
   const response = await page.goto(payload.url, {
@@ -234,10 +234,10 @@ async function navigate(payload: { url: string }): Promise<ToolResult> {
   return { content };
 }
 
-async function evaluate(payload: { expression: string }): Promise<ToolResult> {
+async function evaluate(payload: { expression: string }, sessionId?: string): Promise<ToolResult> {
   assertMaxLength(payload.expression, "expression", 10_000);
 
-  const session = getSession();
+  const session = getSession(sessionId);
   const page = await session.getPage();
   let result: unknown;
   try {
@@ -278,7 +278,7 @@ async function evaluate(payload: { expression: string }): Promise<ToolResult> {
   return text(parts.join("\n"));
 }
 
-async function click(payload: { css_selector?: string; text?: string }): Promise<ToolResult> {
+async function click(payload: { css_selector?: string; text?: string }, sessionId?: string): Promise<ToolResult> {
   const hasCss = payload.css_selector !== undefined && payload.css_selector !== "";
   const hasText = payload.text !== undefined && payload.text !== "";
 
@@ -292,7 +292,7 @@ async function click(payload: { css_selector?: string; text?: string }): Promise
   if (hasCss) assertMaxLength(payload.css_selector!, "css_selector", 500);
   if (hasText) assertMaxLength(payload.text!, "text", 500);
 
-  const session = getSession();
+  const session = getSession(sessionId);
   const page = await session.getPage();
   const urlBefore = page.url();
 
@@ -313,13 +313,13 @@ async function click(payload: { css_selector?: string; text?: string }): Promise
   return handlePostAction(session, page, urlBefore, "browser__click");
 }
 
-async function typeText(payload: { selector: string; value: string; press_enter: boolean }): Promise<ToolResult> {
+async function typeText(payload: { selector: string; value: string; press_enter: boolean }, sessionId?: string): Promise<ToolResult> {
   assertMaxLength(payload.selector, "selector", 500);
   assertMaxLength(payload.value, "value", 5000);
 
   const resolvedValue = resolveHubPlaceholders(payload.value, config.hub.apiKey);
 
-  const session = getSession();
+  const session = getSession(sessionId);
   const page = await session.getPage();
   const urlBefore = page.url();
 
@@ -339,8 +339,8 @@ async function typeText(payload: { selector: string; value: string; press_enter:
   return handlePostAction(session, page, urlBefore, "browser__type_text");
 }
 
-async function takeScreenshot(payload: { full_page: boolean }): Promise<ToolResult> {
-  const session = getSession();
+async function takeScreenshot(payload: { full_page: boolean }, sessionId?: string): Promise<ToolResult> {
+  const session = getSession(sessionId);
   const page = await session.getPage();
 
   let buffer = await page.screenshot({
@@ -383,18 +383,20 @@ async function takeScreenshot(payload: { full_page: boolean }): Promise<ToolResu
 
 async function browserHandler(args: Record<string, unknown>, ctx?: ToolCallContext): Promise<ToolResult> {
   const files = ctx?.runCtx?.files ?? defaultFiles;
+  void files;
+  const sessionId = ctx?.runCtx?.sessionId;
   const { action, payload } = args as { action: string; payload: Record<string, unknown> };
   switch (action) {
     case "navigate":
-      return navigate(payload as { url: string });
+      return navigate(payload as { url: string }, sessionId);
     case "evaluate":
-      return evaluate(payload as { expression: string });
+      return evaluate(payload as { expression: string }, sessionId);
     case "click":
-      return click(payload as { css_selector?: string; text?: string });
+      return click(payload as { css_selector?: string; text?: string }, sessionId);
     case "type_text":
-      return typeText(payload as { selector: string; value: string; press_enter: boolean });
+      return typeText(payload as { selector: string; value: string; press_enter: boolean }, sessionId);
     case "take_screenshot":
-      return takeScreenshot(payload as { full_page: boolean });
+      return takeScreenshot(payload as { full_page: boolean }, sessionId);
     default:
       throw new DomainError({ type: "validation", message: `Unknown browser action: ${action}` });
   }

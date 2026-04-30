@@ -29,7 +29,12 @@ export interface BrowserSession {
 }
 
 export interface BrowserPool {
-  get(): BrowserSession;
+  /**
+   * Look up (or create) the browser session keyed by `sessionId`. When
+   * called without an argument, falls back to the legacy AsyncLocalStorage
+   * lookup — kept for callers that have not migrated yet.
+   */
+  get(sessionId?: string): BrowserSession;
   close(sessionId: string): Promise<void>;
   closeAll(): Promise<void>;
   /** @internal — number of active sessions in the pool */
