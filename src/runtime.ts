@@ -10,8 +10,7 @@
  * defines the shape and the factory. Wiring lands incrementally:
  *   1. Entry points (`cli.ts`, `server.ts`, `slack.ts`) build a runtime once.
  *   2. `runAgent(state, runtime)` and `executeRun(opts, runtime)` accept it.
- *   3. `dispatch` and tool handlers receive it as a parameter, replacing
- *      their `requireState()` / `requireLogger()` / `import { bus }` calls.
+ *   3. `dispatch` and tool handlers receive it as a parameter.
  *
  * No `runtime.get("name")` lookups. Every service is a typed field — if it
  * isn't on the type, it isn't on the runtime.

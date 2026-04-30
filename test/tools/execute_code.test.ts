@@ -1,16 +1,16 @@
-import { describe, test, expect, mock } from "bun:test";
+import { describe, test, expect } from "bun:test";
 import { join, resolve } from "path";
 import { mkdir } from "fs/promises";
 import type { ToolResult } from "../../src/types/tool-result.ts";
+import type { ToolCallContext } from "../../src/types/tool.ts";
+import type { RunCtx } from "../../src/agent/run-ctx.ts";
 import executeCode from "../../src/tools/execute_code.ts";
 
-// Mock getSessionId to return a test session
 const mockSessionId = "test-session-code-001";
-mock.module("../../src/agent/context.ts", () => ({
-  getSessionId: () => mockSessionId,
-  getAgentName: () => "default",
-  requireSessionId: () => mockSessionId,
-}));
+const stubCtx: ToolCallContext = {
+  toolCallId: "test",
+  runCtx: { sessionId: mockSessionId } as unknown as RunCtx,
+};
 
 // Resolve session dir for test setup
 import { config } from "../../src/config/index.ts";
@@ -33,7 +33,7 @@ describe("execute_code", () => {
     const result = await executeCode.handler({
       code: `console.log("hello world");`,
       description: "print hello",
-    });
+    }, stubCtx);
     expect(getText(result)).toContain("hello world");
   });
 
@@ -41,7 +41,7 @@ describe("execute_code", () => {
     const result = await executeCode.handler({
       code: `console.log(JSON.stringify({ count: 42, items: [1, 2, 3] }));`,
       description: "output JSON",
-    });
+    }, stubCtx);
     const parsed = JSON.parse(getText(result));
     expect(parsed.count).toBe(42);
     expect(parsed.items).toEqual([1, 2, 3]);
@@ -51,7 +51,7 @@ describe("execute_code", () => {
     const result = await executeCode.handler({
       code: `console.log(typeof SESSION_DIR);`,
       description: "check SESSION_DIR",
-    });
+    }, stubCtx);
     expect(getText(result).trim()).toBe("string");
   });
 
@@ -64,7 +64,7 @@ describe("execute_code", () => {
         console.log(content);
       `,
       description: "bridge round-trip test",
-    });
+    }, stubCtx);
     expect(getText(result)).toContain("bridge works!");
   });
 
@@ -77,7 +77,7 @@ describe("execute_code", () => {
         console.log(data.key, data.num);
       `,
       description: "bridge readJson test",
-    });
+    }, stubCtx);
     expect(getText(result)).toContain("value");
     expect(getText(result)).toContain("99");
   });
@@ -93,7 +93,7 @@ describe("execute_code", () => {
         console.log(JSON.stringify(entries.filter(e => e.includes("_list_test"))));
       `,
       description: "bridge listDir test",
-    });
+    }, stubCtx);
     expect(getText(result)).toContain("_list_test.txt");
   });
 
@@ -108,7 +108,7 @@ describe("execute_code", () => {
         }
       `,
       description: "bridge access control test",
-    });
+    }, stubCtx);
     expect(getText(result)).toContain("BLOCKED");
     expect(getText(result)).toContain("Access denied");
     expect(getText(result)).not.toContain("SHOULD NOT REACH");
@@ -126,7 +126,7 @@ describe("execute_code", () => {
         }
       `,
       description: "bridge project file access test",
-    });
+    }, stubCtx);
     expect(getText(result)).toContain("BLOCKED");
     expect(getText(result)).not.toContain("SHOULD NOT REACH");
   });
@@ -148,7 +148,7 @@ describe("execute_code", () => {
         console.log(blocked ? "DIRECT_FS_BLOCKED" : "DIRECT_FS_ALLOWED");
       `,
       description: "direct fs access test",
-    });
+    }, stubCtx);
     expect(getText(result)).toContain("DIRECT_FS_BLOCKED");
   });
 
@@ -156,7 +156,7 @@ describe("execute_code", () => {
     const result = await executeCode.handler({
       code: `console.log(SESSION_DIR);`,
       description: "path sanitization test",
-    });
+    }, stubCtx);
     expect(getText(result)).toContain("./");
     expect(getText(result)).not.toContain(mockSessionId);
   });
@@ -175,7 +175,7 @@ describe("execute_code", () => {
         }
       `,
       description: "env isolation test",
-    });
+    }, stubCtx);
     const leaked = JSON.parse(getText(result).split("\n").find(l => l.startsWith("[")) ?? "[]");
     expect(leaked.length).toBe(0);
   });
@@ -184,7 +184,7 @@ describe("execute_code", () => {
     const result = await executeCode.handler({
       code: `console.error("warning"); console.log("ok");`,
       description: "stderr test",
-    });
+    }, stubCtx);
     expect(getText(result)).toContain("ok");
     expect(getText(result)).toContain("warning");
   });
@@ -193,7 +193,7 @@ describe("execute_code", () => {
     const result = await executeCode.handler({
       code: `process.exit(1);`,
       description: "exit code test",
-    });
+    }, stubCtx);
     expect(getText(result)).toContain("exit code 1");
   });
 
@@ -222,7 +222,7 @@ describe("execute_code", () => {
       code: `await new Promise(r => setTimeout(r, 60000));`,
       description: "timeout test",
       timeout: 2000,
-    });
+    }, stubCtx);
     const elapsed = Date.now() - start;
     expect(elapsed).toBeLessThan(5000);
     expect(
@@ -236,7 +236,7 @@ describe("execute_code", () => {
     await executeCode.handler({
       code: `console.log("cleanup test");`,
       description: "cleanup test",
-    });
+    }, stubCtx);
 
     const files = await readdir(sessionDir).catch(() => []);
     const execFiles = (files as string[]).filter((f: string) =>

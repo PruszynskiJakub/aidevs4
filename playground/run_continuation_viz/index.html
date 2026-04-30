@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Nested Run Continuation</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-hi: #1c2330;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --running: #3fb950;
+    --waiting: #d29922;
+    --completed: #58a6ff;
+    --failed: #f85149;
+    --cancelled: #8b949e;
+    --idle: #373e47;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+  body { max-width: 1280px; margin: 0 auto; padding: 32px 24px 64px; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 24px; margin: 0 0 8px; }
+  header p { color: var(--text-dim); margin: 0; max-width: 780px; }
+  .controls { display: flex; align-items: center; gap: 12px; margin: 24px 0; padding: 12px 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+  button { background: var(--panel-hi); color: var(--text); border: 1px solid var(--border); padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: inherit; }
+  button:hover:not(:disabled) { background: #222a36; border-color: var(--accent); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #0d1117; border-color: var(--accent); font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #79b8ff; }
+  .step-counter { margin-left: auto; color: var(--text-dim); font-family: var(--mono); font-size: 12px; }
+  .progress { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin: 12px 0 24px; }
+  .progress-bar { height: 100%; background: var(--accent); transition: width 0.4s ease; }
+  .stage { display: grid; grid-template-columns: 1fr 1.3fr 1.3fr 1.3fr 1fr; gap: 12px; margin-bottom: 24px; }
+  .actor, .run-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; min-height: 180px; transition: all 0.3s ease; position: relative; }
+  .actor { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .actor-icon { font-size: 36px; margin-bottom: 8px; }
+  .actor-label { font-weight: 600; margin-bottom: 6px; }
+  .actor-state { font-size: 12px; color: var(--text-dim); font-family: var(--mono); }
+  .actor[data-state="sending"], .actor[data-state="prompted"], .actor[data-state="thinking"] { border-color: var(--waiting); box-shadow: 0 0 0 1px var(--waiting); }
+  .actor[data-state="approved"], .actor[data-state="received"] { border-color: var(--running); box-shadow: 0 0 0 1px var(--running); }
+  .run-card { opacity: 0.3; }
+  .run-card.exists { opacity: 1; }
+  .run-card .run-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .run-card .run-title { font-weight: 700; font-size: 15px; }
+  .run-card .run-id { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+  .status-badge { display: inline-block; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; background: var(--idle); color: var(--text); }
+  .status-badge[data-status="running"] { background: var(--running); color: #0d1117; }
+  .status-badge[data-status="waiting"] { background: var(--waiting); color: #0d1117; }
+  .status-badge[data-status="completed"] { background: var(--completed); color: #0d1117; }
+  .status-badge[data-status="failed"] { background: var(--failed); color: #fff; }
+  .status-badge[data-status="cancelled"] { background: var(--cancelled); color: #0d1117; }
+  .run-card[data-status="running"] { border-color: var(--running); box-shadow: 0 0 0 1px var(--running); }
+  .run-card[data-status="waiting"] { border-color: var(--waiting); box-shadow: 0 0 0 1px var(--waiting); }
+  .run-card[data-status="completed"] { border-color: var(--completed); }
+  .run-detail { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top: 8px; }
+  .run-detail .label { color: var(--text-dim); }
+  .run-detail .value { color: var(--text); }
+  .run-note { margin-top: 10px; padding: 6px 8px; background: var(--panel-hi); border-radius: 4px; font-size: 11px; color: var(--text-dim); font-style: italic; }
+  .waiting-on { margin-top: 8px; padding: 6px 8px; background: rgba(210, 153, 34, 0.1); border-left: 2px solid var(--waiting); border-radius: 2px; font-family: var(--mono); font-size: 11px; }
+  .waiting-on .kind { color: var(--waiting); font-weight: 600; }
+  .step-info { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; margin-bottom: 24px; }
+  .step-info h2 { margin: 0 0 8px; font-size: 18px; color: var(--accent); font-family: var(--mono); }
+  .step-info p { margin: 0; color: var(--text); }
+  .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .event-log, .legend { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
+  .event-log h3, .legend h3 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-dim); }
+  #log { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; font-family: var(--mono); font-size: 12px; }
+  #log li { padding: 4px 0; border-bottom: 1px solid var(--border); color: var(--text); }
+  #log li:last-child { border-bottom: none; }
+  #log li.new { color: var(--accent); animation: flash 0.8s ease; }
+  #log li .ts { color: var(--text-dim); margin-right: 8px; }
+  @keyframes flash { 0% { background: rgba(88, 166, 255, 0.2); } 100% { background: transparent; } }
+  .legend-item { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 12px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .legend code { font-family: var(--mono); color: var(--text-dim); font-size: 11px; }
+  .arrows { height: 20px; position: relative; margin: -6px 0 6px; display: grid; grid-template-columns: 1fr 1.3fr 1.3fr 1.3fr 1fr; gap: 12px; }
+  .arrow { display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 18px; color: var(--text-dim); opacity: 0; transition: opacity 0.3s ease; }
+  .arrow.active { opacity: 1; color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Nested Run Continuation</h1>
+  <p>How a parent run stays parked while its child (and grandchild) work through the plan/act loop, HITL pauses, and terminal exits — walked through one event at a time. Click <b>Next</b> or <b>Play</b> to step through a 3-level delegation with a human-in-the-loop at the deepest level.</p>
+</header>
+
+<div class="controls">
+  <button id="btnReset">⏮ Reset</button>
+  <button id="btnPrev">← Prev</button>
+  <button class="primary" id="btnNext">Next →</button>
+  <button id="btnPlay">▶ Play</button>
+  <span class="step-counter" id="counter">step 0 / 0</span>
+</div>
+
+<div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+
+<div class="stage">
+  <div class="actor" id="user" data-state="idle">
+    <div class="actor-icon">👤</div>
+    <div class="actor-label">User / CLI</div>
+    <div class="actor-state" id="userState">idle</div>
+  </div>
+  <div class="run-card" id="cardA" data-status="idle">
+    <div class="run-header"><span class="run-title">Run A <span style="font-weight:400;color:var(--text-dim);font-size:11px">(root)</span></span><span class="status-badge" data-status="idle">idle</span></div>
+    <div class="run-id">run_a1b2c3</div>
+    <div class="run-detail"><span class="label">parent:</span> <span class="value">—</span></div>
+    <div class="run-detail"><span class="label">turns:</span> <span class="value" id="turnA">0</span></div>
+    <div id="waitA"></div>
+    <div class="run-note" id="noteA">—</div>
+  </div>
+  <div class="run-card" id="cardB" data-status="idle">
+    <div class="run-header"><span class="run-title">Run B</span><span class="status-badge" data-status="idle">idle</span></div>
+    <div class="run-id">run_b2c3d4</div>
+    <div class="run-detail"><span class="label">parent:</span> <span class="value">run_a1b2c3</span></div>
+    <div class="run-detail"><span class="label">turns:</span> <span class="value" id="turnB">0</span></div>
+    <div id="waitB"></div>
+    <div class="run-note" id="noteB">—</div>
+  </div>
+  <div class="run-card" id="cardC" data-status="idle">
+    <div class="run-header"><span class="run-title">Run C</span><span class="status-badge" data-status="idle">idle</span></div>
+    <div class="run-id">run_c3d4e5</div>
+    <div class="run-detail"><span class="label">parent:</span> <span class="value">run_b2c3d4</span></div>
+    <div class="run-detail"><span class="label">turns:</span> <span class="value" id="turnC">0</span></div>
+    <div id="waitC"></div>
+    <div class="run-note" id="noteC">—</div>
+  </div>
+  <div class="actor" id="human" data-state="idle">
+    <div class="actor-icon">🧑‍⚖️</div>
+    <div class="actor-label">Human (Slack)</div>
+    <div class="actor-state" id="humanState">idle</div>
+  </div>
+</div>
+
+<div class="step-info">
+  <h2 id="stepTitle">Ready</h2>
+  <p id="stepDesc">Click <b>Next</b> to begin the walkthrough.</p>
+</div>
+
+<div class="bottom-grid">
+  <div class="event-log">
+    <h3>Event log</h3>
+    <ul id="log"></ul>
+  </div>
+  <div class="legend">
+    <h3>Legend</h3>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--running)"></div><span><b>running</b> — loop is actively advancing turns</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--waiting)"></div><span><b>waiting</b> — parked, non-terminal, holds a <code>waitingOn</code> descriptor</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--completed)"></div><span><b>completed</b> — terminal, emits <code>run.completed</code></span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--cancelled)"></div><span><b>cancelled</b> — terminal, via external abort</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--failed)"></div><span><b>failed</b> — terminal, unrecoverable error</span></div>
+    <div style="margin-top: 12px; font-size: 12px; color: var(--text-dim);">
+      <b style="color:var(--text)">Wait kinds:</b><br>
+      <code>user_approval</code> — HITL confirmation<br>
+      <code>child_run</code> — delegated subagent
+    </div>
+  </div>
+</div>
+
+<script>
+const steps = [
+  {
+    title: 't0 — User sends a message',
+    desc: "User types a prompt. The CLI creates a session and root run A, then calls executeTurn(runA). A enters the plan/act loop.",
+    user: { state: 'sending', label: 'sending prompt' },
+    a: { exists: true, status: 'running', waiting: null, turn: 0, note: 'Entering loop' },
+    b: { exists: false },
+    c: { exists: false },
+    human: { state: 'idle', label: 'idle' },
+    events: ['run.started run_a1b2c3 (root)']
+  },
+  {
+    title: 't1 — A delegates to B',
+    desc: "Run A calls delegate_to_agent. The tool creates run B and throws WaitRequested. A's loop catches it, persists status=waiting + waitingOn={child_run, run_B}, and returns 'waiting' to its caller. The CLI sees A is parked.",
+    user: { state: 'sending', label: 'awaiting result' },
+    a: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_b2c3d4' }, turn: 3, note: 'Parked on delegation' },
+    b: { exists: true, status: 'running', waiting: null, turn: 0, note: 'Created, entering loop' },
+    c: { exists: false },
+    human: { state: 'idle', label: 'idle' },
+    events: ['run.waiting run_a1b2c3 { child_run → run_b2c3d4 }', 'run.started run_b2c3d4 (parent: run_a1b2c3)']
+  },
+  {
+    title: 't2 — B advances turns',
+    desc: "Run B executes normally: LLM calls, tool calls that resolve synchronously. The loop increments turnCount each iteration.",
+    user: { state: 'sending', label: 'awaiting result' },
+    a: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_b2c3d4' }, turn: 3, note: 'Parked' },
+    b: { exists: true, status: 'running', waiting: null, turn: 2, note: 'Executing turns' },
+    c: { exists: false },
+    human: { state: 'idle', label: 'idle' },
+    events: ['turn 1 advanced in run_b2c3d4', 'turn 2 advanced in run_b2c3d4']
+  },
+  {
+    title: 't3 — B delegates to C',
+    desc: "Run B calls delegate_to_agent. Run C is spawned and B exits waiting. KEY POINT: no subscriber fires here — 'waiting' is not a terminal exit. No cascade. B just parks.",
+    user: { state: 'sending', label: 'awaiting result' },
+    a: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_b2c3d4' }, turn: 3, note: 'Parked' },
+    b: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_c3d4e5' }, turn: 3, note: 'Parked on delegation' },
+    c: { exists: true, status: 'running', waiting: null, turn: 0, note: 'Created, entering loop' },
+    human: { state: 'idle', label: 'idle' },
+    events: ['run.waiting run_b2c3d4 { child_run → run_c3d4e5 }', 'run.started run_c3d4e5 (parent: run_b2c3d4)']
+  },
+  {
+    title: 't4 — C hits an HITL gate',
+    desc: "Run C calls confirm_action. The tool throws WaitRequested({user_approval, conf_123}). C's loop exits 'waiting'. Slack posts the prompt to the human. All three runs are now parked.",
+    user: { state: 'sending', label: 'awaiting result' },
+    a: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_b2c3d4' }, turn: 3, note: 'Parked (nested level 0)' },
+    b: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_c3d4e5' }, turn: 3, note: 'Parked (nested level 1)' },
+    c: { exists: true, status: 'waiting', waiting: { kind: 'user_approval', target: 'conf_123' }, turn: 2, note: 'Parked on HITL' },
+    human: { state: 'prompted', label: 'approve action?' },
+    events: ['run.waiting run_c3d4e5 { user_approval → conf_123 }', 'slack.posted conf_123 "Approve action?"']
+  },
+  {
+    title: '⏸ Everything is persisted',
+    desc: "All three runs live in SQLite as status=waiting. The process could crash and restart here — on boot, nothing needs to happen until the human clicks. No in-memory state is load-bearing. This is what 'crash-safe at any level' actually means.",
+    user: { state: 'sending', label: 'awaiting result' },
+    a: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_b2c3d4' }, turn: 3, note: 'Persisted' },
+    b: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_c3d4e5' }, turn: 3, note: 'Persisted' },
+    c: { exists: true, status: 'waiting', waiting: { kind: 'user_approval', target: 'conf_123' }, turn: 2, note: 'Persisted' },
+    human: { state: 'thinking', label: 'thinking…' },
+    events: []
+  },
+  {
+    title: 't5 — Human approves',
+    desc: "Human clicks Approve in Slack. The webhook handler calls resumeRun(run_C, { approved: true }). resumeRun injects a synthetic tool-result message for confirm_action, flips C to running, clears waitingOn, re-enters executeTurn.",
+    user: { state: 'sending', label: 'awaiting result' },
+    a: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_b2c3d4' }, turn: 3, note: 'Parked' },
+    b: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_c3d4e5' }, turn: 3, note: 'Parked' },
+    c: { exists: true, status: 'running', waiting: null, turn: 3, note: 'Resumed from HITL' },
+    human: { state: 'approved', label: 'approved ✓' },
+    events: ['slack.webhook approve conf_123', 'resumeRun run_c3d4e5 { approved: true }', 'run.resumed run_c3d4e5']
+  },
+  {
+    title: 't6 — C completes',
+    desc: "C finishes its work. The model emits a final answer with no tool calls, which is the natural 'completed' exit for the loop. run.completed(C) is emitted with the result payload.",
+    user: { state: 'sending', label: 'awaiting result' },
+    a: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_b2c3d4' }, turn: 3, note: 'Parked' },
+    b: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_c3d4e5' }, turn: 3, note: 'Parked' },
+    c: { exists: true, status: 'completed', waiting: null, turn: 4, note: 'Terminal: completed' },
+    human: { state: 'idle', label: 'idle' },
+    events: ['run.completed run_c3d4e5 { result: "…" }']
+  },
+  {
+    title: 't7 — Subscriber wakes B',
+    desc: "The event subscriber sees run.completed(C). It looks up runs where waitingOn.kind === 'child_run' AND waitingOn.target === run_c3d4e5 — finds B. Calls resumeRun(B, { toolResult: C.result }). B re-enters its loop with the delegate_to_agent call resolved.",
+    user: { state: 'sending', label: 'awaiting result' },
+    a: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_b2c3d4' }, turn: 3, note: 'Parked' },
+    b: { exists: true, status: 'running', waiting: null, turn: 3, note: "Resumed with C's result" },
+    c: { exists: true, status: 'completed', waiting: null, turn: 4, note: 'Terminal' },
+    human: { state: 'idle', label: 'idle' },
+    events: ['subscriber.matched parent=run_b2c3d4 ← child=run_c3d4e5', 'resumeRun run_b2c3d4', 'run.resumed run_b2c3d4']
+  },
+  {
+    title: 't8 — B completes',
+    desc: "B finishes its remaining turns and exits 'completed'. Same mechanism as C — no special code for 'this was a delegated run'. The loop has one contract.",
+    user: { state: 'sending', label: 'awaiting result' },
+    a: { exists: true, status: 'waiting', waiting: { kind: 'child_run', target: 'run_b2c3d4' }, turn: 3, note: 'Parked' },
+    b: { exists: true, status: 'completed', waiting: null, turn: 5, note: 'Terminal: completed' },
+    c: { exists: true, status: 'completed', waiting: null, turn: 4, note: 'Terminal' },
+    human: { state: 'idle', label: 'idle' },
+    events: ['run.completed run_b2c3d4 { result: "…" }']
+  },
+  {
+    title: 't9 — Subscriber wakes A',
+    desc: "Subscriber sees run.completed(B). Finds run A waiting on run_b2c3d4. Calls resumeRun(A). A re-enters its loop. The cascade is one level at a time — never recursive, never holds a call stack across runs.",
+    user: { state: 'sending', label: 'awaiting result' },
+    a: { exists: true, status: 'running', waiting: null, turn: 3, note: "Resumed with B's result" },
+    b: { exists: true, status: 'completed', waiting: null, turn: 5, note: 'Terminal' },
+    c: { exists: true, status: 'completed', waiting: null, turn: 4, note: 'Terminal' },
+    human: { state: 'idle', label: 'idle' },
+    events: ['subscriber.matched parent=run_a1b2c3 ← child=run_b2c3d4', 'resumeRun run_a1b2c3', 'run.resumed run_a1b2c3']
+  },
+  {
+    title: 't10 — A completes',
+    desc: "A finishes its final turns and exits 'completed'. run.completed(A) is emitted. A is the root — it has no parent to wake.",
+    user: { state: 'sending', label: 'awaiting result' },
+    a: { exists: true, status: 'completed', waiting: null, turn: 5, note: 'Terminal: completed' },
+    b: { exists: true, status: 'completed', waiting: null, turn: 5, note: 'Terminal' },
+    c: { exists: true, status: 'completed', waiting: null, turn: 4, note: 'Terminal' },
+    human: { state: 'idle', label: 'idle' },
+    events: ['run.completed run_a1b2c3 { result: "…" }']
+  },
+  {
+    title: 't11 — Result surfaces to the user',
+    desc: "Subscriber sees run.completed(A). No parent run is waiting on it — this is the root. The CLI/Slack/HTTP entry point that originally awaited A's completion receives the result and hands it back to the user. The whole cascade unwound without a single recursive call.",
+    user: { state: 'received', label: 'got answer ✓' },
+    a: { exists: true, status: 'completed', waiting: null, turn: 5, note: 'Terminal' },
+    b: { exists: true, status: 'completed', waiting: null, turn: 5, note: 'Terminal' },
+    c: { exists: true, status: 'completed', waiting: null, turn: 4, note: 'Terminal' },
+    human: { state: 'idle', label: 'idle' },
+    events: ['subscriber.matched no_parent (root)', 'cli.deliver run_a1b2c3.result → user']
+  }
+];
+
+let current = -1;
+let playing = false;
+let playTimer = null;
+
+const $ = (id) => document.getElementById(id);
+
+function renderRun(key, run) {
+  const card = $('card' + key);
+  const turnEl = $('turn' + key);
+  const waitEl = $('wait' + key);
+  const noteEl = $('note' + key);
+  const badge = card.querySelector('.status-badge');
+
+  if (!run || !run.exists) {
+    card.classList.remove('exists');
+    card.dataset.status = 'idle';
+    badge.dataset.status = 'idle';
+    badge.textContent = 'not created';
+    turnEl.textContent = '0';
+    waitEl.innerHTML = '';
+    noteEl.textContent = '—';
+    return;
+  }
+  card.classList.add('exists');
+  card.dataset.status = run.status;
+  badge.dataset.status = run.status;
+  badge.textContent = run.status;
+  turnEl.textContent = run.turn;
+  noteEl.textContent = run.note || '—';
+  if (run.waiting) {
+    waitEl.innerHTML = `<div class="waiting-on"><div class="kind">waitingOn.${run.waiting.kind}</div><div>→ ${run.waiting.target}</div></div>`;
+  } else {
+    waitEl.innerHTML = '';
+  }
+}
+
+function renderActor(id, state, label) {
+  const el = $(id);
+  el.dataset.state = state;
+  $(id + 'State').textContent = label;
+}
+
+function rebuildLog(upToStep) {
+  const log = $('log');
+  log.innerHTML = '';
+  let n = 0;
+  for (let i = 0; i <= upToStep; i++) {
+    if (i < 0 || i >= steps.length) continue;
+    const s = steps[i];
+    for (const ev of s.events) {
+      const li = document.createElement('li');
+      n++;
+      const ts = String(n).padStart(2, '0');
+      li.innerHTML = `<span class="ts">#${ts}</span>${ev}`;
+      if (i === upToStep) li.classList.add('new');
+      log.appendChild(li);
+    }
+  }
+  log.scrollTop = log.scrollHeight;
+}
+
+function render() {
+  if (current < 0) {
+    $('stepTitle').textContent = 'Ready';
+    $('stepDesc').innerHTML = 'Click <b>Next</b> to begin the walkthrough.';
+    renderRun('A', null);
+    renderRun('B', null);
+    renderRun('C', null);
+    renderActor('user', 'idle', 'idle');
+    renderActor('human', 'idle', 'idle');
+    $('log').innerHTML = '';
+  } else {
+    const s = steps[current];
+    $('stepTitle').textContent = s.title;
+    $('stepDesc').textContent = s.desc;
+    renderRun('A', s.a);
+    renderRun('B', s.b);
+    renderRun('C', s.c);
+    renderActor('user', s.user.state, s.user.label);
+    renderActor('human', s.human.state, s.human.label);
+    rebuildLog(current);
+  }
+  $('counter').textContent = `step ${Math.max(0, current + 1)} / ${steps.length}`;
+  $('progressBar').style.width = `${Math.max(0, (current + 1) / steps.length) * 100}%`;
+  $('btnPrev').disabled = current <= 0;
+  $('btnNext').disabled = current >= steps.length - 1;
+  $('btnPlay').textContent = playing ? '⏸ Pause' : '▶ Play';
+}
+
+function next() {
+  if (current < steps.length - 1) {
+    current++;
+    render();
+  } else {
+    stopPlay();
+  }
+}
+
+function prev() {
+  if (current > 0) {
+    current--;
+    render();
+  }
+}
+
+function reset() {
+  stopPlay();
+  current = -1;
+  render();
+}
+
+function startPlay() {
+  if (current >= steps.length - 1) reset();
+  playing = true;
+  render();
+  playTimer = setInterval(() => {
+    if (current >= steps.length - 1) { stopPlay(); return; }
+    next();
+  }, 1800);
+}
+
+function stopPlay() {
+  playing = false;
+  if (playTimer) { clearInterval(playTimer); playTimer = null; }
+  render();
+}
+
+function togglePlay() {
+  if (playing) stopPlay(); else startPlay();
+}
+
+$('btnNext').addEventListener('click', () => { stopPlay(); next(); });
+$('btnPrev').addEventListener('click', () => { stopPlay(); prev(); });
+$('btnReset').addEventListener('click', reset);
+$('btnPlay').addEventListener('click', togglePlay);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); stopPlay(); next(); }
+  else if (e.key === 'ArrowLeft') { stopPlay(); prev(); }
+  else if (e.key === 'r' || e.key === 'R') reset();
+});
+
+render();
+</script>
+
+</body>
+</html>

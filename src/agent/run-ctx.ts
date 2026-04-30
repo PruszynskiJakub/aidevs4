@@ -1,6 +1,5 @@
 /**
- * Per-run execution context — the explicit replacement for the
- * `AsyncLocalStorage<RunContext>` in `context.ts`.
+ * Per-run execution context threaded through the agent core.
  *
  * Mirrors Wonderlands' two-context shape:
  *   - `Runtime` (composition root, process-lifetime)  →  `runtime`

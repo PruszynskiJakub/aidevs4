@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Run + waiting state — problem visualization</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1c2330;
+    --border: #2a3240;
+    --text: #d7dde6;
+    --muted: #7d8795;
+    --accent: #7aa2f7;
+    --ok: #73d0a1;
+    --warn: #e0af68;
+    --bad: #f7768e;
+    --wait: #bb9af7;
+    --pill-bg: #22293a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  header {
+    padding: 28px 32px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    margin: 0 0 6px 0;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  header p {
+    margin: 0;
+    color: var(--muted);
+    max-width: 820px;
+  }
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    padding: 24px 32px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px 22px;
+    min-height: 520px;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel h2 {
+    margin: 0 0 4px 0;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .panel .tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 8px;
+    background: var(--pill-bg);
+    color: var(--muted);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .panel h3 {
+    margin: 0 0 14px 0;
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .stage {
+    position: relative;
+    flex: 1;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    overflow: hidden;
+  }
+  .node {
+    position: absolute;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #232a38;
+    min-width: 150px;
+    font-size: 12px;
+    transition: all 0.35s ease;
+  }
+  .node .title {
+    font-weight: 600;
+    font-size: 12px;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .node .status {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #2a3240;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .node .meta {
+    color: var(--muted);
+    font-size: 11px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .node.running { border-color: var(--ok); box-shadow: 0 0 0 1px rgba(115,208,161,0.2); }
+  .node.running .status { background: rgba(115,208,161,0.15); color: var(--ok); }
+  .node.waiting  { border-color: var(--wait); box-shadow: 0 0 0 1px rgba(187,154,247,0.25); }
+  .node.waiting  .status { background: rgba(187,154,247,0.15); color: var(--wait); }
+  .node.blocked  { border-color: var(--bad); box-shadow: 0 0 0 1px rgba(247,118,142,0.25); }
+  .node.blocked  .status { background: rgba(247,118,142,0.15); color: var(--bad); }
+  .node.done     { border-color: #3a4558; opacity: 0.65; }
+  .node.done     .status { background: #2a3240; color: var(--muted); }
+  .node.pending  { border-style: dashed; opacity: 0.55; }
+
+  svg.edges {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  .edge {
+    stroke: #3a4558;
+    stroke-width: 1.5;
+    fill: none;
+    stroke-dasharray: 4 4;
+  }
+  .edge.active { stroke: var(--wait); stroke-dasharray: 0; }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 14px;
+  }
+  button {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 7px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); color: #0e1116; border-color: var(--accent); font-weight: 600; }
+  button.primary:hover { color: #0e1116; filter: brightness(1.08); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .step-label {
+    flex: 1;
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .narration {
+    margin-top: 12px;
+    padding: 12px 14px;
+    background: var(--panel-2);
+    border-left: 2px solid var(--accent);
+    border-radius: 4px;
+    font-size: 13px;
+    min-height: 54px;
+  }
+  .narration .step-num {
+    color: var(--accent);
+    font-weight: 600;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    margin-right: 8px;
+  }
+
+  footer {
+    padding: 8px 32px 40px;
+    color: var(--muted);
+    font-size: 12px;
+    max-width: 1000px;
+  }
+  .legend {
+    display: flex;
+    gap: 14px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .swatch {
+    width: 10px; height: 10px; border-radius: 3px;
+    display: inline-block;
+    border: 1px solid var(--border);
+  }
+  .sw-running { background: rgba(115,208,161,0.35); border-color: var(--ok); }
+  .sw-waiting { background: rgba(187,154,247,0.35); border-color: var(--wait); }
+  .sw-blocked { background: rgba(247,118,142,0.35); border-color: var(--bad); }
+  .sw-done    { background: #3a4558; }
+
+  .key {
+    display: flex;
+    gap: 18px;
+    margin-bottom: 14px;
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .key b { color: var(--text); font-weight: 600; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Run + waiting state — why we need it</h1>
+  <p>
+    The same scenario run through <b>today's model</b> (single session, blocking turn loop)
+    and the <b>proposed model</b> (Run tree with explicit <code>waiting</code> status + typed
+    wait descriptors). Step through the delegation flow on both sides and watch where each
+    model breaks or bends.
+  </p>
+</header>
+
+<main>
+  <!-- LEFT: TODAY -->
+  <section class="panel">
+    <h2>Today <span class="tag">session.ts — one conceptual unit</span></h2>
+    <h3>Parent blocks the whole turn loop</h3>
+    <div class="key">
+      <span><b>Problem:</b> no way to park execution — delegate either blocks or fire-and-forgets.</span>
+    </div>
+    <div class="stage" id="stage-today">
+      <svg class="edges" id="edges-today"></svg>
+    </div>
+    <div class="narration" id="narration-today">
+      <span class="step-num">0</span>
+      <span>Press <b>Step</b> to run the scenario: user asks the agent to delegate research to a subagent.</span>
+    </div>
+    <div class="controls">
+      <button id="btn-today-step" class="primary">Step →</button>
+      <button id="btn-today-reset">Reset</button>
+      <div class="step-label" id="label-today">step 0 / 6</div>
+    </div>
+  </section>
+
+  <!-- RIGHT: PROPOSED -->
+  <section class="panel">
+    <h2>Proposed <span class="tag">runs table + waitingOn descriptor</span></h2>
+    <h3>Parent parks cleanly, child runs independently</h3>
+    <div class="key">
+      <span><b>Primitive:</b> <code>run.status = waiting</code>, <code>waitingOn = { kind, targetId }</code></span>
+    </div>
+    <div class="stage" id="stage-new">
+      <svg class="edges" id="edges-new"></svg>
+    </div>
+    <div class="narration" id="narration-new">
+      <span class="step-num">0</span>
+      <span>Same scenario — but the parent run suspends into a typed wait and resumes on child completion.</span>
+    </div>
+    <div class="controls">
+      <button id="btn-new-step" class="primary">Step →</button>
+      <button id="btn-new-reset">Reset</button>
+      <div class="step-label" id="label-new">step 0 / 6</div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="legend">
+    <span><i class="swatch sw-running"></i> running</span>
+    <span><i class="swatch sw-waiting"></i> waiting (typed)</span>
+    <span><i class="swatch sw-blocked"></i> blocked (no clean state)</span>
+    <span><i class="swatch sw-done"></i> completed</span>
+  </div>
+  <p style="margin-top: 18px;">
+    <b style="color:var(--text)">Takeaway.</b> On the left, the parent turn loop has only two
+    options when it hits <code>delegate_to_agent</code>: block synchronously (nested loop,
+    loses cancellation, dies on process restart) or fire-and-forget (parent never sees the
+    result). On the right, the parent transitions to <code>waiting</code> with a typed
+    <code>child_run</code> descriptor, persists, and returns from the loop. A resume handler
+    — triggered when the child completes — injects the result as a tool message and flips
+    the parent back to <code>running</code>. The same machinery handles HITL confirmations
+    (<code>user_approval</code>) and sandbox writeback review
+    (<code>sandbox_writeback_approval</code>). One primitive, three unblocked capabilities.
+  </p>
+</footer>
+
+<script>
+(() => {
+  // ---------- TODAY: single session, blocking ----------
+  const stageT = document.getElementById("stage-today");
+  const edgesT = document.getElementById("edges-today");
+  const narrT  = document.getElementById("narration-today");
+  const labelT = document.getElementById("label-today");
+
+  const todayNodes = {
+    session: { x: 24,  y: 22,  w: 180, label: "Session",          meta: "sess_a1", statusText: "open",     cls: "running" },
+    loop:    { x: 24,  y: 110, w: 180, label: "Turn loop",        meta: "plan → act",     statusText: "running",  cls: "running" },
+    tool:    { x: 24,  y: 198, w: 180, label: "delegate_to_agent",meta: "tool call",      statusText: "called",   cls: "pending" },
+    child:   { x: 250, y: 198, w: 180, label: "child agent",      meta: "nested loop",    statusText: "—",        cls: "pending" },
+    note:    { x: 250, y: 22,  w: 200, label: "No Run concept",   meta: "nowhere to park state", statusText: "gap", cls: "pending" },
+  };
+
+  const todaySteps = [
+    {
+      narr: "User asks: “delegate research to the researcher subagent”. Turn loop is running.",
+      apply: () => {
+        setNode(stageT, "session", todayNodes.session, { cls: "running", statusText: "open" });
+        setNode(stageT, "loop",    todayNodes.loop,    { cls: "running", statusText: "running" });
+        setNode(stageT, "tool",    todayNodes.tool,    { cls: "pending", statusText: "—" });
+        setNode(stageT, "child",   todayNodes.child,   { cls: "pending", statusText: "—" });
+        setNode(stageT, "note",    todayNodes.note,    { cls: "pending", statusText: "gap" });
+        drawEdges(edgesT, []);
+      }
+    },
+    {
+      narr: "LLM emits a tool call: delegate_to_agent(researcher, task). Dispatcher picks it up.",
+      apply: () => {
+        setNode(stageT, "tool", todayNodes.tool, { cls: "running", statusText: "called" });
+        drawEdges(edgesT, [["loop","tool"]]);
+      }
+    },
+    {
+      narr: "No 'waiting' state exists. Options: (a) block this turn on child, (b) fire and forget.",
+      apply: () => {
+        setNode(stageT, "note", todayNodes.note, { cls: "blocked", statusText: "stuck" });
+      }
+    },
+    {
+      narr: "Choice (a): block. A nested turn loop starts for the child *inside* the parent's call stack.",
+      apply: () => {
+        setNode(stageT, "loop",  todayNodes.loop,  { cls: "blocked", statusText: "blocked" });
+        setNode(stageT, "child", todayNodes.child, { cls: "running", statusText: "running" });
+        drawEdges(edgesT, [["loop","tool"], ["tool","child"]]);
+      }
+    },
+    {
+      narr: "Parent cannot be persisted or cancelled while child runs. Process restart = lost work.",
+      apply: () => {
+        setNode(stageT, "session", todayNodes.session, { cls: "blocked", statusText: "frozen" });
+      }
+    },
+    {
+      narr: "Child finishes. Its result is returned up the call stack — there's no resume path, just a function return.",
+      apply: () => {
+        setNode(stageT, "child", todayNodes.child, { cls: "done", statusText: "done" });
+        setNode(stageT, "tool",  todayNodes.tool,  { cls: "done", statusText: "returned" });
+      }
+    },
+    {
+      narr: "Parent loop unblocks. Works for one level — but nesting breaks HITL, cancellation, Slack resume, subagent trees.",
+      apply: () => {
+        setNode(stageT, "loop",    todayNodes.loop,    { cls: "running", statusText: "running" });
+        setNode(stageT, "session", todayNodes.session, { cls: "running", statusText: "open" });
+      }
+    }
+  ];
+
+  // ---------- PROPOSED: Run tree with typed waits ----------
+  const stageN = document.getElementById("stage-new");
+  const edgesN = document.getElementById("edges-new");
+  const narrN  = document.getElementById("narration-new");
+  const labelN = document.getElementById("label-new");
+
+  const newNodes = {
+    session: { x: 24,  y: 22,  w: 180, label: "Session",       meta: "sess_a1",              statusText: "open",    cls: "running" },
+    root:    { x: 24,  y: 110, w: 180, label: "Run (parent)",  meta: "run_p • parent=null",  statusText: "running", cls: "running" },
+    wait:    { x: 250, y: 110, w: 200, label: "waitingOn",     meta: "kind: child_run",      statusText: "—",       cls: "pending" },
+    child:   { x: 250, y: 210, w: 200, label: "Run (child)",   meta: "run_c • parent=run_p", statusText: "—",       cls: "pending" },
+    resume:  { x: 24,  y: 298, w: 180, label: "resume handler",meta: "on child.completed",   statusText: "—",       cls: "pending" },
+  };
+
+  const newSteps = [
+    {
+      narr: "Same starting point: a root Run is running inside the session. Turn loop is executing.",
+      apply: () => {
+        setNode(stageN, "session", newNodes.session, { cls: "running", statusText: "open" });
+        setNode(stageN, "root",    newNodes.root,    { cls: "running", statusText: "running" });
+        setNode(stageN, "wait",    newNodes.wait,    { cls: "pending", statusText: "—" });
+        setNode(stageN, "child",   newNodes.child,   { cls: "pending", statusText: "—" });
+        setNode(stageN, "resume",  newNodes.resume,  { cls: "pending", statusText: "—" });
+        drawEdges(edgesN, []);
+      }
+    },
+    {
+      narr: "LLM emits delegate_to_agent. Dispatcher creates a child Run row with parentRunId = run_p.",
+      apply: () => {
+        setNode(stageN, "child", newNodes.child, { cls: "pending", statusText: "queued" });
+        drawEdges(edgesN, [["root","child"]]);
+      }
+    },
+    {
+      narr: "Parent transitions: status = waiting, waitingOn = { kind: 'child_run', targetId: run_c }.",
+      apply: () => {
+        setNode(stageN, "root", newNodes.root, { cls: "waiting", statusText: "waiting" });
+        setNode(stageN, "wait", newNodes.wait, { cls: "waiting", statusText: "child_run" });
+        drawEdges(edgesN, [["root","wait"], ["wait","child","active"]]);
+      }
+    },
+    {
+      narr: "Parent loop RETURNS. Process can restart, user can cancel, Slack can deliver approvals — run is durable in SQLite.",
+      apply: () => {
+        setNode(stageN, "child", newNodes.child, { cls: "running", statusText: "running" });
+      }
+    },
+    {
+      narr: "Child finishes independently and writes its result. It emits a child.completed event.",
+      apply: () => {
+        setNode(stageN, "child",  newNodes.child,  { cls: "done", statusText: "done" });
+        setNode(stageN, "resume", newNodes.resume, { cls: "running", statusText: "fired" });
+        drawEdges(edgesN, [["root","wait"], ["child","resume","active"]]);
+      }
+    },
+    {
+      narr: "Resume handler looks up the parent by waitingOn.targetId, injects the child's result as a tool message.",
+      apply: () => {
+        setNode(stageN, "resume", newNodes.resume, { cls: "done", statusText: "resolved" });
+        setNode(stageN, "wait",   newNodes.wait,   { cls: "done", statusText: "cleared" });
+        drawEdges(edgesN, [["resume","root","active"]]);
+      }
+    },
+    {
+      narr: "Parent flips back to running, turn loop re-enters, continues from the tool message. Same pattern works for user_approval + sandbox_writeback.",
+      apply: () => {
+        setNode(stageN, "root", newNodes.root, { cls: "running", statusText: "running" });
+        drawEdges(edgesN, []);
+      }
+    }
+  ];
+
+  // ---------- render helpers ----------
+  function setNode(stage, id, base, override) {
+    let el = stage.querySelector(`[data-id="${id}"]`);
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "node";
+      el.dataset.id = id;
+      el.style.left = base.x + "px";
+      el.style.top  = base.y + "px";
+      el.style.width = base.w + "px";
+      el.innerHTML = `
+        <div class="title"><span class="label"></span><span class="status"></span></div>
+        <div class="meta"></div>`;
+      stage.appendChild(el);
+    }
+    el.querySelector(".label").textContent = base.label;
+    el.querySelector(".meta").textContent  = base.meta;
+    const cls = override?.cls ?? base.cls;
+    el.className = "node " + cls;
+    el.querySelector(".status").textContent = override?.statusText ?? base.statusText;
+  }
+
+  function centerOf(stage, id) {
+    const el = stage.querySelector(`[data-id="${id}"]`);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const pr = stage.getBoundingClientRect();
+    return {
+      x: r.left - pr.left + r.width / 2,
+      y: r.top  - pr.top  + r.height / 2,
+      w: r.width, h: r.height
+    };
+  }
+
+  function drawEdges(svg, edges) {
+    svg.innerHTML = "";
+    const stage = svg.parentElement;
+    const ns = "http://www.w3.org/2000/svg";
+    edges.forEach(([a, b, flag]) => {
+      const A = centerOf(stage, a);
+      const B = centerOf(stage, b);
+      if (!A || !B) return;
+      const path = document.createElementNS(ns, "path");
+      const mx = (A.x + B.x) / 2;
+      const d = `M ${A.x} ${A.y} C ${mx} ${A.y}, ${mx} ${B.y}, ${B.x} ${B.y}`;
+      path.setAttribute("d", d);
+      path.setAttribute("class", "edge" + (flag === "active" ? " active" : ""));
+      svg.appendChild(path);
+    });
+  }
+
+  // ---------- stepper wiring ----------
+  function makeStepper(steps, narrEl, labelEl, stepBtn, resetBtn, edgesEl) {
+    let i = 0;
+    const update = () => {
+      labelEl.textContent = `step ${i} / ${steps.length}`;
+      stepBtn.disabled = i >= steps.length;
+      stepBtn.textContent = i >= steps.length ? "done" : (i === 0 ? "Step →" : "Next →");
+    };
+    const runStep = () => {
+      if (i >= steps.length) return;
+      const step = steps[i];
+      step.apply();
+      narrEl.innerHTML = `<span class="step-num">${i + 1}.</span><span>${step.narr}</span>`;
+      i++;
+      update();
+    };
+    const reset = () => {
+      i = 0;
+      steps[0].apply();         // render initial layout
+      narrEl.innerHTML = `<span class="step-num">0.</span><span>Press <b>Step</b> to begin.</span>`;
+      update();
+    };
+    stepBtn.addEventListener("click", runStep);
+    resetBtn.addEventListener("click", reset);
+    reset();
+  }
+
+  makeStepper(
+    todaySteps, narrT, labelT,
+    document.getElementById("btn-today-step"),
+    document.getElementById("btn-today-reset"),
+    edgesT
+  );
+  makeStepper(
+    newSteps, narrN, labelN,
+    document.getElementById("btn-new-step"),
+    document.getElementById("btn-new-reset"),
+    edgesN
+  );
+
+  // redraw edges on resize so SVG paths stay aligned
+  window.addEventListener("resize", () => {
+    // trigger a light re-render by re-applying last step's edges is tricky here;
+    // simplest: clear. User can step again.
+    edgesT.innerHTML = "";
+    edgesN.innerHTML = "";
+  });
+})();
+</script>
+</body>
+</html>

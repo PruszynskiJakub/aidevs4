@@ -6,30 +6,7 @@ import { createSessionService, sessionService } from "../../src/agent/session.ts
 import { inferCategory } from "../../src/utils/media-types.ts";
 import { createSandbox, _setSandboxForTest } from "../../src/infra/sandbox.ts";
 import { config } from "../../src/config/index.ts";
-import { runWithContext } from "../../src/agent/context.ts";
-import type { RunState } from "../../src/types/run-state.ts";
-import type { Logger } from "../../src/types/logger.ts";
-import { emptyMemoryState } from "../../src/types/memory.ts";
 import * as dbOps from "../../src/infra/db/index.ts";
-
-const noopLog = new Proxy({} as Logger, { get: () => () => {} });
-
-function makeState(sessionId: string): RunState {
-  return {
-    sessionId,
-    messages: [],
-    tokens: { promptTokens: 0, completionTokens: 0 },
-    iteration: 0,
-    assistant: "default",
-    model: "",
-    tools: [],
-    memory: emptyMemoryState(),
-  };
-}
-
-function withSession<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
-  return runWithContext(makeState(sessionId), noopLog, fn);
-}
 
 /** Create a session + run pair for testing message operations */
 function setupSessionRun(sessionId: string, runId: string): void {
@@ -196,12 +173,10 @@ describe("outputPath", () => {
     expect(dir).toMatch(/\/output$/);
   });
 
-  it("uses explicit sessionId inside runWithSession", async () => {
-    await withSession("test-session", async () => {
-      const result = await svc.outputPath("file.json");
-      expect(result).toContain("/test-session/default/output/");
-      expect(result).toMatch(/\/[0-9a-f-]+\.json$/);
-    });
+  it("uses explicit sessionId", async () => {
+    const result = await svc.outputPath("file.json", "test-session");
+    expect(result).toContain("/test-session/default/output/");
+    expect(result).toMatch(/\/[0-9a-f-]+\.json$/);
   });
 
   it("uses fallback UUID outside any session", async () => {
@@ -215,12 +190,8 @@ describe("outputPath", () => {
     const paths: Record<string, string> = {};
 
     await Promise.all([
-      withSession("sess-A", async () => {
-        paths.a = await svc.outputPath("a.txt");
-      }),
-      withSession("sess-B", async () => {
-        paths.b = await svc.outputPath("b.txt");
-      }),
+      svc.outputPath("a.txt", "sess-A").then((path) => { paths.a = path; }),
+      svc.outputPath("b.txt", "sess-B").then((path) => { paths.b = path; }),
     ]);
 
     expect(paths.a).toContain("/sess-A/");
@@ -252,19 +223,15 @@ describe("toSessionPath", () => {
   });
 
   it("strips session dir prefix from absolute path", async () => {
-    await withSession("sess-rel", async () => {
-      const abs = await svc.outputPath("photo.png");
-      const rel = svc.toSessionPath(abs);
-      expect(rel).toMatch(/^default\/output\/[0-9a-f-]+\.png$/);
-      expect(rel).not.toContain("sess-rel");
-    });
+    const abs = await svc.outputPath("photo.png", "sess-rel");
+    const rel = svc.toSessionPath(abs, "sess-rel");
+    expect(rel).toMatch(/^default\/output\/[0-9a-f-]+\.png$/);
+    expect(rel).not.toContain("sess-rel");
   });
 
   it("returns path unchanged if not under session dir", async () => {
-    await withSession("sess-rel2", async () => {
-      const foreignPath = "/some/other/path/file.txt";
-      expect(svc.toSessionPath(foreignPath)).toBe(foreignPath);
-    });
+    const foreignPath = "/some/other/path/file.txt";
+    expect(svc.toSessionPath(foreignPath, "sess-rel2")).toBe(foreignPath);
   });
 });
 
@@ -292,25 +259,19 @@ describe("resolveSessionPath", () => {
   });
 
   it("resolves relative path to absolute under session dir", async () => {
-    await withSession("sess-resolve", async () => {
-      const resolved = svc.resolveSessionPath("image/abc-123/photo.png");
-      expect(resolved).toContain("/sess-resolve/image/abc-123/photo.png");
-    });
+    const resolved = svc.resolveSessionPath("image/abc-123/photo.png", "sess-resolve");
+    expect(resolved).toContain("/sess-resolve/image/abc-123/photo.png");
   });
 
   it("returns absolute paths unchanged", async () => {
-    await withSession("sess-resolve2", async () => {
-      const abs = "/absolute/path/to/file.txt";
-      expect(svc.resolveSessionPath(abs)).toBe(abs);
-    });
+    const abs = "/absolute/path/to/file.txt";
+    expect(svc.resolveSessionPath(abs, "sess-resolve2")).toBe(abs);
   });
 
   it("roundtrips with toSessionPath", async () => {
-    await withSession("sess-roundtrip", async () => {
-      const abs = await svc.outputPath("data.csv");
-      const rel = svc.toSessionPath(abs);
-      const back = svc.resolveSessionPath(rel);
-      expect(back).toBe(abs);
-    });
+    const abs = await svc.outputPath("data.csv", "sess-roundtrip");
+    const rel = svc.toSessionPath(abs, "sess-roundtrip");
+    const back = svc.resolveSessionPath(rel, "sess-roundtrip");
+    expect(back).toBe(abs);
   });
 });

@@ -6,6 +6,7 @@ import { createChildRun } from "../agent/orchestrator.ts";
 import { bus } from "../infra/events.ts";
 import { agentsService } from "../agent/agents.ts";
 import { DomainError } from "../types/errors.ts";
+import { errorMessage } from "../utils/parse.ts";
 
 const MAX_PROMPT_LENGTH = 10_000;
 
@@ -24,15 +25,24 @@ async function delegate(args: Record<string, unknown>, ctx?: ToolCallContext): P
   const parentRunId = runCtx.runId;
   const rootRunId = runCtx.rootRunId ?? parentRunId;
 
-  const child = await createChildRun({
-    prompt,
-    assistant: agent,
-    parentRunId,
-    rootRunId,
-    parentTraceId: runCtx.traceId,
-    parentDepth: runCtx.depth,
-    sourceCallId: ctx?.toolCallId,
-  }, runCtx.runtime);
+  let child: { runId: string; sessionId: string };
+  try {
+    child = await createChildRun({
+      prompt,
+      assistant: agent,
+      parentRunId,
+      rootRunId,
+      parentTraceId: runCtx.traceId,
+      parentDepth: runCtx.depth,
+      sourceCallId: ctx?.toolCallId,
+    }, runCtx.runtime);
+  } catch (err) {
+    throw new DomainError({
+      type: "external",
+      message: `Delegation to agent "${agent}" failed: ${errorMessage(err)}`,
+      cause: err,
+    });
+  }
 
   runCtx.log.info(`[delegate] created child run ${child.runId} (agent: ${agent})`);
 

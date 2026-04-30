@@ -5,7 +5,6 @@ import type { Session } from "../types/session.ts";
 import type { FileProvider } from "../types/file.ts";
 import type { NewItem } from "../types/db.ts";
 import { randomSessionId } from "../utils/id.ts";
-import { getSessionId, getAgentName } from "./context.ts";
 import { sandbox as defaultFiles } from "../infra/sandbox.ts";
 import { config as defaultConfig } from "../config/index.ts";
 import * as dbOps from "../infra/db/index.ts";
@@ -202,13 +201,11 @@ function dateFolderNow(): string {
 /**
  * Resolve the working directory for the current session.
  * Used by tools that need a per-session CWD (bash, execute_code).
- * Pass an explicit `sessionId` to avoid the ALS lookup — preferred for
- * any tool that has access to a `RunCtx`.
+ * Returns the unscoped sessions root when no sessionId is supplied.
  */
 export function getSessionWorkingDir(sessionId?: string): string {
-  const id = sessionId ?? getSessionId();
-  if (id) {
-    return resolve(join(defaultConfig.paths.sessionsDir, dateFolderNow(), id));
+  if (sessionId) {
+    return resolve(join(defaultConfig.paths.sessionsDir, dateFolderNow(), sessionId));
   }
   return resolve(defaultConfig.paths.sessionsDir);
 }
@@ -218,12 +215,11 @@ function createSessionPaths(fileService: FileProvider, sessionsDir: string) {
 
   /**
    * Resolve the active sessionId. Prefer an explicitly-passed value;
-   * fall back to the ALS lookup; finally generate a one-shot fallback
-   * for callers that have no session context (tests, scripts).
+   * generate a one-shot fallback for callers with no session context
+   * (tests, scripts).
    */
   const getEffectiveSessionId = (sessionId?: string): string => {
-    const explicit = sessionId ?? getSessionId();
-    if (explicit) return explicit;
+    if (sessionId) return sessionId;
     if (!fallbackSessionId) fallbackSessionId = randomSessionId();
     return fallbackSessionId;
   };
@@ -243,7 +239,7 @@ function createSessionPaths(fileService: FileProvider, sessionsDir: string) {
     sharedDir(dateFolder?: string, sessionId?: string): string { return join(sessionDir(dateFolder, sessionId), "shared"); },
     async ensureSessionDir(sessionId?: string): Promise<void> { await fileService.mkdir(sessionDir(undefined, sessionId)); },
     async outputPath(filename: string, sessionId?: string, agentName?: string): Promise<string> {
-      const dir = join(sessionDir(undefined, sessionId), agentName ?? getAgentName(), "output");
+      const dir = join(sessionDir(undefined, sessionId), agentName ?? "default", "output");
       await fileService.mkdir(dir);
       return join(dir, `${randomSessionId()}${extname(filename)}`);
     },

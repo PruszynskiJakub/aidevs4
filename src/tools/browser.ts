@@ -15,8 +15,8 @@ import { DomainError } from "../types/errors.ts";
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-function getSession(sessionId?: string): BrowserSession {
-  return browserPool.get(sessionId);
+function getSession(sessionId: string | undefined): BrowserSession {
+  return browserPool.get(sessionId as string);
 }
 
 function urlSlug(urlStr: string): string {

@@ -9,9 +9,7 @@ import type { Logger } from "./logger.ts";
  * Mirrors Wonderlands' `CommandContext`: a small bag composed once per
  * run that combines (a) boot-time services (`runtime`) with (b) the
  * run-scoped invariants (`state`, `log`). Threaded through `dispatch`
- * and into tool handlers via `ToolCallContext`. Replaces the
- * `requireState()` / `requireLogger()` AsyncLocalStorage accessors as
- * tools migrate to read it explicitly.
+ * and into tool handlers via `ToolCallContext`.
  */
 export interface RunContext {
   runtime: Runtime;

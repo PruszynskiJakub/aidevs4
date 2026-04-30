@@ -15,7 +15,6 @@ import type { McpServerConfig } from "../config/mcp.ts";
 import { config } from "../config/index.ts";
 import { createOAuthProvider, waitForOAuthCallback } from "./mcp-oauth.ts";
 import { estimateTokens } from "../utils/tokens.ts";
-import { getSessionId } from "../agent/context.ts";
 import { sessionService } from "../agent/session.ts";
 import { sandbox } from "./sandbox.ts";
 import { DomainError } from "../types/errors.ts";
@@ -111,12 +110,11 @@ async function handleStructuredContent(
   const json = JSON.stringify(structured);
   const tokens = estimateTokens(json);
 
-  const effectiveSessionId = sessionId ?? getSessionId();
-  if (tokens <= STRUCTURED_CONTENT_TOKEN_LIMIT || !effectiveSessionId) {
+  if (tokens <= STRUCTURED_CONTENT_TOKEN_LIMIT || !sessionId) {
     return [{ type: "text", text: json }];
   }
 
-  const path = await sessionService.outputPath(`${serverName}-${toolName}.json`, effectiveSessionId);
+  const path = await sessionService.outputPath(`${serverName}-${toolName}.json`, sessionId);
   await sandbox.write(path, json);
 
   const sizeKB = Math.ceil(json.length / 1024);

@@ -34,7 +34,7 @@ function createMockPool(opts?: { maxSize?: number }): BrowserPool & { _sessions:
   return {
     _sessions: sessions,
     get(): BrowserSession {
-      // In tests, we use a fixed session ID since there's no AsyncLocalStorage context
+      // In tests, we use a fixed session ID instead of a loop-built RunCtx.
       const sessionId = "test-session";
       const existing = sessions.get(sessionId);
       if (existing) return existing;

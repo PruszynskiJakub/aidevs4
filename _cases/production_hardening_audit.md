@@ -1,10 +1,300 @@
 ---
 title: Production Hardening Audit — src/ vs Wonderlands/apps/server
-status: STAGE 1 — scope + dimensions, awaiting user sign-off before deep audit
+status: UPDATED 2026-04-30 — objective auditor pass applied; original findings preserved below with corrections
 date: 2026-04-29
+last_reviewed: 2026-04-30
 prior_work: project memory `Gap analysis vs Wonderlands` (2026-04-26) covered structural gaps (subagents, outbox, multi-tenant, file-tracking). This audit is ORTHOGONAL — focused on line-level engineering hygiene, not features.
 deployment_context: Long-running server on a VPS (not a one-shot CLI). Process lifecycle, multi-request concurrency, and crash recovery are FIRST-CLASS concerns.
 ---
+
+# Auditor update — 2026-04-30
+
+This document was reviewed against the current repository state on
+2026-04-30. The original audit below remains useful as a threat-modeling
+artifact, but several findings are now stale or overstated. Treat this
+section as the current source of truth for production hardening priority.
+
+## Current verdict
+
+The app has already moved in the right direction: typed `DomainError`
+handling exists, critical root-run persistence paths are transactional,
+HTTP errors are mostly sanitized, and explicit run/session context has
+replaced several implicit context lookups. The remaining production risks
+are not evenly distributed. They cluster around:
+
+1. duplicate execution of side effects,
+2. public HTTP/Slack perimeter controls,
+3. MCP as an untrusted integration boundary,
+4. secret exfiltration via tools/tracing,
+5. process lifecycle and crash recovery.
+
+## Still-valid P0 / high-priority findings
+
+### A1. Resume still dispatches approved tools before winning the lock
+
+**Status**: VALID P0.
+
+**Evidence**: `src/agent/resume-run.ts:121-131` dispatches approved tool
+calls before the optimistic lock at `src/agent/resume-run.ts:168-177`.
+The code comment says the resume is atomic, but the side effect has already
+happened by the time the lock is acquired.
+
+**Failure mode**: two clients approve the same waiting run at nearly the
+same time. Both can execute the approved side-effecting tool. Only one wins
+the DB status update afterward.
+
+**Correction to original audit**: finding 1.4 remains valid despite the
+new transaction block. The transaction protects persisted synthetic tool
+messages, not the side effect itself.
+
+**Minimal fix**: acquire a DB lease/status transition before dispatching
+any approved tools. Only the winner dispatches. The loser returns the
+current run state idempotently.
+
+### A2. HTTP and Slack idempotency are still missing
+
+**Status**: VALID P0.
+
+**Evidence**:
+- `src/server.ts:105-126` (`POST /api/negotiations/search`)
+- `src/server.ts:140-225` (`POST /chat`)
+- `src/server.ts:231-262` (`POST /resume`)
+- `src/slack.ts:139-189` in-memory Slack dedupe set
+
+**Failure mode**: a retried POST, Slack retry, page refresh, proxy retry,
+or double-click can create duplicate runs and duplicate tool side effects.
+The Slack dedupe set is process-local and deleted after the run, so it is
+not a replay window.
+
+**Minimal fix**: add DB-backed idempotency keys with route-scoped request
+hashes. Use the same table for Slack message timestamps with a Slack retry
+TTL.
+
+### A3. The public HTTP perimeter still lacks body caps, rate limits, and full auth
+
+**Status**: VALID P0.
+
+**Evidence**:
+- Hono app is created without a body-size guard at `src/server.ts:81`.
+- `c.req.json()` is called directly at `src/server.ts:106`,
+  `src/server.ts:141`, and `src/server.ts:232`.
+- `/chat` has optional bearer auth at `src/server.ts:92-103`, but
+  `/api/negotiations/search` has no auth and still triggers an agent run.
+
+**Failure mode**: a public VPS can be cost-bombed or memory-stressed by
+large JSON bodies or repeated unauthenticated negotiation requests.
+
+**Minimal fix**: set Bun/Hono request body caps, add app-level token-bucket
+rate limiting, and protect all agent-executing routes consistently.
+
+### A4. MCP remains the largest untrusted integration surface
+
+**Status**: VALID P0 cluster.
+
+**Evidence**:
+- `src/infra/mcp.ts:60-91` trusts MCP content fields and resource URIs.
+- `src/infra/mcp.ts:166-195` lets MCP sampling provide messages,
+  system prompt, model hint, and max tokens without budget controls.
+- `src/config/mcp.ts:6-24` accepts MCP config shape with almost no schema
+  validation.
+- `src/infra/mcp.ts:286` calls `listTools()` without an explicit timeout.
+
+**Failure mode**: a compromised or buggy MCP server can prompt-inject tool
+results, return oversized content, advertise excessive tools, request
+expensive sampling calls, or hand back file/resource references that should
+not be trusted.
+
+**Minimal fix**: validate and cap MCP content, validate resource URIs
+against sandbox/workspace boundaries, cap sampling rate/tokens/messages,
+ignore or allowlist model hints, validate config at load, and cap tools per
+server.
+
+### A5. Secrets can leak through bash and tracing
+
+**Status**: VALID P0.
+
+**Evidence**:
+- `src/tools/bash.ts:48` runs shell commands without an explicit env
+  allowlist, so the process environment is inherited.
+- `src/infra/langfuse-subscriber.ts:126-127` sends run input to tracing.
+- `src/infra/langfuse-subscriber.ts:247-250` sends tool args to tracing.
+- `src/infra/langfuse-subscriber.ts:49-64` sends generation input/output
+  without a redaction pass.
+
+**Failure mode**: prompt injection can ask the bash tool to print env vars.
+Those outputs can then flow to the LLM provider, logs, Slack, or Langfuse.
+Tracing can also export user secrets or proprietary prompts to a third-party
+SaaS unless redacted.
+
+**Minimal fix**: run bash with an explicit `env` allowlist matching
+`execute_code`, add outbound redaction/truncation before Langfuse, and add
+a tracing-disable flag for sensitive sessions.
+
+### A6. Graceful shutdown is still underbuilt
+
+**Status**: VALID P0/P1 cluster.
+
+**Evidence**:
+- `src/infra/bootstrap.ts:30-44` uses `process.on`, has no re-entry guard,
+  no shutdown deadline, no active-run draining/abort, and no HTTP close step.
+- `src/agent/run-continuation.ts:72-95` reconciles only orphaned waiting
+  parent runs, not stale `running` or `pending` runs.
+
+**Failure mode**: PM2/systemd restart or VPS reboot can leave in-flight
+runs marked `running`, skip final memory/tracing cleanup, and restart with
+unclear run state.
+
+**Minimal fix**: introduce an active-run registry with abort controllers,
+stop accepting traffic before service shutdown, drain or abort runs under a
+deadline, make signal handling idempotent, and add startup reconciliation
+for stale `running`/`pending` rows.
+
+### A7. Resource caps are still missing
+
+**Status**: VALID P0/P1 cluster.
+
+**Evidence**:
+- Delegation depth is computed at `src/agent/orchestrator.ts:199` but not
+  enforced.
+- The run loop is bounded by iteration count, not wall-clock duration.
+- There is no global concurrent-run semaphore.
+- Tool calls are fanned out with `Promise.allSettled` in the agent loop
+  without a per-turn cap.
+
+**Failure mode**: public or accidental load can produce unbounded concurrent
+runs, runaway delegation trees, multi-hour HTTP/SSE requests, and large
+parallel tool batches.
+
+**Minimal fix**: add `maxDelegationDepth`, `maxRunDurationMs`,
+`maxConcurrentRuns`, and `maxParallelToolCalls` limits.
+
+## Stale or partially fixed findings
+
+### S1. "No typed error taxonomy" is stale
+
+**Original**: finding 2.1.
+
+**Current state**: `src/types/errors.ts` defines `DomainError`,
+`DomainErrorType`, `isDomainError`, and `toHttpStatus`. HTTP handling in
+`src/server.ts:17-35` maps domain errors to sanitized responses and hides
+unknown errors.
+
+**Remaining work**: continue converting raw errors at lower-value edges, but
+this is no longer a foundational P0.
+
+### S2. "Critical DB writes are not transactional" is partially stale
+
+**Original**: finding 3.1.
+
+**Current state**:
+- `src/infra/db/index.ts:16-25` has `withTransaction`.
+- Root run setup is transactional in `src/agent/orchestrator.ts:204-210`.
+- Terminal message append + run status update are transactional in
+  `src/agent/orchestrator.ts:247-250`.
+- Resume message append + status transition are transactional in
+  `src/agent/resume-run.ts:168-177`.
+
+**Remaining work**:
+- `src/agent/orchestrator.ts:288-295` child-run creation still inserts the
+  run and appends the user message as separate writes.
+- `resume-run.ts` still needs lease-before-side-effect; the current
+  transaction does not solve that.
+- file writes remain non-atomic in several paths.
+
+### S3. SQLite `synchronous` is not missing
+
+**Original**: finding 3.3.
+
+**Current state**: `src/infra/db/connection.ts` sets:
+- `PRAGMA journal_mode = WAL`
+- `PRAGMA foreign_keys = ON`
+- `PRAGMA synchronous = NORMAL`
+- `PRAGMA busy_timeout = 5000`
+
+**Correction**: this is a durability policy choice, not a missing setting.
+For a solo VPS, `NORMAL` is defensible if the last committed transaction
+can be lost on hard power failure. Use `FULL` only if that trade-off is not
+acceptable for idempotency/state tables.
+
+### S4. HTTP path/stack leakage is partly fixed
+
+**Original**: findings 7.2 and 7.4.
+
+**Current state**: `server.ts` returns generic `Internal error` for unknown
+errors and uses `DomainError.message` for user-facing domain errors. This
+substantially reduces accidental stack/path leakage.
+
+**Remaining work**: audit all `DomainError.message` values. The
+`internalMessage` field is the right place for filesystem paths and
+provider details.
+
+### S5. Slack signature verification is not an active vulnerability in Socket Mode
+
+**Original**: finding 6.2.
+
+**Correction**: current `src/slack.ts` uses Bolt Socket Mode, authenticated
+by `SLACK_APP_TOKEN`. Per-request Slack signature verification is required
+if this moves to Events API over HTTP, but this is a migration tripwire, not
+an active P0.
+
+### S6. Browser singleton risk needs narrower wording
+
+**Original**: finding 4.4.
+
+**Current state**: the browser pool now requires an explicit `sessionId`,
+so this is not a global arbitrary cross-run cookie bleed in the same way
+the original audit described.
+
+**Remaining work**: verify whether isolation should be per run rather than
+per session. If sessions map to Slack threads/users, per-session persistence
+may be intentional. If multiple trust domains can share a session, move to
+per-run browser contexts.
+
+### S7. Circuit breaker is useful but not first-order production hardening
+
+**Original**: finding 5.2.
+
+**Correction**: a provider circuit breaker is reasonable after typed errors,
+timeouts, and rate limiting. It should not outrank idempotency, request
+caps, MCP validation, bash env isolation, or shutdown/reconciliation.
+
+## Corrected implementation order
+
+1. **Lease before side effect in `resumeRun`**.
+   Fix the true duplicate-side-effect P0.
+
+2. **HTTP perimeter**.
+   Add body-size caps, rate limiting, and consistent auth for every route
+   that can trigger an agent run.
+
+3. **DB-backed idempotency**.
+   Cover `/chat`, `/resume`, Slack message delivery, and side-effecting hub
+   tools.
+
+4. **MCP hardening**.
+   Validate/cap content, validate resources, add sampling budgets, cap tools,
+   add config validation, add explicit listTools timeout.
+
+5. **Bash env isolation + Langfuse redaction**.
+   Prevent obvious secret exfiltration paths.
+
+6. **Resource bounds**.
+   Add max delegation depth, max run duration, max concurrent runs, and max
+   parallel tool calls.
+
+7. **Graceful shutdown and startup reconciliation**.
+   Active-run registry, abort/drain, idempotent signal handlers, stale
+   `running`/`pending` reconciliation.
+
+8. **Atomic file writes and cleanup sweeps**.
+   Add `writeAtomic`, use it for memory/OAuth/token-like state, and add boot
+   sweeps for stale temp files/process locks.
+
+## How to read the rest of this document
+
+The original findings below are historical notes, not all current facts.
+When a finding conflicts with this 2026-04-30 auditor update, prefer the
+update. The highest-risk still-current items are A1-A7 above.
 
 # Stage 1 — Scope and dimension picks
 
@@ -2112,4 +2402,3 @@ primary MCP threat model.
 4. MCP-5 (atomic token write) — reuses `writeAtomic` from finding 3.2
 5. MCP-1 (config validation) — Zod schema, prevents misconfiguration
 6. Rest as needed
-

@@ -18,7 +18,7 @@ export type MemoryGeneration = {
   startTime: number;
 };
 
-/** Envelope fields injected by the bus from AsyncLocalStorage. */
+/** Envelope fields supplied by emitters or attached by the bus. */
 type RunScoped = {
   id: string;
   ts: number;
@@ -97,8 +97,7 @@ export type EventInput<T extends EventType> = Omit<EventOf<T>, keyof RunScoped |
 
 /**
  * Identity envelope passed explicitly to `bus.emit` to scope the event
- * to a session/run/trace. When omitted the bus falls back to reading
- * from `AsyncLocalStorage` (legacy path — being phased out).
+ * to a session/run/trace.
  */
 export interface EventEnvelope {
   sessionId?: SessionId;

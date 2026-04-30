@@ -1,7 +1,6 @@
 import { resolve, relative } from "path";
 import type { FileProvider, FileStat } from "../types/file.ts";
 import { config } from "../config/index.ts";
-import { getSessionId } from "../agent/context.ts";
 import { safeParse, formatSizeMB } from "../utils/parse.ts";
 import * as fs from "./fs.ts";
 import { DomainError, isDomainError } from "../types/errors.ts";
@@ -79,8 +78,8 @@ export interface SandboxOptions {
   /**
    * Bound sessionId for write-path narrowing. When set, writes to
    * `sessionsDir` are narrowed to its per-session subfolder. When unset,
-   * the legacy ALS fallback (`getSessionId()`) is consulted — this keeps
-   * unmigrated callers working until every tool threads ctx.
+   * writes are checked against the configured sandbox roots without
+   * per-session narrowing.
    */
   sessionId?: string;
 }
@@ -92,16 +91,12 @@ export function createSandbox(opts: SandboxOptions = {}): FileProvider {
   const sessionsDir = opts.sessionsDir ?? config.paths.sessionsDir;
   const boundSessionId = opts.sessionId;
 
-  function effectiveSessionId(): string | undefined {
-    return boundSessionId ?? getSessionId();
-  }
-
   function assertRead(path: string): void {
-    assertPathAllowed(path, readPaths, [], "read", sessionsDir, effectiveSessionId());
+    assertPathAllowed(path, readPaths, [], "read", sessionsDir, boundSessionId);
   }
 
   function assertWrite(path: string): void {
-    assertPathAllowed(path, writePaths, blockedWritePaths, "write", sessionsDir, effectiveSessionId());
+    assertPathAllowed(path, writePaths, blockedWritePaths, "write", sessionsDir, boundSessionId);
   }
 
   const svc: FileProvider = {

@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Event delivery — in-process bus vs Wonderlands outbox</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1c2330;
+    --border: #2a3240;
+    --text: #d7dde6;
+    --muted: #7d8795;
+    --accent: #7aa2f7;
+    --ok: #73d0a1;
+    --warn: #e0af68;
+    --bad: #f7768e;
+    --wait: #bb9af7;
+    --pill-bg: #22293a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  header {
+    padding: 22px 32px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  h1 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; max-width: 880px; }
+  .controls {
+    display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 120ms, border-color 120ms;
+  }
+  button:hover { background: #232b3b; border-color: #3a4456; }
+  button.primary { background: #1f3358; border-color: #2d4b80; color: #cfe1ff; }
+  button.primary:hover { background: #264070; }
+  button.danger { background: #3a1d24; border-color: #6b2a36; color: #ffd1d8; }
+  button.danger:hover { background: #4a242d; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .speed { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+  .speed input { width: 110px; }
+
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    padding: 20px 32px 40px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    position: relative;
+    min-height: 720px;
+  }
+  .panel.crashed { border-color: #6b2a36; box-shadow: inset 0 0 0 1px #6b2a36; }
+  .panel h2 {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .panel .sub {
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 16px;
+  }
+  .crash-overlay {
+    position: absolute;
+    top: 14px; right: 14px;
+    background: #6b2a36;
+    color: #ffd1d8;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    display: none;
+  }
+  .panel.crashed .crash-overlay { display: block; }
+
+  .stage {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 0 auto 8px;
+    background: var(--panel-2);
+    width: 86%;
+    min-height: 52px;
+  }
+  .stage .label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .stage .hint {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .stage.durable {
+    border-color: #2e5a44;
+    background: #142019;
+  }
+  .stage.durable .label::after {
+    content: "  durable";
+    color: var(--ok);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .stage.terminal {
+    border-style: dashed;
+  }
+
+  .arrow {
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid var(--border);
+    margin: 2px auto 6px;
+  }
+
+  .row {
+    display: flex; gap: 10px; justify-content: center; align-items: stretch;
+  }
+  .row .stage { width: 46%; margin: 0; }
+
+  /* dot pool — events as colored circles in their current stage */
+  .dot-pool {
+    position: absolute;
+    inset: 28px 12px 12px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-content: flex-start;
+  }
+  .dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px rgba(122,162,247,0.18);
+    transition: background 200ms, box-shadow 200ms, transform 200ms;
+  }
+  .dot.delivered { background: var(--ok); box-shadow: 0 0 0 2px rgba(115,208,161,0.18); }
+  .dot.queued { background: var(--warn); box-shadow: 0 0 0 2px rgba(224,175,104,0.22); }
+  .dot.lost {
+    background: var(--bad);
+    box-shadow: 0 0 0 2px rgba(247,118,142,0.25);
+    transform: scale(0.7);
+    opacity: 0.75;
+  }
+
+  .stats {
+    display: flex; gap: 12px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border);
+  }
+  .stat {
+    flex: 1;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat .v { font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .stat.ok .v { color: var(--ok); }
+  .stat.queued .v { color: var(--warn); }
+  .stat.lost .v { color: var(--bad); }
+
+  .legend {
+    display: flex; gap: 18px; padding: 4px 32px 18px; color: var(--muted); font-size: 12px;
+    flex-wrap: wrap;
+  }
+  .legend .li { display: flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+
+  .epilogue {
+    padding: 0 32px 36px;
+    color: var(--muted);
+    font-size: 12px;
+    max-width: 980px;
+  }
+  .epilogue strong { color: var(--text); font-weight: 600; }
+  .epilogue ol { padding-left: 20px; }
+  .epilogue li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Event delivery — in-process bus vs Wonderlands outbox</h1>
+  <p>
+    Each blue dot is one event (e.g. <code>tool.succeeded</code>). Watch how it
+    moves through the pipeline. Press <strong>💥 Crash</strong> while events are
+    in flight to see what survives — and what doesn't.
+  </p>
+  <div class="controls">
+    <button class="primary" id="emit">Emit 1 event</button>
+    <button class="primary" id="burst">Burst (10 events)</button>
+    <button class="danger" id="crash">💥 Crash process</button>
+    <button id="restart">↻ Restart</button>
+    <button id="reset">Reset</button>
+    <span class="speed">
+      Tick speed
+      <input id="speed" type="range" min="200" max="1500" step="100" value="700" />
+      <span id="speedLabel">700ms</span>
+    </span>
+  </div>
+</header>
+
+<div class="legend">
+  <div class="li"><span class="swatch" style="background:#7aa2f7"></span> in flight</div>
+  <div class="li"><span class="swatch" style="background:#73d0a1"></span> delivered</div>
+  <div class="li"><span class="swatch" style="background:#e0af68"></span> queued (durable, will resume)</div>
+  <div class="li"><span class="swatch" style="background:#f7768e"></span> lost (crash ate it)</div>
+</div>
+
+<main>
+  <!-- LEFT: current architecture -->
+  <section class="panel" id="panel-current">
+    <div class="crash-overlay">crashed</div>
+    <h2>Current — in-process bus</h2>
+    <div class="sub"><code>src/infra/events.ts</code> · sync fan-out, no persistence at the bus layer</div>
+
+    <div class="stage" data-stage="C0">
+      <div class="label">Agent emits event</div>
+      <div class="hint">bus.emit("tool.succeeded", …)</div>
+      <div class="dot-pool" data-pool="C0"></div>
+    </div>
+    <div class="arrow"></div>
+
+    <div class="stage" data-stage="C1">
+      <div class="label">Bus (synchronous fan-out)</div>
+      <div class="hint">in-memory only — vanishes if process dies</div>
+      <div class="dot-pool" data-pool="C1"></div>
+    </div>
+    <div class="arrow"></div>
+
+    <div class="row">
+      <div class="stage" data-stage="C2a">
+        <div class="label">Langfuse exporter</div>
+        <div class="hint">batched HTTP, no retry, no replay</div>
+        <div class="dot-pool" data-pool="C2a"></div>
+      </div>
+      <div class="stage" data-stage="C2b">
+        <div class="label">JSONL writer</div>
+        <div class="hint">chained promise, no fsync</div>
+        <div class="dot-pool" data-pool="C2b"></div>
+      </div>
+    </div>
+    <div class="arrow"></div>
+
+    <div class="row">
+      <div class="stage terminal" data-stage="C3a">
+        <div class="label">Langfuse cloud</div>
+        <div class="hint">trace visible in UI</div>
+        <div class="dot-pool" data-pool="C3a"></div>
+      </div>
+      <div class="stage terminal" data-stage="C3b">
+        <div class="label">events.jsonl</div>
+        <div class="hint">on disk (lossy: result/input stripped)</div>
+        <div class="dot-pool" data-pool="C3b"></div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat ok">
+        <div class="k">delivered</div><div class="v" id="C-delivered">0</div>
+      </div>
+      <div class="stat queued">
+        <div class="k">queued</div><div class="v" id="C-queued">0</div>
+      </div>
+      <div class="stat lost">
+        <div class="k">lost</div><div class="v" id="C-lost">0</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RIGHT: wonderlands architecture -->
+  <section class="panel" id="panel-wl">
+    <div class="crash-overlay">crashed</div>
+    <h2>Wonderlands — outbox + polling worker</h2>
+    <div class="sub">domain change + outbox row written in <strong>one DB transaction</strong></div>
+
+    <div class="stage" data-stage="W0">
+      <div class="label">Agent command</div>
+      <div class="hint">e.g. recordToolResult(…)</div>
+      <div class="dot-pool" data-pool="W0"></div>
+    </div>
+    <div class="arrow"></div>
+
+    <div class="stage durable" data-stage="W1">
+      <div class="label">DB transaction commits</div>
+      <div class="hint">domainEvents row + eventOutbox row, atomic with the business change</div>
+      <div class="dot-pool" data-pool="W1"></div>
+    </div>
+    <div class="arrow"></div>
+
+    <div class="stage durable" data-stage="W2">
+      <div class="label">eventOutbox table</div>
+      <div class="hint">unacked rows survive crashes — worker drains on next tick</div>
+      <div class="dot-pool" data-pool="W2"></div>
+    </div>
+    <div class="arrow"></div>
+
+    <div class="stage" data-stage="W3">
+      <div class="label">Polling worker (1s)</div>
+      <div class="hint">batch 100 · retry · quarantine after 3 failures</div>
+      <div class="dot-pool" data-pool="W3"></div>
+    </div>
+    <div class="arrow"></div>
+
+    <div class="row">
+      <div class="stage terminal" data-stage="W4a">
+        <div class="label">background</div>
+        <div class="dot-pool" data-pool="W4a"></div>
+      </div>
+      <div class="stage terminal" data-stage="W4b">
+        <div class="label">projection</div>
+        <div class="dot-pool" data-pool="W4b"></div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <div class="stage terminal" data-stage="W4c">
+        <div class="label">observability (Langfuse)</div>
+        <div class="dot-pool" data-pool="W4c"></div>
+      </div>
+      <div class="stage terminal" data-stage="W4d">
+        <div class="label">realtime (SSE)</div>
+        <div class="dot-pool" data-pool="W4d"></div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat ok">
+        <div class="k">delivered</div><div class="v" id="W-delivered">0</div>
+      </div>
+      <div class="stat queued">
+        <div class="k">queued (durable)</div><div class="v" id="W-queued">0</div>
+      </div>
+      <div class="stat lost">
+        <div class="k">lost</div><div class="v" id="W-lost">0</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="epilogue">
+  <p><strong>What to try.</strong></p>
+  <ol>
+    <li>Click <em>Burst (10)</em>. Watch dots flow down both pipelines.</li>
+    <li>Mid-flow, click <em>💥 Crash</em>. Both pipelines freeze.
+      <ul>
+        <li>Left: every dot still in transit turns red — <strong>lost forever</strong>.
+          The bus has no record of them.</li>
+        <li>Right: dots that already reached the <code>eventOutbox</code> turn yellow —
+          <strong>queued</strong>. They survived because the row is in SQLite.
+          Only dots that hadn't yet reached the transaction commit are lost.</li>
+      </ul>
+    </li>
+    <li>Click <em>↻ Restart</em>.
+      <ul>
+        <li>Left: nothing happens. The lost events are gone.</li>
+        <li>Right: the polling worker resumes and drains the outbox — yellow dots
+          turn green and reach all four lanes (background, projection,
+          observability, realtime).</li>
+      </ul>
+    </li>
+  </ol>
+  <p>
+    The key difference isn't extra plumbing — it's <em>where the durability boundary
+    sits</em>. In the current design, an event becomes durable only after it has
+    successfully reached its sink. In Wonderlands, an event becomes durable
+    <em>at the same instant</em> as the business change that produced it, because
+    they share a SQL transaction. Delivery is then just a worker draining a queue.
+  </p>
+</div>
+
+<script>
+(() => {
+  // Pipeline definitions: each event walks through these stages, one per tick.
+  // Branch points fan out into multiple terminal stages (one dot per branch).
+  const CURRENT = {
+    name: "current",
+    flow: [
+      { id: "C0" },
+      { id: "C1" },
+      { fanout: ["C2a", "C2b"] },
+      { fanout: ["C3a", "C3b"], terminal: true },
+    ],
+  };
+  const WL = {
+    name: "wl",
+    flow: [
+      { id: "W0" },
+      { id: "W1" },             // transaction commit — durable from here
+      { id: "W2", durable: true },  // outbox table
+      { id: "W3" },             // worker pulls
+      { fanout: ["W4a", "W4b", "W4c", "W4d"], terminal: true },
+    ],
+  };
+
+  let nextEventId = 1;
+  let tickMs = 700;
+  let timer = null;
+
+  // World state — each side has its own list of in-flight tokens.
+  // A token = { id, step, branch?, status }
+  // status: "flowing" | "delivered" | "queued" | "lost"
+  const state = {
+    current: { tokens: [], crashed: false, delivered: 0, queued: 0, lost: 0 },
+    wl:      { tokens: [], crashed: false, delivered: 0, queued: 0, lost: 0 },
+  };
+
+  function emit() {
+    const id = nextEventId++;
+    if (!state.current.crashed) {
+      state.current.tokens.push({ id, step: 0, status: "flowing" });
+    } else {
+      // Crashed bus can't even accept new events — count as lost.
+      state.current.lost++;
+    }
+    if (!state.wl.crashed) {
+      state.wl.tokens.push({ id, step: 0, status: "flowing" });
+    } else {
+      state.wl.lost++;
+    }
+    render();
+  }
+
+  function advance(side, def) {
+    if (side.crashed) return;
+    const next = [];
+    for (const t of side.tokens) {
+      if (t.status !== "flowing") { next.push(t); continue; }
+      const stepIdx = t.step + 1;
+      if (stepIdx >= def.flow.length) {
+        // Already at terminal — promote to delivered.
+        t.status = "delivered";
+        side.delivered++;
+        next.push(t);
+        continue;
+      }
+      const stage = def.flow[stepIdx];
+      if (stage.fanout) {
+        // Replace this token with one per branch.
+        for (const b of stage.fanout) {
+          next.push({ id: t.id, step: stepIdx, branch: b, status: "flowing" });
+        }
+      } else {
+        t.step = stepIdx;
+        next.push(t);
+      }
+    }
+    side.tokens = next;
+  }
+
+  function tick() {
+    advance(state.current, CURRENT);
+    advance(state.wl, WL);
+    render();
+  }
+
+  function startTimer() {
+    if (timer) clearInterval(timer);
+    timer = setInterval(tick, tickMs);
+  }
+
+  function crash() {
+    // Current side: every flowing token is lost.
+    for (const t of state.current.tokens) {
+      if (t.status === "flowing") {
+        t.status = "lost";
+        state.current.lost++;
+      }
+    }
+    state.current.crashed = true;
+
+    // Wonderlands side: tokens that have passed the transaction commit (step >= 1)
+    // are durable — they go into "queued". Tokens before that are lost.
+    for (const t of state.wl.tokens) {
+      if (t.status !== "flowing") continue;
+      if (t.step >= 1) {
+        t.status = "queued";
+        state.wl.queued++;
+      } else {
+        t.status = "lost";
+        state.wl.lost++;
+      }
+    }
+    state.wl.crashed = true;
+    render();
+  }
+
+  function restart() {
+    // Current: lost events stay lost. Just reopen the bus.
+    state.current.crashed = false;
+    // Wonderlands: queued events resume from the outbox (step = 2).
+    state.wl.crashed = false;
+    for (const t of state.wl.tokens) {
+      if (t.status === "queued") {
+        t.status = "flowing";
+        t.step = 2; // outbox stage; worker will pick up next tick
+        state.wl.queued--;
+      }
+    }
+    render();
+  }
+
+  function reset() {
+    state.current = { tokens: [], crashed: false, delivered: 0, queued: 0, lost: 0 };
+    state.wl =      { tokens: [], crashed: false, delivered: 0, queued: 0, lost: 0 };
+    nextEventId = 1;
+    render();
+  }
+
+  function poolFor(token, def) {
+    if (token.branch) return token.branch;
+    const stage = def.flow[token.step];
+    return stage.id;
+  }
+
+  function paintSide(prefix, side, def) {
+    // Clear all pools.
+    document.querySelectorAll(`[data-pool^="${prefix}"]`).forEach((p) => {
+      p.innerHTML = "";
+    });
+    // Place each token in its current pool.
+    for (const t of side.tokens) {
+      const poolId = poolFor(t, def);
+      const pool = document.querySelector(`[data-pool="${poolId}"]`);
+      if (!pool) continue;
+      const dot = document.createElement("div");
+      dot.className = "dot " + (t.status === "flowing" ? "" : t.status);
+      dot.title = `event #${t.id} — ${t.status}`;
+      pool.appendChild(dot);
+    }
+  }
+
+  function render() {
+    paintSide("C", state.current, CURRENT);
+    paintSide("W", state.wl, WL);
+    document.getElementById("C-delivered").textContent = state.current.delivered;
+    document.getElementById("C-queued").textContent = state.current.queued;
+    document.getElementById("C-lost").textContent = state.current.lost;
+    document.getElementById("W-delivered").textContent = state.wl.delivered;
+    document.getElementById("W-queued").textContent = state.wl.queued;
+    document.getElementById("W-lost").textContent = state.wl.lost;
+    document.getElementById("panel-current").classList.toggle("crashed", state.current.crashed);
+    document.getElementById("panel-wl").classList.toggle("crashed", state.wl.crashed);
+  }
+
+  // Wire controls
+  document.getElementById("emit").addEventListener("click", () => emit());
+  document.getElementById("burst").addEventListener("click", () => {
+    for (let i = 0; i < 10; i++) setTimeout(emit, i * 80);
+  });
+  document.getElementById("crash").addEventListener("click", crash);
+  document.getElementById("restart").addEventListener("click", restart);
+  document.getElementById("reset").addEventListener("click", reset);
+  const speed = document.getElementById("speed");
+  const speedLabel = document.getElementById("speedLabel");
+  speed.addEventListener("input", () => {
+    tickMs = Number(speed.value);
+    speedLabel.textContent = `${tickMs}ms`;
+    startTimer();
+  });
+
+  startTimer();
+  render();
+})();
+</script>
+</body>
+</html>

@@ -8,7 +8,6 @@ import type {
   WildcardListener,
   EventBus,
 } from "../types/events.ts";
-import { getSessionId, getRunId, getRootRunId, getParentRunId, getTraceId, getDepth } from "../agent/context.ts";
 
 // ── Bus implementation ──────────────────────────────────────
 
@@ -21,18 +20,20 @@ function createEventBus(): EventBus {
     data: EventInput<T>,
     envelope?: EventEnvelope,
   ): void {
-    // Prefer explicit envelope; fall back to ALS for legacy callers.
-    // The ALS fallback will be removed once every caller passes ctx.
+    // Identity fields come exclusively from the explicit envelope.
+    // Callers without an envelope produce unscoped events — useful for
+    // module-load-time emits (e.g. llm.call.failed) but tools and the
+    // agent loop must always pass one.
     const event = {
       id: randomUUID(),
       type,
       ts: Date.now(),
-      sessionId: envelope?.sessionId ?? getSessionId(),
-      runId: envelope?.runId ?? getRunId(),
-      rootRunId: envelope?.rootRunId ?? getRootRunId(),
-      parentRunId: envelope?.parentRunId ?? getParentRunId(),
-      traceId: envelope?.traceId ?? getTraceId(),
-      depth: envelope?.depth ?? getDepth(),
+      sessionId: envelope?.sessionId,
+      runId: envelope?.runId,
+      rootRunId: envelope?.rootRunId,
+      parentRunId: envelope?.parentRunId,
+      traceId: envelope?.traceId,
+      depth: envelope?.depth,
       ...data,
     } as AgentEvent;
 

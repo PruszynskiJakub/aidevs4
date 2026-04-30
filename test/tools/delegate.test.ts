@@ -1,23 +1,22 @@
-import { describe, it, expect, mock, beforeEach, spyOn } from "bun:test";
+import { describe, it, expect, mock, beforeEach } from "bun:test";
 import type { ToolResult } from "../../src/types/tool-result.ts";
+import type { ToolCallContext } from "../../src/types/tool.ts";
+import type { RunCtx } from "../../src/agent/run-ctx.ts";
+import { createIsolatedRuntime } from "../../src/runtime.ts";
 
 // Mock orchestrator (no circular dep — delegate lazy-imports it)
-const mockExecuteRun = mock(() =>
+const mockCreateChildRun = mock(() =>
   Promise.resolve({
-    exit: { kind: "completed" as const, result: "child answer" },
     sessionId: "child-session-123",
     runId: "r-child",
   }),
 );
 mock.module("../../src/agent/orchestrator.ts", () => ({
-  executeRun: mockExecuteRun,
+  createChildRun: mockCreateChildRun,
 }));
 
 // Import the tool — scanAgents runs at top level, reads real agent files
 const { default: delegateTool } = await import("../../src/tools/delegate.ts");
-
-// Spy on context functions after import
-import * as context from "../../src/agent/context.ts";
 
 /** Extract text from ToolResult */
 function getText(result: ToolResult): string {
@@ -25,14 +24,42 @@ function getText(result: ToolResult): string {
   return part.type === "text" ? part.text : "";
 }
 
+const noopLog = {
+  info: mock(() => {}),
+  warn: mock(() => {}),
+  error: mock(() => {}),
+};
+
+function makeCtx(overrides: Partial<RunCtx> = {}): ToolCallContext {
+  const runtime = createIsolatedRuntime();
+  return {
+    toolCallId: "call-delegate-1",
+    runCtx: {
+      runtime,
+      log: noopLog as any,
+      state: { sessionId: "parent-session-456" } as any,
+      files: runtime.files.scoped("parent-session-456"),
+      sessionId: "parent-session-456",
+      runId: "r-parent",
+      rootRunId: "r-root",
+      traceId: "trace-parent",
+      depth: 2,
+      agentName: "default",
+      ...overrides,
+    },
+  };
+}
+
 describe("delegate tool", () => {
   beforeEach(() => {
-    mockExecuteRun.mockClear();
-    mockExecuteRun.mockResolvedValue({
-      exit: { kind: "completed" as const, result: "child answer" },
+    mockCreateChildRun.mockClear();
+    mockCreateChildRun.mockResolvedValue({
       sessionId: "child-session-123",
       runId: "r-child",
     });
+    noopLog.info.mockClear();
+    noopLog.warn.mockClear();
+    noopLog.error.mockClear();
   });
 
   it("has correct name and schema", () => {
@@ -48,21 +75,19 @@ describe("delegate tool", () => {
     expect(desc).toContain("s2e1");
   });
 
-  it("returns a ToolResult with child answer on success", async () => {
-    spyOn(context, "getSessionId").mockReturnValueOnce("parent-session-456");
-    spyOn(context, "getLogger").mockReturnValueOnce({ info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as any);
-
-    const result = await delegateTool.handler({ agent: "proxy", prompt: "Hello" });
-    expect(getText(result)).toBe("child answer");
-    expect(mockExecuteRun).toHaveBeenCalledWith({
+  it("returns a wait ToolResult after creating a child run", async () => {
+    const result = await delegateTool.handler({ agent: "proxy", prompt: "Hello" }, makeCtx());
+    expect(getText(result)).toBe("Delegated to proxy (run r-child)");
+    expect(result.wait).toEqual({ kind: "child_run", childRunId: "r-child" });
+    expect(mockCreateChildRun).toHaveBeenCalledWith({
       prompt: "Hello",
       assistant: "proxy",
-      parentRunId: undefined,
-      parentRootRunId: undefined,
-      parentTraceId: undefined,
-      parentDepth: undefined,
-      sourceCallId: undefined,
-    });
+      parentRunId: "r-parent",
+      rootRunId: "r-root",
+      parentTraceId: "trace-parent",
+      parentDepth: 2,
+      sourceCallId: "call-delegate-1",
+    }, expect.any(Object));
   });
 
   it("throws on empty prompt", async () => {
@@ -85,25 +110,26 @@ describe("delegate tool", () => {
   });
 
   it("wraps child failure in actionable error", async () => {
-    mockExecuteRun.mockRejectedValueOnce(new Error("Max iterations exceeded"));
-    await expect(delegateTool.handler({ agent: "proxy", prompt: "test" })).rejects.toThrow(
+    mockCreateChildRun.mockRejectedValueOnce(new Error("Max iterations exceeded"));
+    await expect(delegateTool.handler({ agent: "proxy", prompt: "test" }, makeCtx())).rejects.toThrow(
       'Delegation to agent "proxy" failed: Max iterations exceeded',
     );
   });
 
-  it("passes correct args to executeRun", async () => {
-    spyOn(context, "getSessionId").mockReturnValueOnce("parent-session-456");
-    spyOn(context, "getLogger").mockReturnValueOnce(null as any);
-
-    await delegateTool.handler({ agent: "s2e1", prompt: "classify this" });
-    expect(mockExecuteRun).toHaveBeenCalledWith({
+  it("passes parent run context to createChildRun", async () => {
+    await delegateTool.handler({ agent: "s2e1", prompt: "classify this" }, makeCtx({
+      rootRunId: undefined,
+      traceId: undefined,
+      depth: 0,
+    }));
+    expect(mockCreateChildRun).toHaveBeenCalledWith({
       prompt: "classify this",
       assistant: "s2e1",
-      parentRunId: undefined,
-      parentRootRunId: undefined,
+      parentRunId: "r-parent",
+      rootRunId: "r-parent",
       parentTraceId: undefined,
-      parentDepth: undefined,
-      sourceCallId: undefined,
-    });
+      parentDepth: 0,
+      sourceCallId: "call-delegate-1",
+    }, expect.any(Object));
   });
 });

@@ -8,7 +8,6 @@ import { confirmBatch } from "./confirmation.ts";
 import { MarkdownLogger } from "../infra/log/markdown.ts";
 import { ConsoleLogger } from "../infra/log/console.ts";
 import { createCompositeLogger } from "../infra/log/composite.ts";
-import { runWithContext } from "./context.ts";
 import { buildRunCtx, type RunCtx } from "./run-ctx.ts";
 import { processMemory, flushMemory } from "./memory/processor.ts";
 import { saveState } from "./memory/persistence.ts";
@@ -437,42 +436,40 @@ export async function runAgent(
   const inputLength = state.messages.length;
   const sliceMessages = () => state.messages.slice(inputLength);
 
-  return runWithContext(state, log, async () => {
-    const saveMemoryIfChanged = createMemorySaver(state);
-    const runStartTime = performance.now();
-    // Build runCtx eagerly so the failure path also has an envelope.
-    // Fields read off `state` here are stable for the run; later
-    // `resolveAgentForRun` may set state.model/state.tools but those
-    // aren't part of the envelope.
-    const runCtx = buildRunCtx(runtime, state, log);
+  const saveMemoryIfChanged = createMemorySaver(state);
+  const runStartTime = performance.now();
+  // Build runCtx eagerly so the failure path also has an envelope.
+  // Fields read off `state` here are stable for the run; later
+  // `resolveAgentForRun` may set state.model/state.tools but those
+  // aren't part of the envelope.
+  const runCtx = buildRunCtx(runtime, state, log);
 
-    try {
-      const bindings = await resolveAgentForRun(state, runtime);
-      emitRunStartEvents(runCtx, userPrompt);
-      const deps: IterationDeps = { runCtx, bindings, provider, saveMemoryIfChanged, sliceMessages, runStartTime };
+  try {
+    const bindings = await resolveAgentForRun(state, runtime);
+    emitRunStartEvents(runCtx, userPrompt);
+    const deps: IterationDeps = { runCtx, bindings, provider, saveMemoryIfChanged, sliceMessages, runStartTime };
 
-      let lastTurnStartTime = performance.now();
-      for (let i = 0; i < config.limits.maxIterations; i++) {
-        const result = await runIteration(deps, i);
-        if (!("continue" in result)) return result;
-        lastTurnStartTime = result.turnStartTime;
-      }
-
-      const exit: RunExit = { kind: "exhausted", cycleCount: config.limits.maxIterations };
-      await finalizeTerminal(runCtx, exit, bindings, provider, saveMemoryIfChanged,
-        { runStartTime, turnStartTime: lastTurnStartTime, iterationsRun: config.limits.maxIterations });
-      return { exit, messages: sliceMessages() };
-    } catch (err) {
-      emitFailureTerminal(runCtx, {
-        agentName: state.agentName ?? state.assistant,
-        iterations: state.iteration + 1,
-        runDurationMs: performance.now() - runStartTime,
-        tokens: state.tokens,
-        error: errorMessage(err),
-      });
-      throw err;
-    } finally {
-      await dispose();
+    let lastTurnStartTime = performance.now();
+    for (let i = 0; i < config.limits.maxIterations; i++) {
+      const result = await runIteration(deps, i);
+      if (!("continue" in result)) return result;
+      lastTurnStartTime = result.turnStartTime;
     }
-  });
+
+    const exit: RunExit = { kind: "exhausted", cycleCount: config.limits.maxIterations };
+    await finalizeTerminal(runCtx, exit, bindings, provider, saveMemoryIfChanged,
+      { runStartTime, turnStartTime: lastTurnStartTime, iterationsRun: config.limits.maxIterations });
+    return { exit, messages: sliceMessages() };
+  } catch (err) {
+    emitFailureTerminal(runCtx, {
+      agentName: state.agentName ?? state.assistant,
+      iterations: state.iteration + 1,
+      runDurationMs: performance.now() - runStartTime,
+      tokens: state.tokens,
+      error: errorMessage(err),
+    });
+    throw err;
+  } finally {
+    await dispose();
+  }
 }
